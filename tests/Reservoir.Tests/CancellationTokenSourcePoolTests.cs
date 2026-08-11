@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace Reservoir.Tests;
 
 public class CancellationTokenSourcePoolTests
@@ -68,6 +70,55 @@ public class CancellationTokenSourcePoolTests
             await Assert.That(next.IsCancellationRequested).IsFalse();
             pool.Return(next);
         }
+    }
+
+    [Test]
+    public async Task ConcurrentStressPreservesOwnershipAndFreshState()
+    {
+        const int iterations = 10_000;
+        int[] workerCounts = [1, 4, 16, 32];
+        var pool = new CancellationTokenSourcePool(maxCapacity: 32);
+        var state = new StressState();
+
+        foreach (int workerCount in workerCounts)
+        {
+            using var start = new Barrier(workerCount + 1);
+            Task[] workers = Enumerable.Range(0, workerCount)
+                .Select(_ => Task.Factory.StartNew(
+                    () => StressPool(pool, state, start, iterations),
+                    CancellationToken.None,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default))
+                .ToArray();
+
+            start.SignalAndWait();
+            await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30));
+        }
+
+        await Assert.That(state.Failures).IsEmpty();
+        await Assert.That(state.ActiveSources).IsEmpty();
+    }
+
+    [Test]
+    public async Task ConcurrentTimerRaceStressNeverProducesCanceledRental()
+    {
+        const int workerCount = 16;
+        const int iterations = 5_000;
+        var pool = new CancellationTokenSourcePool(maxCapacity: 32);
+        var state = new StressState();
+        using var start = new Barrier(workerCount + 1);
+        Task[] workers = Enumerable.Range(0, workerCount)
+            .Select(_ => Task.Factory.StartNew(
+                () => StressTimerRace(pool, state, start, iterations),
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default))
+            .ToArray();
+
+        start.SignalAndWait();
+        await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30));
+
+        await Assert.That(state.Failures).IsEmpty();
     }
 
     [Test]
@@ -161,6 +212,119 @@ public class CancellationTokenSourcePoolTests
         }
         catch (OperationCanceledException)
         {
+        }
+    }
+
+    private static void StressPool(
+        CancellationTokenSourcePool pool,
+        StressState state,
+        Barrier start,
+        int iterations)
+    {
+        start.SignalAndWait();
+
+        for (int iteration = 0; iteration < iterations; iteration++)
+        {
+            CancellationTokenSource source = pool.Rent();
+            state.TrackRental(source);
+
+            if (source.IsCancellationRequested)
+            {
+                state.RecordFailure("Pool returned a canceled source.");
+            }
+
+            if ((iteration & 3) == 0)
+            {
+                _ = source.Token.Register(
+                    static callbackState => ((StressState)callbackState!).RecordFailure(
+                        "Callback survived a prior rental."),
+                    state);
+            }
+
+            if ((iteration & 7) == 0)
+            {
+                source.CancelAfter(TimeSpan.FromMinutes(1));
+            }
+
+            Thread.SpinWait(8);
+            state.CompleteRental(source);
+            pool.Return(source);
+
+            if ((iteration & 63) == 0)
+            {
+                CancellationTokenSource canceled = pool.Rent();
+                state.TrackRental(canceled);
+
+                if (canceled.IsCancellationRequested)
+                {
+                    state.RecordFailure("Pool returned a canceled source.");
+                }
+
+                canceled.Cancel();
+                state.CompleteRental(canceled);
+                pool.Return(canceled);
+            }
+        }
+    }
+
+    private static void StressTimerRace(
+        CancellationTokenSourcePool pool,
+        StressState state,
+        Barrier start,
+        int iterations)
+    {
+        start.SignalAndWait();
+
+        for (int iteration = 0; iteration < iterations; iteration++)
+        {
+            CancellationTokenSource source = pool.Rent();
+            source.CancelAfter(TimeSpan.Zero);
+            pool.Return(source);
+
+            CancellationTokenSource next = pool.Rent();
+            Thread.Yield();
+
+            if (next.IsCancellationRequested)
+            {
+                state.RecordFailure("Timer race produced a canceled rental.");
+            }
+
+            pool.Return(next);
+        }
+    }
+
+    private sealed class StressState
+    {
+        private const int MaximumRecordedFailures = 100;
+        private int _failureCount;
+
+        internal ConcurrentDictionary<CancellationTokenSource, byte> ActiveSources { get; }
+            = new(ReferenceEqualityComparer.Instance);
+
+        internal ConcurrentQueue<string> Failures { get; } = new();
+
+        internal void TrackRental(CancellationTokenSource source)
+        {
+            if (!ActiveSources.TryAdd(source, 0))
+            {
+                RecordFailure("One source was rented concurrently.");
+            }
+        }
+
+        internal void CompleteRental(CancellationTokenSource source)
+        {
+            if (!ActiveSources.TryRemove(source, out _))
+            {
+                RecordFailure("Rental ownership tracking was lost.");
+            }
+        }
+
+        internal void RecordFailure(string message)
+        {
+            if (Interlocked.Increment(ref _failureCount) <= MaximumRecordedFailures)
+            {
+                Failures.Enqueue(message);
+            }
         }
     }
 }
