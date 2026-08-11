@@ -46,6 +46,33 @@ For a direct local without a separate `Value` access:
 using var lease = pool.RentScoped(out MyBuffer buffer);
 ```
 
+## Cancellation token sources
+
+`CancellationTokenSourcePool` reuses sources only when
+`CancellationTokenSource.TryReset()` confirms cancellation never fired. Canceled sources are
+disposed and discarded. Timers and callbacks from an unfired rental are removed before reuse.
+
+```csharp
+CancellationTokenSourcePool pool = CancellationTokenSourcePool.Shared;
+CancellationTokenSource source = pool.Rent();
+
+try
+{
+    source.CancelAfter(TimeSpan.FromSeconds(30));
+    // Use source.Token.
+}
+finally
+{
+    pool.Return(source);
+}
+```
+
+Return a source only after becoming its sole owner again: no outstanding token readers and no
+concurrent `Cancel`, `CancelAfter`, registration, or disposal operation may remain. Returning a
+source races unsafely with those operations because `TryReset()` is not thread-safe with concurrent
+use. Do not return sources created by `CancellationTokenSource.CreateLinkedTokenSource`; dispose
+linked sources instead.
+
 ## Benchmarks
 
 Run the full .NET 10 suite in Release mode:
