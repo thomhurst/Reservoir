@@ -5,9 +5,10 @@ description: BenchmarkDotNet results for Reservoir's warm paths and specialized 
 
 # Benchmarks
 
+<!-- BENCHMARK_RESULTS_START -->
 Every measured warm Reservoir path allocated **0 B per operation**.
 
-Results below used BenchmarkDotNet 0.15.8 `ShortRun` on .NET 10.0.10, Windows 11, and an Intel Core i7-12700K. Nanosecond timings vary by machine; compare methods within a table.
+Results below used BenchmarkDotNet 0.15.8 `ShortRun`, .NET 10.0.10, Windows 11, Intel Core i7-12700K. Nanosecond timings vary by machine; compare methods within a table.
 
 ## Core pool
 
@@ -42,11 +43,14 @@ The payload owns a 256-byte buffer. Lower ratio is better; `new` is the baseline
 | `List<int>`, 2,048 items | 1,738.18 ns | 1,502.78 ns | 8,248 B | 0 B |
 
 The single-thread TLS `StringBuilder` cache measured 5.52 ns and 0 B; it gives up cross-thread reuse and bounded shared capacity. Scoped leases measured 12.67 ns versus 10.50 ns for manual rent/return, with 0 B allocated on both paths.
+<!-- BENCHMARK_RESULTS_END -->
 
 ## Reproduce
 
 ```shell
-dotnet run -c Release --project benchmarks/Reservoir.Benchmarks
+dotnet run -c Release --project benchmarks/Reservoir.Benchmarks -- --filter "*" --job Short
 ```
 
+<!-- BENCHMARK_RESULTS_LINK_START -->
 Raw Markdown, CSV, and HTML exports—including 1–32 worker contention results—live in [`benchmarks/results/20260811-200439`](https://github.com/thomhurst/Reservoir/tree/main/benchmarks/results/20260811-200439).
+<!-- BENCHMARK_RESULTS_LINK_END -->

@@ -84,6 +84,7 @@ Another thread may rent the same object immediately. Debug diagnostics make viol
 
 ## Measured, not promised
 
+<!-- BENCHMARK_RESULTS_START -->
 BenchmarkDotNet 0.15.8 `ShortRun`, .NET 10.0.10, Windows 11, Intel Core i7-12700K:
 
 | Method | Mean | Ratio | Allocated |
@@ -92,13 +93,14 @@ BenchmarkDotNet 0.15.8 `ShortRun`, .NET 10.0.10, Windows 11, Intel Core i7-12700
 | **Reservoir** | **11.83 ns** | **0.93** | **0 B** |
 | `Microsoft.Extensions.ObjectPool` | 14.56 ns | 1.15 | 0 B |
 | `ConcurrentBag<T>` pool | 39.48 ns | 3.12 | 0 B |
+<!-- BENCHMARK_RESULTS_END -->
 
 Every measured warm Reservoir path allocated **0 B**. Timings vary by machine; compare methods within the same run.
 
 [See all benchmark results](https://thomhurst.github.io/Reservoir/docs/benchmarks) or reproduce them locally:
 
 ```shell
-dotnet run -c Release --project benchmarks/Reservoir.Benchmarks
+dotnet run -c Release --project benchmarks/Reservoir.Benchmarks -- --filter "*" --job Short
 ```
 
 ## When it fits

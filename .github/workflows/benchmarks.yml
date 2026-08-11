@@ -1,0 +1,185 @@
+name: Benchmarks
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: 'BenchmarkDotNet filter'
+        required: false
+        default: '*'
+      job:
+        description: 'BenchmarkDotNet job preset (medium matches the scheduled run)'
+        required: false
+        default: medium
+        type: choice
+        options:
+          - short
+          - default
+          - medium
+          - long
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Run benchmarks
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj
+
+      - name: Build
+        run: >-
+          dotnet build benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj
+          --configuration Release
+          --no-restore
+
+      - name: Validate benchmarks
+        shell: pwsh
+        env:
+          BENCH_FILTER: ${{ inputs.filter || '*' }}
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          & dotnet run `
+            --project benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj `
+            --configuration Release `
+            --no-build `
+            -- `
+            --filter "$env:BENCH_FILTER" `
+            --job Dry `
+            --artifacts artifacts/benchmark-dry-run *> artifacts/benchmark-dry-run.log
+
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) {
+            Get-Content artifacts/benchmark-dry-run.log -Tail 200
+            exit $exitCode
+          }
+
+      - name: Run benchmarks
+        shell: pwsh
+        env:
+          BENCH_FILTER: ${{ inputs.filter || '*' }}
+          BENCH_JOB: ${{ inputs.job || 'medium' }}
+        run: |
+          & dotnet run `
+            --project benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj `
+            --configuration Release `
+            --no-build `
+            -- `
+            --filter "$env:BENCH_FILTER" `
+            --job "$env:BENCH_JOB" `
+            --artifacts artifacts/benchmarks *> artifacts/benchmark.log
+
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) {
+            Get-Content artifacts/benchmark.log -Tail 200
+            exit $exitCode
+          }
+
+      - name: Publish results to job summary
+        if: always()
+        shell: pwsh
+        run: |
+          "## Reservoir benchmarks" >> $env:GITHUB_STEP_SUMMARY
+          $reports = @(Get-ChildItem `
+            artifacts/benchmarks/results `
+            -Filter '*-report-github.md' `
+            -ErrorAction SilentlyContinue |
+            Sort-Object Name)
+
+          if ($reports.Count -eq 0) {
+            'No benchmark results were generated.' >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+
+          foreach ($report in $reports) {
+            Get-Content $report.FullName -Raw >> $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reservoir-benchmarks
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-to-docs:
+    name: Publish benchmark documentation
+    needs: benchmark
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' &&
+        inputs.filter == '*' &&
+        inputs.job != 'short'))
+    runs-on: ubuntu-latest
+
+    permissions:
+      actions: read
+      contents: read
+
+    concurrency:
+      group: performance-docs-publish
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          token: ${{ secrets.BENCHMARK_DOCS_PAT }}
+
+      - name: Download benchmark artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: reservoir-benchmarks
+          path: benchmark-results
+
+      - name: Update README and documentation
+        shell: pwsh
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          $generatedAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm UTC')
+          ./build/Update-BenchmarkDocs.ps1 `
+            -ResultsDirectory benchmark-results/benchmarks/results `
+            -Commit '${{ github.sha }}' `
+            -GeneratedAt $generatedAt `
+            -ResultsUrl $env:RUN_URL
+
+      - name: Commit benchmark documentation
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md website/docs/benchmarks.md
+
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            exit 0
+          }
+
+          git commit -m "docs: update benchmark results"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
