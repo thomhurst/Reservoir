@@ -1,0 +1,11 @@
+namespace Reservoir;
+
+/// <summary>Provides a type-safe reset operation for objects designed for pooling.</summary>
+public interface IResettable
+{
+    /// <summary>
+    /// Resets the object for its next renter. Returns <see langword="false"/> when the object
+    /// cannot be reused and must be discarded.
+    /// </summary>
+    bool TryReset();
+}

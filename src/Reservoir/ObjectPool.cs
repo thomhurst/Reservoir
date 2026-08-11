@@ -4,7 +4,7 @@ namespace Reservoir;
 /// A bounded, thread-safe object pool for callers that prefer a policy instance or factory.
 /// </summary>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
-public sealed class ObjectPool<T>
+public sealed class ObjectPool<T> : IDisposable
     where T : class
 {
     private readonly ObjectPool<T, PolicyAdapter> _pool;
@@ -56,6 +56,18 @@ public sealed class ObjectPool<T>
 
     /// <summary>Resets and returns an object. Objects exceeding capacity are discarded.</summary>
     public void Return(T obj) => _pool.Return(obj);
+
+    /// <summary>
+    /// Removes all retained objects and disposes those that implement <see cref="IDisposable"/>.
+    /// The pool remains usable.
+    /// </summary>
+    public void Clear() => _pool.Clear();
+
+    /// <summary>
+    /// Permanently closes the pool and disposes all retained disposable objects. Objects returned
+    /// after disposal are disposed instead of retained.
+    /// </summary>
+    public void Dispose() => _pool.Dispose();
 
     internal readonly struct PolicyAdapter : IPooledObjectPolicy<T>
     {

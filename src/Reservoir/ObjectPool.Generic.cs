@@ -1,4 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 
 namespace Reservoir;
@@ -8,7 +10,7 @@ namespace Reservoir;
 /// </summary>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
 /// <typeparam name="TPolicy">The policy used to create and reset objects.</typeparam>
-public sealed class ObjectPool<T, TPolicy>
+public sealed class ObjectPool<T, TPolicy> : IDisposable
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
@@ -17,7 +19,13 @@ public sealed class ObjectPool<T, TPolicy>
 
     private readonly ObjectWrapper[] _items;
     private TPolicy _policy;
+    private int _isDisposed;
     private T? _fastItem;
+
+    private static readonly bool s_isStaticallyDisposable
+        = typeof(IDisposable).IsAssignableFrom(typeof(T));
+
+    private static readonly bool s_mayHaveDisposableImplementations = !typeof(T).IsSealed;
 
     /// <summary>Initializes a pool with the default policy value and capacity.</summary>
     public ObjectPool()
@@ -57,13 +65,18 @@ public sealed class ObjectPool<T, TPolicy>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Rent()
     {
+        ThrowIfDisposed();
+
         T? item = Interlocked.Exchange(ref _fastItem, null);
-        if (item is not null)
+        T rented = item ?? RentSlow();
+
+        if (Volatile.Read(ref _isDisposed) == 0)
         {
-            return item;
+            return rented;
         }
 
-        return RentSlow();
+        DisposeItem(rented);
+        return ThrowDisposed();
     }
 
     /// <summary>Rents an object owned by a stack-only lease that returns it on disposal.</summary>
@@ -151,18 +164,74 @@ public sealed class ObjectPool<T, TPolicy>
     {
         ArgumentNullException.ThrowIfNull(obj);
 
-        if (!_policy.TryReset(obj))
+        if (Volatile.Read(ref _isDisposed) != 0)
         {
+            DisposeItem(obj);
+            return;
+        }
+
+        bool canReuse;
+
+        try
+        {
+            canReuse = _policy.TryReset(obj);
+        }
+        catch
+        {
+            DisposeItem(obj);
+            throw;
+        }
+
+        if (!canReuse)
+        {
+            DisposeItem(obj);
             return;
         }
 
         T? displaced = Interlocked.Exchange(ref _fastItem, obj);
         if (displaced is null)
         {
+            ClearIfDisposed();
             return;
         }
 
         ReturnSlow(obj, displaced);
+        ClearIfDisposed();
+    }
+
+    /// <summary>
+    /// Removes all retained objects and disposes those that implement <see cref="IDisposable"/>.
+    /// The pool remains usable.
+    /// </summary>
+    public void Clear()
+    {
+        Exception? firstException = null;
+
+        DisposeRetained(Interlocked.Exchange(ref _fastItem, null), ref firstException);
+
+        for (int i = 0; i < _items.Length; i++)
+        {
+            DisposeRetained(
+                Interlocked.Exchange(ref _items[i].Element, null),
+                ref firstException);
+        }
+
+        if (firstException is not null)
+        {
+            ExceptionDispatchInfo.Capture(firstException).Throw();
+        }
+    }
+
+    /// <summary>
+    /// Permanently closes the pool and disposes all retained disposable objects. Objects returned
+    /// after disposal are disposed instead of retained.
+    /// </summary>
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _isDisposed, 1) == 0)
+        {
+            Clear();
+        }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -178,7 +247,63 @@ public sealed class ObjectPool<T, TPolicy>
 
         // Preserve full-pool semantics: discard the newly returned object when
         // it has not already been rented or displaced by another thread.
-        Interlocked.CompareExchange(ref _fastItem, displaced, returned);
+        T? observed = Interlocked.CompareExchange(ref _fastItem, displaced, returned);
+        DisposeItem(ReferenceEquals(observed, returned) ? returned : displaced);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void ClearIfDisposed()
+    {
+        if (Volatile.Read(ref _isDisposed) != 0)
+        {
+            Clear();
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void ThrowIfDisposed()
+    {
+        if (Volatile.Read(ref _isDisposed) != 0)
+        {
+            ThrowDisposed();
+        }
+    }
+
+    [DoesNotReturn]
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T ThrowDisposed()
+        => throw new ObjectDisposedException(typeof(ObjectPool<T, TPolicy>).FullName);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void DisposeItem(T obj)
+    {
+        if (s_isStaticallyDisposable)
+        {
+            ((IDisposable)obj).Dispose();
+            return;
+        }
+
+        if (s_mayHaveDisposableImplementations && obj is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+    }
+
+    private static void DisposeRetained(T? obj, ref Exception? firstException)
+    {
+        if (obj is null)
+        {
+            return;
+        }
+
+        try
+        {
+            DisposeItem(obj);
+        }
+        catch (Exception exception)
+        {
+            firstException ??= exception;
+        }
     }
 
     private struct ObjectWrapper
