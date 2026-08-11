@@ -1,0 +1,16 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Reservoir/Reservoir.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Reservoir.Tests/Reservoir.Tests.csproj" />
+  </Folder>
+</Solution>
