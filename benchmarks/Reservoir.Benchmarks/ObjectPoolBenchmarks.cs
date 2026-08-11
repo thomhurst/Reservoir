@@ -12,13 +12,29 @@ public class ObjectPoolBenchmarks
     {
         Payload payload = _pool.Rent();
         _pool.Return(payload);
+
+        using PooledLease<Payload, PayloadPolicy> lease = _pool.RentScoped();
     }
 
-    [Benchmark]
+    [Benchmark(Baseline = true)]
     public Payload RentReturn()
     {
         Payload payload = _pool.Rent();
         _pool.Return(payload);
+        return payload;
+    }
+
+    [Benchmark]
+    public Payload ScopedRentReturn()
+    {
+        using PooledLease<Payload, PayloadPolicy> lease = _pool.RentScoped();
+        return lease.Value;
+    }
+
+    [Benchmark]
+    public Payload ScopedOutRentReturn()
+    {
+        using PooledLease<Payload, PayloadPolicy> lease = _pool.RentScoped(out Payload payload);
         return payload;
     }
 

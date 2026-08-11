@@ -1,0 +1,135 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+
+namespace Reservoir;
+
+/// <summary>
+/// Owns an object rented from an <see cref="ObjectPool{T,TPolicy}"/> and returns it on disposal.
+/// </summary>
+/// <typeparam name="T">The reference type stored by the pool.</typeparam>
+/// <typeparam name="TPolicy">The policy used to create and reset objects.</typeparam>
+public ref struct PooledLease<T, TPolicy>
+    where T : class
+    where TPolicy : struct, IPooledObjectPolicy<T>
+{
+    private PooledLeaseState<T, TPolicy>? _state;
+    private readonly long _token;
+
+    internal PooledLease(
+        PooledLeaseState<T, TPolicy> state,
+        long token)
+    {
+        _state = state;
+        _token = token;
+    }
+
+    /// <summary>Gets the rented object while this lease owns it.</summary>
+    public readonly T Value
+    {
+        get
+        {
+            PooledLeaseState<T, TPolicy>? state = _state;
+            if (state is null)
+            {
+                PooledLeaseThrowHelper.ThrowDisposed();
+            }
+
+            return state.GetValue(_token);
+        }
+    }
+
+    /// <summary>Returns the rented object. Repeated calls on this lease are ignored.</summary>
+    public void Dispose()
+    {
+        PooledLeaseState<T, TPolicy>? state = _state;
+
+        _state = null;
+        state?.Release(_token);
+    }
+}
+
+/// <summary>
+/// Owns an object rented from an <see cref="ObjectPool{T}"/> and returns it on disposal.
+/// </summary>
+/// <typeparam name="T">The reference type stored by the pool.</typeparam>
+public ref struct PooledLease<T>
+    where T : class
+{
+    private PooledLease<T, ObjectPool<T>.PolicyAdapter> _lease;
+
+    internal PooledLease(PooledLease<T, ObjectPool<T>.PolicyAdapter> lease)
+    {
+        _lease = lease;
+    }
+
+    /// <summary>Gets the rented object while this lease owns it.</summary>
+    public readonly T Value => _lease.Value;
+
+    /// <summary>Returns the rented object. Repeated calls on this lease are ignored.</summary>
+    public void Dispose() => _lease.Dispose();
+}
+
+internal sealed class PooledLeaseState<T, TPolicy>
+    where T : class
+    where TPolicy : struct, IPooledObjectPolicy<T>
+{
+    // Thread-local slots use even versions when idle and odd versions to identify
+    // active leases, so stale copies cannot release a later lease using the slot.
+    private long _version;
+    private ObjectPool<T, TPolicy>? _pool;
+    private T? _value;
+
+    internal PooledLeaseState<T, TPolicy>? Next { get; set; }
+
+    internal bool TryAcquire(
+        ObjectPool<T, TPolicy> pool,
+        T value,
+        out long token)
+    {
+        if ((_version & 1) != 0)
+        {
+            token = 0;
+            return false;
+        }
+
+        token = _version + 1;
+        _pool = pool;
+        _value = value;
+        _version = token;
+        return true;
+    }
+
+    internal T GetValue(long token)
+    {
+        T? value = _value;
+        if (value is null || _version != token)
+        {
+            PooledLeaseThrowHelper.ThrowDisposed();
+        }
+
+        return value;
+    }
+
+    internal void Release(long token)
+    {
+        if (_version != token)
+        {
+            return;
+        }
+
+        ObjectPool<T, TPolicy> pool = _pool!;
+        T value = _value!;
+        _pool = null;
+        _value = null;
+        _version = token + 1;
+        pool.Return(value);
+    }
+}
+
+internal static class PooledLeaseThrowHelper
+{
+    [DoesNotReturn]
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal static void ThrowDisposed()
+        => throw new ObjectDisposedException("PooledLease");
+}

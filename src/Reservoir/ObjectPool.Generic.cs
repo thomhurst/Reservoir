@@ -12,6 +12,9 @@ public sealed class ObjectPool<T, TPolicy>
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
+    [ThreadStatic]
+    private static PooledLeaseState<T, TPolicy>? _threadLeaseState;
+
     private readonly ObjectWrapper[] _items;
     private TPolicy _policy;
     private T? _fastItem;
@@ -61,6 +64,66 @@ public sealed class ObjectPool<T, TPolicy>
         }
 
         return RentSlow();
+    }
+
+    /// <summary>Rents an object owned by a stack-only lease that returns it on disposal.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public PooledLease<T, TPolicy> RentScoped()
+    {
+        T value = Rent();
+        return CreateLease(value);
+    }
+
+    /// <summary>
+    /// Rents an object owned by a stack-only lease and also exposes the object directly.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public PooledLease<T, TPolicy> RentScoped(out T value)
+    {
+        value = Rent();
+        return CreateLease(value);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private PooledLease<T, TPolicy> CreateLease(T value)
+    {
+        PooledLeaseState<T, TPolicy>? state = _threadLeaseState;
+
+        if (state is not null && state.TryAcquire(this, value, out long token))
+        {
+            return new PooledLease<T, TPolicy>(state, token);
+        }
+
+        return RentScopedSlow(value, state);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private PooledLease<T, TPolicy> RentScopedSlow(
+        T value,
+        PooledLeaseState<T, TPolicy>? state)
+    {
+        if (state is null)
+        {
+            state = new PooledLeaseState<T, TPolicy>();
+            _threadLeaseState = state;
+        }
+        else
+        {
+            while (state.Next is not null)
+            {
+                state = state.Next;
+                if (state.TryAcquire(this, value, out long token))
+                {
+                    return new PooledLease<T, TPolicy>(state, token);
+                }
+            }
+
+            state.Next = new PooledLeaseState<T, TPolicy>();
+            state = state.Next;
+        }
+
+        _ = state.TryAcquire(this, value, out long firstToken);
+        return new PooledLease<T, TPolicy>(state, firstToken);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
