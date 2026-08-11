@@ -154,6 +154,76 @@ public class CollectionPoolTests
     [Arguments("stack")]
     [Arguments("queue")]
     [Arguments("string-builder")]
+    public async Task InstancesWithinCapacityLimitAreRetained(string poolType)
+    {
+        const int maximumRetainedCapacity = 16;
+        object returned;
+        object rented;
+
+        switch (poolType)
+        {
+            case "list":
+                var listPool = new ListPool<int>(maximumRetainedCapacity, 1);
+                List<int> list = listPool.Rent();
+                list.EnsureCapacity(8);
+                listPool.Return(list);
+                returned = list;
+                rented = listPool.Rent();
+                break;
+            case "dictionary":
+                var dictionaryPool = new DictionaryPool<int, int>(maximumRetainedCapacity, 1);
+                Dictionary<int, int> dictionary = dictionaryPool.Rent();
+                dictionary.EnsureCapacity(8);
+                dictionaryPool.Return(dictionary);
+                returned = dictionary;
+                rented = dictionaryPool.Rent();
+                break;
+            case "hash-set":
+                var setPool = new HashSetPool<int>(maximumRetainedCapacity, 1);
+                HashSet<int> set = setPool.Rent();
+                set.EnsureCapacity(8);
+                setPool.Return(set);
+                returned = set;
+                rented = setPool.Rent();
+                break;
+            case "stack":
+                var stackPool = new StackPool<int>(maximumRetainedCapacity, 1);
+                Stack<int> stack = stackPool.Rent();
+                stack.EnsureCapacity(8);
+                stackPool.Return(stack);
+                returned = stack;
+                rented = stackPool.Rent();
+                break;
+            case "queue":
+                var queuePool = new QueuePool<int>(maximumRetainedCapacity, 1);
+                Queue<int> queue = queuePool.Rent();
+                queue.EnsureCapacity(8);
+                queuePool.Return(queue);
+                returned = queue;
+                rented = queuePool.Rent();
+                break;
+            case "string-builder":
+                var builderPool = new StringBuilderPool(maximumRetainedCapacity, 1);
+                StringBuilder builder = builderPool.Rent();
+                builder.EnsureCapacity(8);
+                builderPool.Return(builder);
+                returned = builder;
+                rented = builderPool.Rent();
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(poolType));
+        }
+
+        await Assert.That(rented).IsSameReferenceAs(returned);
+    }
+
+    [Test]
+    [Arguments("list")]
+    [Arguments("dictionary")]
+    [Arguments("hash-set")]
+    [Arguments("stack")]
+    [Arguments("queue")]
+    [Arguments("string-builder")]
     public async Task OversizedInstancesAreDiscarded(string poolType)
     {
         object returned;
