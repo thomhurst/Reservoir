@@ -1,0 +1,21 @@
+<Project>
+  <PropertyGroup>
+    <_ReservoirNumericLangVersion Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(LangVersion)', '^[0-9]+(\.[0-9]+)?$'))">$(LangVersion)</_ReservoirNumericLangVersion>
+  </PropertyGroup>
+
+  <Target Name="ReservoirValidateTargetFramework"
+          BeforeTargets="PrepareForBuild"
+          Condition="'$(TargetFrameworkIdentifier)' != '.NETCoreApp' Or $([MSBuild]::VersionLessThan('$(TargetFrameworkVersion)', 'v10.0'))">
+    <Error Code="RESERVOIR001"
+           Text="Reservoir requires .NET 10.0 or later. Current target framework is $(TargetFramework)." />
+  </Target>
+
+  <Target Name="ReservoirValidateLanguageVersion" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(_ReservoirNumericLangVersion)' != '' And $([MSBuild]::VersionLessThan('$(_ReservoirNumericLangVersion)', '12.0'))"
+           Code="RESERVOIR002"
+           Text="Reservoir requires C# 12.0 or later. Current LangVersion is $(LangVersion)." />
+    <Error Condition="'$(LangVersion)' == 'ISO-1' Or '$(LangVersion)' == 'ISO-2'"
+           Code="RESERVOIR002"
+           Text="Reservoir requires C# 12.0 or later. Current LangVersion is $(LangVersion)." />
+  </Target>
+</Project>

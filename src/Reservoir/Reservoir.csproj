@@ -1,2 +1,36 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Reservoir</PackageId>
+    <Title>Reservoir</Title>
+    <Authors>Tom Longhurst</Authors>
+    <Company>Tom Longhurst</Company>
+    <Copyright>Copyright © Tom Longhurst</Copyright>
+    <Description>High-performance, allocation-conscious object pools distributed as source.</Description>
+    <PackageTags>object-pool;object-pooling;pooling;performance;allocation-free;source-only;dotnet</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/thomhurst/Reservoir</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/thomhurst/Reservoir.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+
+    <!-- Keep project-reference consumers working while package consumers default to internal. -->
+    <DefineConstants>$(DefineConstants);RESERVOIR_PUBLIC</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Update="**\*.cs"
+             Pack="true"
+             PackagePath="contentFiles\cs\$(TargetFramework)\Reservoir\%(RecursiveDir)"
+             PackageBuildAction="Compile" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="" />
+    <None Update="buildTransitive\Reservoir.targets"
+          Pack="true"
+          PackagePath="buildTransitive\Reservoir.targets" />
+  </ItemGroup>
 </Project>
