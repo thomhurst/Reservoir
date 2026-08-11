@@ -1,0 +1,68 @@
+:root {
+  --ifm-color-primary: #087e8b;
+  --ifm-color-primary-dark: #07717d;
+  --ifm-color-primary-darker: #066b76;
+  --ifm-color-primary-darkest: #055761;
+  --ifm-color-primary-light: #098b99;
+  --ifm-color-primary-lighter: #0a91a0;
+  --ifm-color-primary-lightest: #0ba4b5;
+  --ifm-font-family-base: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ifm-heading-font-family: "Arial Narrow", Inter, ui-sans-serif, system-ui, sans-serif;
+  --ifm-code-font-size: 92%;
+  --reservoir-ink: #071521;
+  --reservoir-water: #13c4d4;
+  --reservoir-lime: #c8f169;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #38d6e3;
+  --ifm-color-primary-dark: #21d0de;
+  --ifm-color-primary-darker: #1fc5d2;
+  --ifm-color-primary-darkest: #1aa2ad;
+  --ifm-color-primary-light: #4fdae7;
+  --ifm-color-primary-lighter: #5bdde9;
+  --ifm-color-primary-lightest: #7fe5ed;
+  --ifm-background-color: #071521;
+  --ifm-background-surface-color: #0b1e2d;
+}
+
+.navbar {
+  backdrop-filter: blur(16px);
+}
+
+.navbar__title {
+  font-family: var(--ifm-heading-font-family);
+  font-size: 1.3rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.navbar-github-link::before {
+  background: currentColor;
+  content: '';
+  display: inline-block;
+  height: 1rem;
+  margin-right: .4rem;
+  mask: radial-gradient(circle at 50% 38%, transparent 0 15%, #000 16% 45%, transparent 46%), linear-gradient(#000 0 0);
+  vertical-align: -.15rem;
+  width: 1rem;
+}
+
+.theme-doc-markdown h1,
+.theme-doc-markdown h2,
+.theme-doc-markdown h3 {
+  letter-spacing: -.025em;
+}
+
+.theme-doc-markdown h1 {
+  font-size: clamp(2.35rem, 6vw, 4rem);
+  line-height: .98;
+}
+
+.theme-doc-markdown > p:first-of-type {
+  font-size: 1.12rem;
+}
+
+code {
+  border-color: color-mix(in srgb, var(--ifm-color-primary) 32%, transparent);
+}

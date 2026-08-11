@@ -1,0 +1,43 @@
+{
+  "name": "reservoir-docs",
+  "version": "0.0.0",
+  "description": "Documentation website for Reservoir.",
+  "private": true,
+  "license": "MIT",
+  "homepage": "https://thomhurst.github.io/Reservoir/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thomhurst/Reservoir.git",
+    "directory": "website"
+  },
+  "bugs": {
+    "url": "https://github.com/thomhurst/Reservoir/issues"
+  },
+  "packageManager": "npm@11.11.0",
+  "scripts": {
+    "start": "docusaurus start",
+    "build": "docusaurus build",
+    "serve": "docusaurus serve",
+    "clear": "docusaurus clear"
+  },
+  "dependencies": {
+    "@docusaurus/core": "^3.10.2",
+    "@docusaurus/preset-classic": "^3.10.2",
+    "@mdx-js/react": "^3.1.1",
+    "clsx": "^2.1.1",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@docusaurus/module-type-aliases": "^3.10.2",
+    "@docusaurus/types": "^3.10.2"
+  },
+  "browserslist": {
+    "production": [">0.5%", "not dead", "not op_mini all"],
+    "development": ["last 3 chrome version", "last 3 firefox version", "last 5 safari version"]
+  },
+  "engines": {
+    "node": ">=24 <25"
+  }
+}

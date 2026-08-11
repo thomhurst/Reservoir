@@ -48,6 +48,11 @@ BenchmarkDotNet.Artifacts/
 # MSBuild Binary and Structured Log
 *.binlog
 
+# Documentation website
+website/node_modules/
+website/build/
+website/.docusaurus/
+
 # MSTest test Results
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
