@@ -203,9 +203,9 @@ public class CollectionPoolTests
                 rented = queuePool.Rent();
                 break;
             case "string-builder":
-                var builderPool = new StringBuilderPool(maximumRetainedCapacity, 1);
+                var builderPool = new StringBuilderPool(maxRetainedCapacity: 32, maxCapacity: 1);
                 StringBuilder builder = builderPool.Rent();
-                builder.EnsureCapacity(8);
+                builder.EnsureCapacity(24);
                 builderPool.Return(builder);
                 returned = builder;
                 rented = builderPool.Rent();
