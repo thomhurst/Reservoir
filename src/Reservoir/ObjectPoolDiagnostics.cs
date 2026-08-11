@@ -30,7 +30,14 @@ static class ObjectPoolDiagnostics
             $"A pooled {objectType.FullName} was garbage collected without being returned."
             + $"{Environment.NewLine}Rent site:{Environment.NewLine}{rentSite}";
 
-        Trace.TraceError(message);
+        try
+        {
+            Trace.TraceError(message);
+        }
+        catch
+        {
+            // Trace listeners must never terminate the finalizer thread.
+        }
 
         Delegate[] handlers = LeakDetected?.GetInvocationList() ?? [];
         foreach (Delegate handler in handlers)

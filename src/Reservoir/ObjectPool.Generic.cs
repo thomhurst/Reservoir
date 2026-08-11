@@ -204,14 +204,21 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         ArgumentNullException.ThrowIfNull(obj);
 
 #if DEBUG || RESERVOIR_DIAGNOSTICS
-        CompleteRental(obj);
+        bool wasRented = TryCompleteRental(obj);
 #endif
 
         if (Volatile.Read(ref _isDisposed) != 0)
         {
             DisposeItem(obj);
+#if DEBUG || RESERVOIR_DIAGNOSTICS
+            ThrowIfNotRented(wasRented);
+#endif
             return;
         }
+
+#if DEBUG || RESERVOIR_DIAGNOSTICS
+        ThrowIfNotRented(wasRented);
+#endif
 
         bool canReuse;
 
@@ -403,15 +410,25 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private void CompleteRental(T obj)
+    private bool TryCompleteRental(T obj)
     {
         if (!_outstandingRentals.Remove(obj, out RentalTracker? tracker))
+        {
+            return false;
+        }
+
+        tracker.Complete();
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ThrowIfNotRented(bool wasRented)
+    {
+        if (!wasRented)
         {
             throw new InvalidOperationException(
                 "The object was not rented from this pool or has already been returned.");
         }
-
-        tracker.Complete();
     }
 
     private sealed class RentalTracker

@@ -1,4 +1,6 @@
 #if DEBUG || RESERVOIR_DIAGNOSTICS
+using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace Reservoir.Tests;
@@ -28,6 +30,49 @@ public class ObjectPoolDiagnosticsTests
         await Assert.That(() => secondPool.Return(item)).Throws<InvalidOperationException>();
 
         firstPool.Return(item);
+    }
+
+    [Test]
+    public async Task UntrackedReturnAfterDisposalDisposesBeforeThrowing()
+    {
+        var pool = new ObjectPool<DisposablePooledItem, DisposablePooledItemPolicy>(
+            maxCapacity: 1);
+        var item = new DisposablePooledItem();
+        pool.Dispose();
+
+        await Assert.That(() => pool.Return(item)).Throws<InvalidOperationException>();
+        await Assert.That(item.DisposeCount).IsEqualTo(1);
+    }
+
+    [Test]
+    [NotInParallel]
+    public async Task ThrowingTraceListenerDoesNotEscapeLeakReporter()
+    {
+        var listener = new ThrowingTraceListener();
+        Trace.Listeners.Add(listener);
+        Exception? caught = null;
+
+        try
+        {
+            MethodInfo reportLeak = typeof(ObjectPoolDiagnostics).GetMethod(
+                "ReportLeak",
+                BindingFlags.NonPublic | BindingFlags.Static)!;
+
+            try
+            {
+                reportLeak.Invoke(null, [typeof(PooledItem), "rent site"]);
+            }
+            catch (TargetInvocationException exception)
+            {
+                caught = exception.InnerException;
+            }
+        }
+        finally
+        {
+            Trace.Listeners.Remove(listener);
+        }
+
+        await Assert.That(caught).IsNull();
     }
 
     [Test]
@@ -89,6 +134,21 @@ public class ObjectPoolDiagnosticsTests
         public bool TryReset(PooledItem obj) => true;
     }
 
+    private sealed class DisposablePooledItem : IDisposable
+    {
+        internal int DisposeCount { get; private set; }
+
+        public void Dispose() => DisposeCount++;
+    }
+
+    private readonly struct DisposablePooledItemPolicy
+        : IPooledObjectPolicy<DisposablePooledItem>
+    {
+        public DisposablePooledItem Create() => new();
+
+        public bool TryReset(DisposablePooledItem obj) => true;
+    }
+
     private sealed class LeakedPooledItem;
 
     private readonly struct LeakedPooledItemPolicy : IPooledObjectPolicy<LeakedPooledItem>
@@ -96,6 +156,15 @@ public class ObjectPoolDiagnosticsTests
         public LeakedPooledItem Create() => new();
 
         public bool TryReset(LeakedPooledItem obj) => true;
+    }
+
+    private sealed class ThrowingTraceListener : TraceListener
+    {
+        public override void Write(string? message)
+            => throw new InvalidOperationException("Trace failed.");
+
+        public override void WriteLine(string? message)
+            => throw new InvalidOperationException("Trace failed.");
     }
 }
 #endif
