@@ -12,6 +12,8 @@ public class ObjectPoolBenchmarks
     {
         Payload payload = _pool.Rent();
         _pool.Return(payload);
+
+        using PooledLease<Payload, PayloadPolicy> lease = _pool.RentScoped();
     }
 
     [Benchmark(Baseline = true)]

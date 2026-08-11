@@ -57,6 +57,59 @@ public class PooledLeaseTests
         await Assert.That(pool.Rent()).IsSameReferenceAs(value);
     }
 
+    [Test]
+    public async Task CopiedLeaseReturnsValueOnce()
+    {
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 2);
+        PooledLease<PooledItem, CountingPolicy> lease = pool.RentScoped();
+        PooledLease<PooledItem, CountingPolicy> copy = lease;
+        PooledItem value = lease.Value;
+
+        lease.Dispose();
+        PooledItem firstRental = pool.Rent();
+        copy.Dispose();
+        PooledItem secondRental = pool.Rent();
+
+        await Assert.That(firstRental).IsSameReferenceAs(value);
+        await Assert.That(secondRental).IsNotSameReferenceAs(value);
+        await Assert.That(value.ResetCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task CopiedConvenienceLeaseReturnsValueOnce()
+    {
+        var pool = new ObjectPool<PooledItem>(() => new PooledItem(), maxCapacity: 2);
+        PooledLease<PooledItem> lease = pool.RentScoped();
+        PooledLease<PooledItem> copy = lease;
+        PooledItem value = lease.Value;
+
+        lease.Dispose();
+        PooledItem firstRental = pool.Rent();
+        copy.Dispose();
+        PooledItem secondRental = pool.Rent();
+
+        await Assert.That(firstRental).IsSameReferenceAs(value);
+        await Assert.That(secondRental).IsNotSameReferenceAs(value);
+    }
+
+    [Test]
+    public async Task NestedLeasesUseIndependentState()
+    {
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 2);
+        PooledLease<PooledItem, CountingPolicy> firstLease = pool.RentScoped();
+        PooledLease<PooledItem, CountingPolicy> secondLease = pool.RentScoped();
+        PooledItem first = firstLease.Value;
+        PooledItem second = secondLease.Value;
+
+        secondLease.Dispose();
+        firstLease.Dispose();
+
+        PooledItem firstRental = pool.Rent();
+        PooledItem secondRental = pool.Rent();
+        await Assert.That(new[] { firstRental, secondRental }).Contains(first);
+        await Assert.That(new[] { firstRental, secondRental }).Contains(second);
+    }
+
     private static PooledItem RentAndDisposeTwice(
         ObjectPool<PooledItem, CountingPolicy> pool)
     {

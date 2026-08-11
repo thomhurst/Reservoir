@@ -12,6 +12,9 @@ public sealed class ObjectPool<T, TPolicy>
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
+    [ThreadStatic]
+    private static PooledLeaseState<T>[]? _threadLeaseStates;
+
     private readonly ObjectWrapper[] _items;
     private TPolicy _policy;
     private T? _fastItem;
@@ -68,7 +71,21 @@ public sealed class ObjectPool<T, TPolicy>
     public PooledLease<T, TPolicy> RentScoped()
     {
         T value = Rent();
-        return new PooledLease<T, TPolicy>(this, value);
+        PooledLeaseState<T>[] states = _threadLeaseStates
+            ??= new PooledLeaseState<T>[1];
+
+        for (int i = 0; i < states.Length; i++)
+        {
+            if (states[i].TryAcquire(value, out long token))
+            {
+                return new PooledLease<T, TPolicy>(this, states, i, token);
+            }
+        }
+
+        states = new PooledLeaseState<T>[checked(states.Length * 2)];
+        _threadLeaseStates = states;
+        _ = states[0].TryAcquire(value, out long expandedToken);
+        return new PooledLease<T, TPolicy>(this, states, 0, expandedToken);
     }
 
     /// <summary>
@@ -77,8 +94,9 @@ public sealed class ObjectPool<T, TPolicy>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public PooledLease<T, TPolicy> RentScoped(out T value)
     {
-        value = Rent();
-        return new PooledLease<T, TPolicy>(this, value);
+        PooledLease<T, TPolicy> lease = RentScoped();
+        value = lease.Value;
+        return lease;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
