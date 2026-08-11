@@ -45,6 +45,10 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private TPolicy _policy;
     private int _isDisposed;
 
+#if DEBUG || RESERVOIR_DIAGNOSTICS
+    private readonly ConditionalWeakTable<T, RentalTracker> _outstandingRentals = new();
+#endif
+
     private static readonly bool s_isStaticallyDisposable
         = typeof(IDisposable).IsAssignableFrom(typeof(T));
 
@@ -97,6 +101,9 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
         if (Volatile.Read(ref _isDisposed) == 0)
         {
+#if DEBUG || RESERVOIR_DIAGNOSTICS
+            TrackRental(rented);
+#endif
             return rented;
         }
 
@@ -195,6 +202,10 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     public void Return(T obj)
     {
         ArgumentNullException.ThrowIfNull(obj);
+
+#if DEBUG || RESERVOIR_DIAGNOSTICS
+        CompleteRental(obj);
+#endif
 
         if (Volatile.Read(ref _isDisposed) != 0)
         {
@@ -371,6 +382,59 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             firstException ??= exception;
         }
     }
+
+#if DEBUG || RESERVOIR_DIAGNOSTICS
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void TrackRental(T obj)
+    {
+        var tracker = new RentalTracker();
+
+        try
+        {
+            _outstandingRentals.Add(obj, tracker);
+        }
+        catch (ArgumentException exception)
+        {
+            tracker.Complete();
+            throw new InvalidOperationException(
+                "The pool policy handed out an object that is already rented.",
+                exception);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void CompleteRental(T obj)
+    {
+        if (!_outstandingRentals.Remove(obj, out RentalTracker? tracker))
+        {
+            throw new InvalidOperationException(
+                "The object was not rented from this pool or has already been returned.");
+        }
+
+        tracker.Complete();
+    }
+
+    private sealed class RentalTracker
+    {
+        private readonly string _rentSite = new StackTrace(skipFrames: 2, fNeedFileInfo: true)
+            .ToString();
+        private int _isComplete;
+
+        internal void Complete()
+        {
+            Volatile.Write(ref _isComplete, 1);
+            GC.SuppressFinalize(this);
+        }
+
+        ~RentalTracker()
+        {
+            if (Volatile.Read(ref _isComplete) == 0)
+            {
+                ObjectPoolDiagnostics.ReportLeak(typeof(T), _rentSite);
+            }
+        }
+    }
+#endif
 
     private struct ObjectWrapper
     {

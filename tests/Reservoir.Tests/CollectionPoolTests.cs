@@ -60,11 +60,15 @@ public class CollectionPoolTests
         var pool = new DictionaryPool<string, int>(StringComparer.OrdinalIgnoreCase);
         var incompatible = new Dictionary<string, int>(StringComparer.Ordinal);
 
+#if DEBUG || RESERVOIR_DIAGNOSTICS
+        await Assert.That(() => pool.Return(incompatible)).Throws<InvalidOperationException>();
+#else
         pool.Return(incompatible);
         Dictionary<string, int> rented = pool.Rent();
 
         await Assert.That(rented).IsNotSameReferenceAs(incompatible);
         await Assert.That(rented.Comparer).IsSameReferenceAs(StringComparer.OrdinalIgnoreCase);
+#endif
     }
 
     [Test]
@@ -73,11 +77,15 @@ public class CollectionPoolTests
         var pool = new HashSetPool<string>(StringComparer.OrdinalIgnoreCase);
         var incompatible = new HashSet<string>(StringComparer.Ordinal);
 
+#if DEBUG || RESERVOIR_DIAGNOSTICS
+        await Assert.That(() => pool.Return(incompatible)).Throws<InvalidOperationException>();
+#else
         pool.Return(incompatible);
         HashSet<string> rented = pool.Rent();
 
         await Assert.That(rented).IsNotSameReferenceAs(incompatible);
         await Assert.That(rented.Comparer).IsSameReferenceAs(StringComparer.OrdinalIgnoreCase);
+#endif
     }
 
     [Test]
@@ -128,11 +136,15 @@ public class CollectionPoolTests
         var pool = new StringBuilderPool(maxRetainedCapacity: 16, maxCapacity: 1);
         var incompatible = new StringBuilder(capacity: 1, maxCapacity: 1);
 
+#if DEBUG || RESERVOIR_DIAGNOSTICS
+        await Assert.That(() => pool.Return(incompatible)).Throws<InvalidOperationException>();
+#else
         pool.Return(incompatible);
         StringBuilder rented = pool.Rent();
 
         await Assert.That(rented).IsNotSameReferenceAs(incompatible);
         await Assert.That(rented.MaxCapacity).IsEqualTo(int.MaxValue);
+#endif
     }
 
     [Test]
@@ -204,6 +216,7 @@ public class CollectionPoolTests
         await Assert.That(replacement).IsNotSameReferenceAs(returned);
     }
 
+#if !DEBUG && !RESERVOIR_DIAGNOSTICS
     [Test]
     public async Task WarmSharedListPoolRentAndReturnAllocatesNothing()
     {
@@ -223,6 +236,7 @@ public class CollectionPoolTests
 
         await Assert.That(allocated).IsEqualTo(0);
     }
+#endif
 
     [Test]
     public async Task InvalidLimitsThrow()
