@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8' />
+<title>Reservoir.Benchmarks.ObjectPoolContentionBenchmarks-20260811-200733</title>
+
+<style type="text/css">
+	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
+	td, th { padding: 6px 13px; border: 1px solid #ddd; text-align: right; }
+	tr { background-color: #fff; border-top: 1px solid #ccc; }
+	tr:nth-child(even) { background: #f8f8f8; }
+</style>
+</head>
+<body>
+<pre><code>
+BenchmarkDotNet v0.15.8, Windows 11 (10.0.26200.8973/25H2/2025Update/HudsonValley2)
+12th Gen Intel Core i7-12700K 3.60GHz, 1 CPU, 20 logical and 12 physical cores
+.NET SDK 10.0.302
+  [Host]   : .NET 10.0.10 (10.0.10, 10.0.1026.32716), X64 RyuJIT x86-64-v3
+  ShortRun : .NET 10.0.10 (10.0.10, 10.0.1026.32716), X64 RyuJIT x86-64-v3
+</code></pre>
+<pre><code>Job=ShortRun  IterationCount=3  LaunchCount=1
+WarmupCount=3
+</code></pre>
+
+<table>
+<thead><tr><th>Method                 </th><th>WorkerCount</th><th>Mean</th><th>Error</th><th>StdDev</th><th>Ratio</th><th>RatioSD</th><th>Allocated</th><th>Alloc Ratio</th>
+</tr>
+</thead><tbody><tr><td>Reservoir</td><td>1</td><td>11.255 ns</td><td>0.0725 ns</td><td>0.0040 ns</td><td>1.00</td><td>0.00</td><td>-</td><td>NA</td>
+</tr><tr><td>MicrosoftExtensionsObjectPool</td><td>1</td><td>15.245 ns</td><td>0.6980 ns</td><td>0.0383 ns</td><td>1.35</td><td>0.00</td><td>-</td><td>NA</td>
+</tr><tr><td>ConcurrentBag</td><td>1</td><td>41.016 ns</td><td>11.6822 ns</td><td>0.6403 ns</td><td>3.64</td><td>0.05</td><td>-</td><td>NA</td>
+</tr><tr><td>Reservoir</td><td>4</td><td>2.981 ns</td><td>0.2319 ns</td><td>0.0127 ns</td><td>1.00</td><td>0.01</td><td>-</td><td>NA</td>
+</tr><tr><td>MicrosoftExtensionsObjectPool</td><td>4</td><td>72.941 ns</td><td>11.5277 ns</td><td>0.6319 ns</td><td>24.47</td><td>0.20</td><td>-</td><td>NA</td>
+</tr><tr><td>ConcurrentBag</td><td>4</td><td>66.191 ns</td><td>7.9628 ns</td><td>0.4365 ns</td><td>22.20</td><td>0.15</td><td>-</td><td>NA</td>
+</tr><tr><td>Reservoir</td><td>8</td><td>1.754 ns</td><td>0.2753 ns</td><td>0.0151 ns</td><td>1.00</td><td>0.01</td><td>-</td><td>NA</td>
+</tr><tr><td>MicrosoftExtensionsObjectPool</td><td>8</td><td>87.313 ns</td><td>5.4946 ns</td><td>0.3012 ns</td><td>49.79</td><td>0.40</td><td>-</td><td>NA</td>
+</tr><tr><td>ConcurrentBag</td><td>8</td><td>65.719 ns</td><td>17.8747 ns</td><td>0.9798 ns</td><td>37.48</td><td>0.56</td><td>-</td><td>NA</td>
+</tr><tr><td>Reservoir</td><td>16</td><td>1.612 ns</td><td>0.0356 ns</td><td>0.0020 ns</td><td>1.00</td><td>0.00</td><td>-</td><td>NA</td>
+</tr><tr><td>MicrosoftExtensionsObjectPool</td><td>16</td><td>83.165 ns</td><td>3.9310 ns</td><td>0.2155 ns</td><td>51.58</td><td>0.13</td><td>-</td><td>NA</td>
+</tr><tr><td>ConcurrentBag</td><td>16</td><td>52.436 ns</td><td>3.6540 ns</td><td>0.2003 ns</td><td>32.52</td><td>0.11</td><td>-</td><td>NA</td>
+</tr><tr><td>Reservoir</td><td>32</td><td>4.820 ns</td><td>0.7361 ns</td><td>0.0403 ns</td><td>1.00</td><td>0.01</td><td>-</td><td>NA</td>
+</tr><tr><td>MicrosoftExtensionsObjectPool</td><td>32</td><td>83.826 ns</td><td>8.9469 ns</td><td>0.4904 ns</td><td>17.39</td><td>0.15</td><td>-</td><td>NA</td>
+</tr><tr><td>ConcurrentBag</td><td>32</td><td>48.081 ns</td><td>3.4233 ns</td><td>0.1876 ns</td><td>9.97</td><td>0.08</td><td>-</td><td>NA</td>
+</tr></tbody></table>
+</body>
+</html>
