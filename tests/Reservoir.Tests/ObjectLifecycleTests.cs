@@ -57,6 +57,32 @@ public class ObjectLifecycleTests
     }
 
     [Test]
+    public async Task PolicyCanOverrideDiscardDestruction()
+    {
+        var pool = new ObjectPool<DisposableItem, CustomDestructionPolicy>(maxCapacity: 1);
+        DisposableItem item = pool.Rent();
+
+        pool.Return(item);
+
+        await Assert.That(item.DisposeCount).IsEqualTo(0);
+        await Assert.That(item.DestroyCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task PolicyAdapterPreservesCustomDestruction()
+    {
+        var pool = new ObjectPool<DisposableItem>(
+            new CustomDestructionPolicy(),
+            maxCapacity: 1);
+        DisposableItem item = pool.Rent();
+
+        pool.Return(item);
+
+        await Assert.That(item.DisposeCount).IsEqualTo(0);
+        await Assert.That(item.DestroyCount).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task FullPoolDisposesReturnedExcessItem()
     {
         var pool = new ObjectPool<DisposableItem, DisposablePolicy>(maxCapacity: 1);
@@ -172,8 +198,11 @@ public class ObjectLifecycleTests
     private sealed class DisposableItem : IDisposable
     {
         internal int DisposeCount { get; private set; }
+        internal int DestroyCount { get; private set; }
 
         public void Dispose() => DisposeCount++;
+
+        internal void Destroy() => DestroyCount++;
     }
 
     private readonly struct DisposablePolicy : IPooledObjectPolicy<DisposableItem>
@@ -189,6 +218,15 @@ public class ObjectLifecycleTests
         public DisposableItem Create() => new();
 
         public bool TryReset(DisposableItem obj) => throw exception;
+    }
+
+    private readonly struct CustomDestructionPolicy : IPooledObjectPolicy<DisposableItem>
+    {
+        public DisposableItem Create() => new();
+
+        public bool TryReset(DisposableItem obj) => false;
+
+        public void Destroy(DisposableItem obj) => obj.Destroy();
     }
 
     private readonly struct ObjectPolicy : IPooledObjectPolicy<object>

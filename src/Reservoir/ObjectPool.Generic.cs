@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
@@ -15,7 +16,7 @@ namespace Reservoir;
 /// A bounded, thread-safe object pool specialized for a struct policy.
 /// </summary>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
-/// <typeparam name="TPolicy">The policy used to create and reset objects.</typeparam>
+/// <typeparam name="TPolicy">The policy used to create, reset, and destroy objects.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 #if RESERVOIR_PUBLIC
@@ -40,6 +41,12 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
     private static int s_nextThreadStripe;
 
+    private static readonly bool s_hasCustomDestroy = HasCustomDestroy();
+    private static readonly bool s_isStaticallyDisposable
+        = typeof(IDisposable).IsAssignableFrom(typeof(T));
+
+    private static readonly bool s_mayHaveDisposableImplementations = !typeof(T).IsSealed;
+
     private readonly ObjectWrapper[] _items;
     private readonly int _indexMask;
     private TPolicy _policy;
@@ -48,11 +55,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 #if DEBUG || RESERVOIR_DIAGNOSTICS
     private readonly ConditionalWeakTable<T, RentalTracker> _outstandingRentals = new();
 #endif
-
-    private static readonly bool s_isStaticallyDisposable
-        = typeof(IDisposable).IsAssignableFrom(typeof(T));
-
-    private static readonly bool s_mayHaveDisposableImplementations = !typeof(T).IsSealed;
 
     /// <summary>Initializes a pool with the default policy value and capacity.</summary>
     public ObjectPool()
@@ -359,7 +361,19 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         => throw new ObjectDisposedException(typeof(ObjectPool<T, TPolicy>).FullName);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void DisposeItem(T obj)
+    private void DisposeItem(T obj)
+    {
+        if (s_hasCustomDestroy)
+        {
+            _policy.Destroy(obj);
+            return;
+        }
+
+        DefaultDestroy(obj);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void DefaultDestroy(T obj)
     {
         if (s_isStaticallyDisposable)
         {
@@ -373,7 +387,23 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
     }
 
-    private static void DisposeRetained(T? obj, ref Exception? firstException)
+    private static bool HasCustomDestroy()
+    {
+        Type policyInterface = typeof(IPooledObjectPolicy<T>);
+        InterfaceMapping mapping = typeof(TPolicy).GetInterfaceMap(policyInterface);
+
+        for (int i = 0; i < mapping.InterfaceMethods.Length; i++)
+        {
+            if (mapping.InterfaceMethods[i].Name == nameof(IPooledObjectPolicy<T>.Destroy))
+            {
+                return mapping.TargetMethods[i].DeclaringType != policyInterface;
+            }
+        }
+
+        return false;
+    }
+
+    private void DisposeRetained(T? obj, ref Exception? firstException)
     {
         if (obj is null)
         {

@@ -103,5 +103,17 @@ sealed class ObjectPool<T> : IDisposable
         public T Create() => _policy is null ? _factory!() : _policy.Create();
 
         public bool TryReset(T obj) => _policy?.TryReset(obj) ?? true;
+
+        public void Destroy(T obj)
+        {
+            if (_policy is not null)
+            {
+                _policy.Destroy(obj);
+            }
+            else if (obj is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
     }
 }

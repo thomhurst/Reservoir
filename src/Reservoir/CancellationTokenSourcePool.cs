@@ -25,28 +25,30 @@ internal
 #endif
 sealed class CancellationTokenSourcePool : IDisposable
 {
-    private readonly ObjectPool<Holder, Policy> _pool;
+    private readonly ObjectPool<PooledCancellationTokenSource, Policy> _pool;
 
     /// <summary>Gets the shared pool.</summary>
     public static CancellationTokenSourcePool Shared { get; } = new();
 
     /// <summary>Initializes a pool with the default capacity.</summary>
     public CancellationTokenSourcePool()
-        : this(ObjectPool<Holder, Policy>.DefaultMaximumRetained)
+        : this(ObjectPool<PooledCancellationTokenSource, Policy>.DefaultMaximumRetained)
     {
     }
 
     /// <summary>Initializes a pool with a custom capacity.</summary>
     public CancellationTokenSourcePool(int maxCapacity)
     {
-        _pool = new ObjectPool<Holder, Policy>(new Policy(this), maxCapacity);
+        _pool = new ObjectPool<PooledCancellationTokenSource, Policy>(
+            new Policy(this),
+            maxCapacity);
     }
 
     /// <summary>Gets the maximum number of sources retained by this pool.</summary>
     public int MaximumRetained => _pool.MaximumRetained;
 
     /// <summary>Rents a source that returns to this pool when disposed.</summary>
-    public CancellationTokenSource Rent() => _pool.Rent().Source;
+    public CancellationTokenSource Rent() => _pool.Rent();
 
     /// <summary>Rents a source owned by a stack-only lease that returns it on disposal.</summary>
     public Lease RentScoped()
@@ -57,8 +59,9 @@ sealed class CancellationTokenSourcePool : IDisposable
     /// </summary>
     public Lease RentScoped(out CancellationTokenSource source)
     {
-        PooledLease<Holder, Policy> lease = _pool.RentScoped(out Holder holder);
-        source = holder.Source;
+        PooledLease<PooledCancellationTokenSource, Policy> lease = _pool.RentScoped(
+            out PooledCancellationTokenSource pooledSource);
+        source = pooledSource;
         return new Lease(lease);
     }
 
@@ -82,18 +85,16 @@ sealed class CancellationTokenSourcePool : IDisposable
         _pool.Dispose();
     }
 
-    private void Return(Holder holder) => _pool.Return(holder);
+    private void Return(PooledCancellationTokenSource source) => _pool.Return(source);
 
     [DebuggerNonUserCode]
     internal sealed class PooledCancellationTokenSource : CancellationTokenSource
     {
         private readonly CancellationTokenSourcePool _owner;
-        private readonly Holder _holder;
 
-        internal PooledCancellationTokenSource(CancellationTokenSourcePool owner, Holder holder)
+        internal PooledCancellationTokenSource(CancellationTokenSourcePool owner)
         {
             _owner = owner;
-            _holder = holder;
         }
 
         internal void DisposePermanently() => base.Dispose(true);
@@ -103,7 +104,7 @@ sealed class CancellationTokenSourcePool : IDisposable
         {
             if (disposing)
             {
-                _owner.Return(_holder);
+                _owner.Return(this);
             }
         }
     }
@@ -112,22 +113,22 @@ sealed class CancellationTokenSourcePool : IDisposable
     [DebuggerNonUserCode]
     public ref struct Lease
     {
-        private PooledLease<Holder, Policy> _lease;
+        private PooledLease<PooledCancellationTokenSource, Policy> _lease;
 
-        internal Lease(PooledLease<Holder, Policy> lease)
+        internal Lease(PooledLease<PooledCancellationTokenSource, Policy> lease)
         {
             _lease = lease;
         }
 
         /// <summary>Gets the rented source while this lease owns it.</summary>
         public readonly CancellationTokenSource Value
-            => _lease.Value.Source;
+            => _lease.Value;
 
         /// <summary>Returns the source. Repeated calls and stale copies are ignored.</summary>
         public void Dispose() => _lease.Dispose();
     }
 
-    internal readonly struct Policy : IPooledObjectPolicy<Holder>
+    internal readonly struct Policy : IPooledObjectPolicy<PooledCancellationTokenSource>
     {
         private readonly CancellationTokenSourcePool _owner;
 
@@ -136,29 +137,19 @@ sealed class CancellationTokenSourcePool : IDisposable
             _owner = owner;
         }
 
-        public Holder Create() => new(_owner);
+        public PooledCancellationTokenSource Create() => new(_owner);
 
-        public bool TryReset(Holder holder)
+        public bool TryReset(PooledCancellationTokenSource source)
         {
 #if NET6_0_OR_GREATER
             // TryReset disarms the runtime timer and rejects reuse once its callback was queued.
-            // ObjectPool disposes the holder and source whenever this returns false.
-            return holder.Source.TryReset();
+            // ObjectPool permanently disposes the source whenever this returns false.
+            return source.TryReset();
 #else
             return false;
 #endif
         }
-    }
 
-    internal sealed class Holder : IDisposable
-    {
-        internal Holder(CancellationTokenSourcePool owner)
-        {
-            Source = new PooledCancellationTokenSource(owner, this);
-        }
-
-        internal PooledCancellationTokenSource Source { get; }
-
-        public void Dispose() => Source.DisposePermanently();
+        public void Destroy(PooledCancellationTokenSource source) => source.DisposePermanently();
     }
 }

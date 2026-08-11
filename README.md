@@ -16,7 +16,7 @@ finally
 }
 ```
 
-Implement `IPooledObjectPolicy<T>` on a struct to let the JIT specialize and inline policy calls. `Create()` supplies an object when the pool is empty. `TryReset()` prepares a returned object for reuse; returning `false` discards it.
+Implement `IPooledObjectPolicy<T>` on a struct to let the JIT specialize and inline policy calls. `Create()` supplies an object when the pool is empty. `TryReset()` prepares a returned object for reuse; returning `false` discards it. `Destroy()` defaults to calling `IDisposable.Dispose()` and can be overridden when permanent destruction needs different behavior.
 
 Types designed for pooling can implement `IResettable` and use the constrained built-in policy. This avoids runtime type checks on the rent/return path:
 
