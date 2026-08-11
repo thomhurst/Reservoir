@@ -2,7 +2,7 @@ using BenchmarkDotNet.Attributes;
 
 namespace Reservoir.Benchmarks;
 
-[MemoryDiagnoser]
+[MemoryDiagnoser(displayGenColumns: false)]
 public class ObjectPoolBenchmarks
 {
     private readonly ObjectPool<Payload, PayloadPolicy> _pool = new(maxCapacity: 32);
