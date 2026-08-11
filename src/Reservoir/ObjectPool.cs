@@ -1,0 +1,71 @@
+namespace Reservoir;
+
+/// <summary>
+/// A bounded, thread-safe object pool for callers that prefer a policy instance or factory.
+/// </summary>
+/// <typeparam name="T">The reference type stored by the pool.</typeparam>
+public sealed class ObjectPool<T>
+    where T : class
+{
+    private readonly ObjectPool<T, PolicyAdapter> _pool;
+
+    /// <summary>Initializes a pool backed by a policy instance and default capacity.</summary>
+    public ObjectPool(IPooledObjectPolicy<T> policy)
+        : this(policy, ObjectPool<T, PolicyAdapter>.DefaultMaximumRetained)
+    {
+    }
+
+    /// <summary>Initializes a pool backed by a policy instance.</summary>
+    public ObjectPool(IPooledObjectPolicy<T> policy, int maxCapacity)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        _pool = new ObjectPool<T, PolicyAdapter>(new PolicyAdapter(policy), maxCapacity);
+    }
+
+    /// <summary>Initializes a pool backed by a factory and default capacity.</summary>
+    public ObjectPool(Func<T> factory)
+        : this(factory, ObjectPool<T, PolicyAdapter>.DefaultMaximumRetained)
+    {
+    }
+
+    /// <summary>Initializes a pool backed by a factory.</summary>
+    public ObjectPool(Func<T> factory, int maxCapacity)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        _pool = new ObjectPool<T, PolicyAdapter>(new PolicyAdapter(factory), maxCapacity);
+    }
+
+    /// <summary>Gets the default maximum number of retained objects.</summary>
+    public static int DefaultMaximumRetained => ObjectPool<T, PolicyAdapter>.DefaultMaximumRetained;
+
+    /// <summary>Gets the maximum number of objects retained by this pool.</summary>
+    public int MaximumRetained => _pool.MaximumRetained;
+
+    /// <summary>Rents an object, creating one when no retained object is available.</summary>
+    public T Rent() => _pool.Rent();
+
+    /// <summary>Resets and returns an object. Objects exceeding capacity are discarded.</summary>
+    public void Return(T obj) => _pool.Return(obj);
+
+    private readonly struct PolicyAdapter : IPooledObjectPolicy<T>
+    {
+        private readonly Func<T>? _factory;
+        private readonly IPooledObjectPolicy<T>? _policy;
+
+        internal PolicyAdapter(Func<T> factory)
+        {
+            _factory = factory;
+            _policy = null;
+        }
+
+        internal PolicyAdapter(IPooledObjectPolicy<T> policy)
+        {
+            _factory = null;
+            _policy = policy;
+        }
+
+        public T Create() => _policy is null ? _factory!() : _policy.Create();
+
+        public bool TryReset(T obj) => _policy?.TryReset(obj) ?? true;
+    }
+}
