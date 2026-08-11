@@ -1,10 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <PackageId>Reservoir</PackageId>
+    <Title>Reservoir</Title>
     <Authors>Tom Longhurst</Authors>
+    <Company>Tom Longhurst</Company>
+    <Copyright>Copyright © Tom Longhurst</Copyright>
     <Description>High-performance, allocation-conscious object pools distributed as source.</Description>
-    <PackageTags>object-pool;pooling;performance;source-only</PackageTags>
-    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageTags>object-pool;object-pooling;pooling;performance;allocation-free;source-only;dotnet</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/thomhurst/Reservoir</PackageProjectUrl>
     <RepositoryUrl>https://github.com/thomhurst/Reservoir.git</RepositoryUrl>

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Xml.Linq;
 
 namespace Reservoir.Tests;
 
@@ -82,13 +83,60 @@ public class SourcePackageTests
 
         ZipArchiveEntry nuspecEntry = package.Entries.Single(entry =>
             entry.FullName.EndsWith(".nuspec", StringComparison.OrdinalIgnoreCase));
-        using var nuspecReader = new StreamReader(nuspecEntry.Open());
-        string nuspec = nuspecReader.ReadToEnd();
-        if (!nuspec.Contains("<developmentDependency>true</developmentDependency>", StringComparison.Ordinal)
-            || !nuspec.Contains("buildAction=\"Compile\"", StringComparison.Ordinal))
+        using Stream nuspecStream = nuspecEntry.Open();
+        XDocument nuspec = XDocument.Load(nuspecStream);
+        XNamespace ns = nuspec.Root?.Name.Namespace
+            ?? throw new InvalidOperationException("Package manifest has no root element.");
+        XElement metadata = nuspec.Root.Element(ns + "metadata")
+            ?? throw new InvalidOperationException("Package manifest has no metadata element.");
+
+        (string Name, string Value)[] expectedMetadata =
+        [
+            ("title", "Reservoir"),
+            ("authors", "Tom Longhurst"),
+            ("developmentDependency", "true"),
+            ("readme", "README.md"),
+            ("projectUrl", "https://github.com/thomhurst/Reservoir"),
+            ("description", "High-performance, allocation-conscious object pools distributed as source."),
+            ("copyright", "Copyright © Tom Longhurst"),
+            ("tags", "object-pool object-pooling pooling performance allocation-free source-only dotnet"),
+        ];
+
+        foreach ((string name, string expectedValue) in expectedMetadata)
+        {
+            string? actualValue = metadata.Element(ns + name)?.Value;
+            if (!string.Equals(actualValue, expectedValue, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Package metadata '{name}' was '{actualValue}', expected '{expectedValue}'.");
+            }
+        }
+
+        XElement license = metadata.Element(ns + "license")
+            ?? throw new InvalidOperationException("Package manifest has no license metadata.");
+        if (!string.Equals(license.Attribute("type")?.Value, "expression", StringComparison.Ordinal)
+            || !string.Equals(license.Value, "MIT", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Package license metadata is not SPDX MIT.");
+        }
+
+        XElement repository = metadata.Element(ns + "repository")
+            ?? throw new InvalidOperationException("Package manifest has no repository metadata.");
+        if (!string.Equals(repository.Attribute("type")?.Value, "git", StringComparison.Ordinal)
+            || !string.Equals(
+                repository.Attribute("url")?.Value,
+                "https://github.com/thomhurst/Reservoir.git",
+                StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(repository.Attribute("commit")?.Value))
+        {
+            throw new InvalidOperationException("Package repository metadata is incomplete.");
+        }
+
+        if (!metadata.Descendants(ns + "files").All(element =>
+                string.Equals(element.Attribute("buildAction")?.Value, "Compile", StringComparison.Ordinal)))
         {
             throw new InvalidOperationException(
-                "Package metadata lacks developmentDependency or Compile contentFiles metadata.");
+                "Package contentFiles metadata contains a non-Compile build action.");
         }
     }
 
