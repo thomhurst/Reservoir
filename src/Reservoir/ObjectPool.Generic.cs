@@ -63,6 +63,24 @@ public sealed class ObjectPool<T, TPolicy>
         return RentSlow();
     }
 
+    /// <summary>Rents an object owned by a stack-only lease that returns it on disposal.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public PooledLease<T, TPolicy> RentScoped()
+    {
+        T value = Rent();
+        return new PooledLease<T, TPolicy>(this, value);
+    }
+
+    /// <summary>
+    /// Rents an object owned by a stack-only lease and also exposes the object directly.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public PooledLease<T, TPolicy> RentScoped(out T value)
+    {
+        value = Rent();
+        return new PooledLease<T, TPolicy>(this, value);
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     private T RentSlow()
     {

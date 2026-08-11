@@ -14,12 +14,19 @@ public class ObjectPoolBenchmarks
         _pool.Return(payload);
     }
 
-    [Benchmark]
+    [Benchmark(Baseline = true)]
     public Payload RentReturn()
     {
         Payload payload = _pool.Rent();
         _pool.Return(payload);
         return payload;
+    }
+
+    [Benchmark]
+    public Payload ScopedRentReturn()
+    {
+        using PooledLease<Payload, PayloadPolicy> lease = _pool.RentScoped();
+        return lease.Value;
     }
 
     public sealed class Payload;

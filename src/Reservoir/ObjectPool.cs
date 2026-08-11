@@ -44,6 +44,22 @@ public sealed class ObjectPool<T>
     /// <summary>Rents an object, creating one when no retained object is available.</summary>
     public T Rent() => _pool.Rent();
 
+    /// <summary>Rents an object owned by a stack-only lease that returns it on disposal.</summary>
+    public PooledLease<T> RentScoped()
+    {
+        T value = Rent();
+        return new PooledLease<T>(this, value);
+    }
+
+    /// <summary>
+    /// Rents an object owned by a stack-only lease and also exposes the object directly.
+    /// </summary>
+    public PooledLease<T> RentScoped(out T value)
+    {
+        value = Rent();
+        return new PooledLease<T>(this, value);
+    }
+
     /// <summary>Resets and returns an object. Objects exceeding capacity are discarded.</summary>
     public void Return(T obj) => _pool.Return(obj);
 
