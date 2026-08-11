@@ -63,8 +63,9 @@ Each rented source returns to its originating pool when disposed. Dispose it onl
 its sole owner again: no outstanding token readers and no concurrent `Cancel`, `CancelAfter`,
 registration, or disposal operation may remain. Disposal races unsafely with those operations
 because `TryReset()` is not thread-safe with concurrent use. Disposal transfers ownership to the
-pool; do not use or dispose another alias afterward. Linked sources created by
-`CancellationTokenSource.CreateLinkedTokenSource` are ordinary sources; dispose them normally.
+pool; dispose each rental exactly once, and do not use or dispose another alias afterward. Linked
+sources created by `CancellationTokenSource.CreateLinkedTokenSource` are ordinary sources; dispose
+them normally.
 
 Dedicated pools own their retained sources. Call `Clear()` to release them while keeping the pool
 usable, or dispose the pool when its lifetime ends. Disposing the process-wide shared pool only

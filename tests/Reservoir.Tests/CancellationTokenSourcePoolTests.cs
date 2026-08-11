@@ -123,25 +123,6 @@ public class CancellationTokenSourcePoolTests
     }
 
     [Test]
-    public async Task RepeatedDisposeBeforeReuseReturnsSourceOnlyOnce()
-    {
-        var pool = new CancellationTokenSourcePool(maxCapacity: 2);
-        CancellationTokenSource source = pool.Rent();
-
-        source.Dispose();
-        source.Dispose();
-
-        CancellationTokenSource first = pool.Rent();
-        CancellationTokenSource second = pool.Rent();
-
-        await Assert.That(first).IsSameReferenceAs(source);
-        await Assert.That(second).IsNotSameReferenceAs(source);
-
-        first.Dispose();
-        second.Dispose();
-    }
-
-    [Test]
     public async Task ReusedSourceCanArmNewTimer()
     {
         var pool = new CancellationTokenSourcePool(maxCapacity: 1);
@@ -174,6 +155,28 @@ public class CancellationTokenSourcePoolTests
         await Assert.That(valuesMatch).IsTrue();
         await Assert.That(actual).IsSameReferenceAs(expected);
         actual.Dispose();
+    }
+
+    [Test]
+    public async Task StaleScopedLeaseCopyCannotReturnLaterRental()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 2);
+        CancellationTokenSourcePool.Lease first = pool.RentScoped();
+        CancellationTokenSourcePool.Lease stale = first;
+        CancellationTokenSource firstSource = first.Value;
+        first.Dispose();
+
+        CancellationTokenSourcePool.Lease second = pool.RentScoped();
+        stale.Dispose();
+        CancellationTokenSource concurrent = pool.Rent();
+        bool reusedFirstSource = ReferenceEquals(second.Value, firstSource);
+        bool sourcesAreDistinct = !ReferenceEquals(concurrent, second.Value);
+
+        second.Dispose();
+        concurrent.Dispose();
+
+        await Assert.That(reusedFirstSource).IsTrue();
+        await Assert.That(sourcesAreDistinct).IsTrue();
     }
 
     [Test]

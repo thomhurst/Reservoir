@@ -12,9 +12,9 @@ namespace Reservoir;
 /// Provides pools of reusable <see cref="CancellationTokenSource"/> instances.
 /// </summary>
 /// <remarks>
-/// A renter must be the source's sole owner when disposing it. No token readers or cancellation
-/// operations may remain in flight because <c>CancellationTokenSource.TryReset()</c> is not
-/// thread-safe with concurrent use. Linked sources are not supported and should be disposed.
+/// A renter must dispose each rental exactly once as the source's sole owner. No token readers or
+/// cancellation operations may remain in flight because <c>CancellationTokenSource.TryReset()</c>
+/// is not thread-safe with concurrent use. Linked sources are not supported and should be disposed.
 /// </remarks>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
@@ -46,23 +46,20 @@ sealed class CancellationTokenSourcePool : IDisposable
     public int MaximumRetained => _pool.MaximumRetained;
 
     /// <summary>Rents a source that returns to this pool when disposed.</summary>
-    public CancellationTokenSource Rent()
-    {
-        Holder holder = _pool.Rent();
-        holder.Source.MarkRented();
-        return holder.Source;
-    }
+    public CancellationTokenSource Rent() => _pool.Rent().Source;
 
-    /// <summary>Rents a source owned by a stack-only lease that disposes it on disposal.</summary>
-    public Lease RentScoped() => new(Rent());
+    /// <summary>Rents a source owned by a stack-only lease that returns it on disposal.</summary>
+    public Lease RentScoped()
+        => new(_pool.RentScoped());
 
     /// <summary>
     /// Rents a source owned by a stack-only lease and also exposes the source directly.
     /// </summary>
     public Lease RentScoped(out CancellationTokenSource source)
     {
-        source = Rent();
-        return new Lease(source);
+        PooledLease<Holder, Policy> lease = _pool.RentScoped(out Holder holder);
+        source = holder.Source;
+        return new Lease(lease);
     }
 
     /// <summary>
@@ -87,13 +84,11 @@ sealed class CancellationTokenSourcePool : IDisposable
 
     private void Return(Holder holder) => _pool.Return(holder);
 
-    [ExcludeFromCodeCoverage]
     [DebuggerNonUserCode]
     internal sealed class PooledCancellationTokenSource : CancellationTokenSource
     {
         private readonly CancellationTokenSourcePool _owner;
         private readonly Holder _holder;
-        private int _isRented;
 
         internal PooledCancellationTokenSource(CancellationTokenSourcePool owner, Holder holder)
         {
@@ -101,49 +96,35 @@ sealed class CancellationTokenSourcePool : IDisposable
             _holder = holder;
         }
 
-        internal void MarkRented()
-        {
-            if (Interlocked.Exchange(ref _isRented, 1) != 0)
-            {
-                throw new InvalidOperationException("The cancellation token source is already rented.");
-            }
-        }
-
         internal void DisposePermanently() => base.Dispose(true);
 
         /// <inheritdoc />
         protected override void Dispose(bool disposing)
         {
-            if (disposing && Interlocked.Exchange(ref _isRented, 0) != 0)
+            if (disposing)
             {
                 _owner.Return(_holder);
             }
         }
     }
 
-    /// <summary>Owns a rented source and disposes it on disposal.</summary>
-    [ExcludeFromCodeCoverage]
+    /// <summary>Owns a rented source and returns it on disposal.</summary>
     [DebuggerNonUserCode]
     public ref struct Lease
     {
-        private CancellationTokenSource? _source;
+        private PooledLease<Holder, Policy> _lease;
 
-        internal Lease(CancellationTokenSource source)
+        internal Lease(PooledLease<Holder, Policy> lease)
         {
-            _source = source;
+            _lease = lease;
         }
 
         /// <summary>Gets the rented source while this lease owns it.</summary>
         public readonly CancellationTokenSource Value
-            => _source ?? throw new ObjectDisposedException(nameof(Lease));
+            => _lease.Value.Source;
 
-        /// <summary>Disposes the source. Repeated calls on this lease are ignored.</summary>
-        public void Dispose()
-        {
-            CancellationTokenSource? source = _source;
-            _source = null;
-            source?.Dispose();
-        }
+        /// <summary>Returns the source. Repeated calls and stale copies are ignored.</summary>
+        public void Dispose() => _lease.Dispose();
     }
 
     internal readonly struct Policy : IPooledObjectPolicy<Holder>
