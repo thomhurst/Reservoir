@@ -39,6 +39,7 @@ public class SourcePackageTests
             await VerifyIncompatibleLanguageVersion(testRoot, packageDirectory);
             await VerifyTwoProjectConsumer(testRoot, packageDirectory);
             await VerifyPublicOptIn(testRoot, packageDirectory);
+            await VerifyForcedDiagnostics(testRoot, packageDirectory);
         }
         finally
         {
@@ -326,6 +327,52 @@ public class SourcePackageTests
 
         await Restore(projectDirectory, "PublicApi.csproj", packageDirectory);
         await RunDotNet(projectDirectory, "build", "--no-restore");
+    }
+
+    private static async Task VerifyForcedDiagnostics(
+        string testRoot,
+        string packageDirectory)
+    {
+        string projectDirectory = Path.Combine(testRoot, "ForcedDiagnostics");
+        Directory.CreateDirectory(projectDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(projectDirectory, "ForcedDiagnostics.csproj"),
+            ProjectFile(
+                outputType: "Exe",
+                defineConstants: "RESERVOIR_DIAGNOSTICS"));
+        await File.WriteAllTextAsync(
+            Path.Combine(projectDirectory, "Program.cs"),
+            """
+            using System;
+            using Reservoir;
+
+            ObjectPool<object> pool = new(() => new object(), maxCapacity: 1);
+            object value = pool.Rent();
+            pool.Return(value);
+
+            try
+            {
+                pool.Return(value);
+            }
+            catch (InvalidOperationException)
+            {
+                Console.WriteLine("detected");
+            }
+            """);
+
+        await Restore(projectDirectory, "ForcedDiagnostics.csproj", packageDirectory);
+        string output = await RunDotNet(
+            projectDirectory,
+            "run",
+            "--no-restore",
+            "--configuration",
+            "Release");
+
+        if (!string.Equals(output.Trim(), "detected", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Forced diagnostics did not detect a double return:{Environment.NewLine}{output}");
+        }
     }
 
     private static string ProjectFile(

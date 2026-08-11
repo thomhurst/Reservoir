@@ -28,6 +28,8 @@ Discarded objects are disposed when they implement `IDisposable`. `Clear()` drai
 
 Returning an object transfers ownership to the pool. Do not access it afterward and never return it twice. Another thread may rent it immediately after `Return()` completes.
 
+Debug builds detect objects returned twice or returned to the wrong pool and throw `InvalidOperationException`. They also report rentals that become unreachable without being returned, including the rent-site stack trace, through `Trace` and `ObjectPoolDiagnostics.LeakDetected`. Define `RESERVOIR_DIAGNOSTICS` to enable the same checks in a Release or staging build. Diagnostics are compiled out when neither `DEBUG` nor `RESERVOIR_DIAGNOSTICS` is defined, leaving no fields or calls on the Release hot path.
+
 Pools retain at most `maxCapacity` objects. Default capacity is `Math.Max(32, 2 * Environment.ProcessorCount)`. Size capacity for peak simultaneous holders, not request rate. When callers hold objects across `await`, use peak in-flight operations rather than processor count.
 
 Use a scoped lease when the rental does not cross an `await`. Disposing the stack-only lease returns its value automatically:
