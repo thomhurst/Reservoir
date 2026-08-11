@@ -36,6 +36,7 @@ public class SourcePackageTests
 
             await VerifyStandaloneConsumer(testRoot, packageDirectory);
             await VerifyIncompatibleConsumer(testRoot, packageDirectory);
+            await VerifyIncompatibleLanguageVersion(testRoot, packageDirectory);
             await VerifyTwoProjectConsumer(testRoot, packageDirectory);
             await VerifyPublicOptIn(testRoot, packageDirectory);
         }
@@ -226,6 +227,30 @@ public class SourcePackageTests
         }
     }
 
+    private static async Task VerifyIncompatibleLanguageVersion(
+        string testRoot,
+        string packageDirectory)
+    {
+        string projectDirectory = Path.Combine(testRoot, "IncompatibleLanguageVersion");
+        Directory.CreateDirectory(projectDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(projectDirectory, "IncompatibleLanguageVersion.csproj"),
+            ProjectFile(languageVersion: "11"));
+
+        await Restore(projectDirectory, "IncompatibleLanguageVersion.csproj", packageDirectory);
+        string output = await RunDotNetExpectingFailure(
+            projectDirectory,
+            "build",
+            "IncompatibleLanguageVersion.csproj",
+            "--no-restore");
+        if (!output.Contains("RESERVOIR002", StringComparison.Ordinal)
+            || !output.Contains("Reservoir requires C# 12.0 or later", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Incompatible language version lacked the expected error:{Environment.NewLine}{output}");
+        }
+    }
+
     private static async Task VerifyTwoProjectConsumer(
         string testRoot,
         string packageDirectory)
@@ -305,6 +330,7 @@ public class SourcePackageTests
 
     private static string ProjectFile(
         string targetFramework = "net10.0",
+        string? languageVersion = null,
         string? outputType = null,
         string? defineConstants = null,
         string? additionalItems = null)
@@ -314,6 +340,7 @@ public class SourcePackageTests
                <TargetFramework>{{targetFramework}}</TargetFramework>
                <ImplicitUsings>disable</ImplicitUsings>
                <Nullable>enable</Nullable>
+               {{(languageVersion is null ? string.Empty : $"<LangVersion>{languageVersion}</LangVersion>")}}
                {{(outputType is null ? string.Empty : $"<OutputType>{outputType}</OutputType>")}}
                {{(defineConstants is null ? string.Empty : $"<DefineConstants>{defineConstants}</DefineConstants>")}}
              </PropertyGroup>
