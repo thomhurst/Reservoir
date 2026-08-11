@@ -35,6 +35,7 @@ public class SourcePackageTests
             VerifyPackageContents(repositoryRoot, packagePath);
 
             await VerifyStandaloneConsumer(testRoot, packageDirectory);
+            await VerifyIncompatibleConsumer(testRoot, packageDirectory);
             await VerifyTwoProjectConsumer(testRoot, packageDirectory);
             await VerifyPublicOptIn(testRoot, packageDirectory);
         }
@@ -49,7 +50,7 @@ public class SourcePackageTests
         using ZipArchive package = ZipFile.OpenRead(packagePath);
         ZipArchiveEntry[] sourceEntries = package.Entries
             .Where(entry => entry.FullName.StartsWith(
-                "contentFiles/cs/any/Reservoir/",
+                "contentFiles/cs/net10.0/Reservoir/",
                 StringComparison.Ordinal))
             .ToArray();
         int expectedSourceCount = Directory.GetFiles(
@@ -67,6 +68,15 @@ public class SourcePackageTests
                 || entry.FullName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)))
         {
             throw new InvalidOperationException("Source package contained a library or assembly.");
+        }
+
+        if (!package.Entries.Any(entry => string.Equals(
+                entry.FullName,
+                "buildTransitive/Reservoir.targets",
+                StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                "Source package lacks its target-framework validation target.");
         }
 
         foreach (ZipArchiveEntry sourceEntry in sourceEntries)
@@ -137,6 +147,30 @@ public class SourcePackageTests
         {
             throw new InvalidOperationException(
                 "Package contentFiles metadata contains a non-Compile build action.");
+        }
+    }
+
+    private static async Task VerifyIncompatibleConsumer(
+        string testRoot,
+        string packageDirectory)
+    {
+        string projectDirectory = Path.Combine(testRoot, "IncompatibleConsumer");
+        Directory.CreateDirectory(projectDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(projectDirectory, "IncompatibleConsumer.csproj"),
+            ProjectFile(targetFramework: "net9.0"));
+
+        await Restore(projectDirectory, "IncompatibleConsumer.csproj", packageDirectory);
+        string output = await RunDotNetExpectingFailure(
+            projectDirectory,
+            "build",
+            "IncompatibleConsumer.csproj",
+            "--no-restore");
+        if (!output.Contains("RESERVOIR001", StringComparison.Ordinal)
+            || !output.Contains("Reservoir requires .NET 10.0 or later", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Incompatible consumer lacked the expected framework error:{Environment.NewLine}{output}");
         }
     }
 
@@ -270,13 +304,14 @@ public class SourcePackageTests
     }
 
     private static string ProjectFile(
+        string targetFramework = "net10.0",
         string? outputType = null,
         string? defineConstants = null,
         string? additionalItems = null)
         => $$"""
            <Project Sdk="Microsoft.NET.Sdk">
              <PropertyGroup>
-               <TargetFramework>net10.0</TargetFramework>
+               <TargetFramework>{{targetFramework}}</TargetFramework>
                <ImplicitUsings>disable</ImplicitUsings>
                <Nullable>enable</Nullable>
                {{(outputType is null ? string.Empty : $"<OutputType>{outputType}</OutputType>")}}
@@ -298,9 +333,43 @@ public class SourcePackageTests
             "restore",
             projectFile,
             "--source",
-            packageDirectory);
+            packageDirectory,
+            "--packages",
+            Path.Combine(Path.GetDirectoryName(packageDirectory)!, "global-packages"));
 
     private static async Task<string> RunDotNet(
+        string workingDirectory,
+        params string[] arguments)
+    {
+        (int exitCode, string output) = await ExecuteDotNet(workingDirectory, arguments);
+        if (exitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"dotnet {string.Join(' ', arguments)} failed with exit code {exitCode}."
+                + Environment.NewLine
+                + output);
+        }
+
+        return output;
+    }
+
+    private static async Task<string> RunDotNetExpectingFailure(
+        string workingDirectory,
+        params string[] arguments)
+    {
+        (int exitCode, string output) = await ExecuteDotNet(workingDirectory, arguments);
+        if (exitCode == 0)
+        {
+            throw new InvalidOperationException(
+                $"dotnet {string.Join(' ', arguments)} unexpectedly succeeded."
+                + Environment.NewLine
+                + output);
+        }
+
+        return output;
+    }
+
+    private static async Task<(int ExitCode, string Output)> ExecuteDotNet(
         string workingDirectory,
         params string[] arguments)
     {
@@ -336,16 +405,7 @@ public class SourcePackageTests
 
         string output = await standardOutput;
         string error = await standardError;
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException(
-                $"dotnet {string.Join(' ', arguments)} failed with exit code {process.ExitCode}."
-                + Environment.NewLine
-                + output
-                + error);
-        }
-
-        return output + error;
+        return (process.ExitCode, output + error);
     }
 
     private static string FindRepositoryRoot()

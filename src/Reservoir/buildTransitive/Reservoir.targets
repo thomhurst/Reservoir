@@ -1,0 +1,8 @@
+<Project>
+  <Target Name="ReservoirValidateTargetFramework"
+          BeforeTargets="PrepareForBuild"
+          Condition="'$(TargetFrameworkIdentifier)' != '.NETCoreApp' Or $([MSBuild]::VersionLessThan('$(TargetFrameworkVersion)', 'v10.0'))">
+    <Error Code="RESERVOIR001"
+           Text="Reservoir requires .NET 10.0 or later. Current target framework is $(TargetFramework)." />
+  </Target>
+</Project>

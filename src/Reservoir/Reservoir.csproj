@@ -25,9 +25,12 @@
   <ItemGroup>
     <Compile Update="**\*.cs"
              Pack="true"
-             PackagePath="contentFiles\cs\any\Reservoir\%(RecursiveDir)"
+             PackagePath="contentFiles\cs\$(TargetFramework)\Reservoir\%(RecursiveDir)"
              PackageBuildAction="Compile" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
     <None Include="..\..\README.md" Pack="true" PackagePath="" />
+    <None Update="buildTransitive\Reservoir.targets"
+          Pack="true"
+          PackagePath="buildTransitive\Reservoir.targets" />
   </ItemGroup>
 </Project>
