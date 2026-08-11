@@ -82,6 +82,7 @@ finally
 | `StackPool<T>` | `Stack<T>` | 1,024 |
 | `StringBuilderPool` | `StringBuilder` | 4,096 |
 | `CancellationTokenSourcePool` | Uncanceled timeout/registration sources | n/a |
+| `ValueTaskSourcePool<T>` | Manual allocation-free async completions | n/a |
 
 Collections arrive empty. Oversized backing stores are discarded rather than trimmed. Each pool has a `Shared` instance and constructors for custom retained-object and backing-capacity limits.
 
@@ -94,6 +95,25 @@ await ProcessAsync(source.Token);
 ```
 
 It reuses a source only when `TryReset()` confirms cancellation never fired. Dispose it exactly once as sole owner, after all token reads and cancellation operations finish. See the [complete concurrency rules](https://thomhurst.github.io/Reservoir/docs/api/cancellation-token-sources).
+
+For hand-written asynchronous operations, `ValueTaskSourcePool<T>` reuses
+`IValueTaskSource<T>` implementations and returns each source automatically when its value task is
+consumed:
+
+```csharp
+PooledValueTaskSource<int> source = ValueTaskSourcePool<int>.Shared.Rent();
+ValueTask<int> operation = source.CreateValueTask();
+
+BeginOperation(
+    onSuccess: value => source.SetResult(value),
+    onError: error => source.SetException(error));
+
+int result = await operation;
+```
+
+Consume each value task exactly once. Never await copies concurrently, read `.Result` while the
+operation is pending, or touch the source after completion. See the [complete value task source
+rules](https://thomhurst.github.io/Reservoir/docs/api/value-task-sources).
 
 ## Core API
 

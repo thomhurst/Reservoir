@@ -12,6 +12,7 @@ const sidebars = {
         'api/object-pools',
         'api/collection-pools',
         'api/cancellation-token-sources',
+        'api/value-task-sources',
       ],
     },
     'configuration',

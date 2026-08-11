@@ -113,6 +113,24 @@ internal static class DocumentationSamples
         source.CancelAfter(TimeSpan.FromSeconds(5));
         operation(source.Token);
     }
+
+    internal static ValueTask<int> StartManualAsyncOperation(
+        Action<PooledValueTaskSource<int>> start)
+    {
+        PooledValueTaskSource<int> source = ValueTaskSourcePool<int>.Shared.Rent();
+        ValueTask<int> operation = source.CreateValueTask();
+
+        try
+        {
+            start(source);
+        }
+        catch (Exception error)
+        {
+            source.SetException(error);
+        }
+
+        return operation;
+    }
 }
 
 internal class Buffer
