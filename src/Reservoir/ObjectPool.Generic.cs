@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
@@ -14,13 +15,23 @@ public sealed class ObjectPool<T, TPolicy> : IDisposable
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
+    // One logical slot per 64-byte cache line on 64-bit runtimes.
+    private const int CacheLineSlotStride = 8;
+    private const uint StripeHashMultiplier = 2_654_435_769u;
+
     [ThreadStatic]
     private static PooledLeaseState<T, TPolicy>? _threadLeaseState;
 
+    // Cache only scalar affinity; retained objects remain enumerable in the shared array.
+    [ThreadStatic]
+    private static int _threadStripe;
+
+    private static int s_nextThreadStripe;
+
     private readonly ObjectWrapper[] _items;
+    private readonly int _indexMask;
     private TPolicy _policy;
     private int _isDisposed;
-    private T? _fastItem;
 
     private static readonly bool s_isStaticallyDisposable
         = typeof(IDisposable).IsAssignableFrom(typeof(T));
@@ -52,7 +63,8 @@ public sealed class ObjectPool<T, TPolicy> : IDisposable
 
         _policy = policy;
         MaximumRetained = maxCapacity;
-        _items = new ObjectWrapper[maxCapacity - 1];
+        _indexMask = BitOperations.IsPow2((uint)maxCapacity) ? maxCapacity - 1 : -1;
+        _items = new ObjectWrapper[checked(maxCapacity * CacheLineSlotStride)];
     }
 
     /// <summary>Gets the default maximum number of retained objects.</summary>
@@ -67,8 +79,9 @@ public sealed class ObjectPool<T, TPolicy> : IDisposable
     {
         ThrowIfDisposed();
 
-        T? item = Interlocked.Exchange(ref _fastItem, null);
-        T rented = item ?? RentSlow();
+        int startIndex = GetStartIndex();
+        T? item = Interlocked.Exchange(ref GetSlot(startIndex), null);
+        T rented = item ?? RentSlow(startIndex);
 
         if (Volatile.Read(ref _isDisposed) == 0)
         {
@@ -140,14 +153,21 @@ public sealed class ObjectPool<T, TPolicy> : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private T RentSlow()
+    private T RentSlow(int startIndex)
     {
-        for (int i = 0; i < _items.Length; i++)
+        for (int offset = 1; offset < MaximumRetained; offset++)
         {
-            T? item = Volatile.Read(ref _items[i].Element);
+            int index = startIndex + offset;
+            if (index >= MaximumRetained)
+            {
+                index -= MaximumRetained;
+            }
+
+            ref T? slot = ref GetSlot(index);
+            T? item = Volatile.Read(ref slot);
             if (item is not null
                 && ReferenceEquals(
-                    Interlocked.CompareExchange(ref _items[i].Element, null, item),
+                    Interlocked.CompareExchange(ref slot, null, item),
                     item))
             {
                 return item;
@@ -188,14 +208,16 @@ public sealed class ObjectPool<T, TPolicy> : IDisposable
             return;
         }
 
-        T? displaced = Interlocked.Exchange(ref _fastItem, obj);
+        int startIndex = GetStartIndex();
+        ref T? startSlot = ref GetSlot(startIndex);
+        T? displaced = Interlocked.Exchange(ref startSlot, obj);
         if (displaced is null)
         {
             ClearIfDisposed();
             return;
         }
 
-        ReturnSlow(obj, displaced);
+        ReturnSlow(obj, displaced, startIndex);
         ClearIfDisposed();
     }
 
@@ -207,12 +229,10 @@ public sealed class ObjectPool<T, TPolicy> : IDisposable
     {
         Exception? firstException = null;
 
-        DisposeRetained(Interlocked.Exchange(ref _fastItem, null), ref firstException);
-
-        for (int i = 0; i < _items.Length; i++)
+        for (int i = 0; i < MaximumRetained; i++)
         {
             DisposeRetained(
-                Interlocked.Exchange(ref _items[i].Element, null),
+                Interlocked.Exchange(ref GetSlot(i), null),
                 ref firstException);
         }
 
@@ -235,11 +255,17 @@ public sealed class ObjectPool<T, TPolicy> : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private void ReturnSlow(T returned, T displaced)
+    private void ReturnSlow(T returned, T displaced, int startIndex)
     {
-        for (int i = 0; i < _items.Length; i++)
+        for (int offset = 1; offset < MaximumRetained; offset++)
         {
-            if (Interlocked.CompareExchange(ref _items[i].Element, displaced, null) is null)
+            int index = startIndex + offset;
+            if (index >= MaximumRetained)
+            {
+                index -= MaximumRetained;
+            }
+
+            if (Interlocked.CompareExchange(ref GetSlot(index), displaced, null) is null)
             {
                 return;
             }
@@ -247,9 +273,37 @@ public sealed class ObjectPool<T, TPolicy> : IDisposable
 
         // Preserve full-pool semantics: discard the newly returned object when
         // it has not already been rented or displaced by another thread.
-        T? observed = Interlocked.CompareExchange(ref _fastItem, displaced, returned);
+        T? observed = Interlocked.CompareExchange(
+            ref GetSlot(startIndex),
+            displaced,
+            returned);
         DisposeItem(ReferenceEquals(observed, returned) ? returned : displaced);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int GetStartIndex()
+    {
+        int threadStripe = _threadStripe;
+        if (threadStripe == 0)
+        {
+            do
+            {
+                threadStripe = Interlocked.Increment(ref s_nextThreadStripe);
+            }
+            while (threadStripe == 0);
+
+            _threadStripe = threadStripe;
+        }
+
+        uint mixedStripe = unchecked((uint)(threadStripe - 1)) * StripeHashMultiplier;
+        return _indexMask >= 0
+            ? (int)(mixedStripe & (uint)_indexMask)
+            : (int)(mixedStripe % (uint)MaximumRetained);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private ref T? GetSlot(int index)
+        => ref _items[index * CacheLineSlotStride].Element;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ClearIfDisposed()
