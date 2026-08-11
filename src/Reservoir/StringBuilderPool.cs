@@ -54,7 +54,8 @@ public sealed class StringBuilderPool
         public bool TryReset(StringBuilder obj)
         {
             obj.Clear();
-            return obj.Capacity <= maxRetainedCapacity;
+            return obj.MaxCapacity == int.MaxValue
+                && obj.Capacity <= maxRetainedCapacity;
         }
     }
 }

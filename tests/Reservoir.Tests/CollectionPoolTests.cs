@@ -123,6 +123,19 @@ public class CollectionPoolTests
     }
 
     [Test]
+    public async Task StringBuilderPoolDiscardsBuilderWithRestrictedMaximumCapacity()
+    {
+        var pool = new StringBuilderPool(maxRetainedCapacity: 16, maxCapacity: 1);
+        var incompatible = new StringBuilder(capacity: 1, maxCapacity: 1);
+
+        pool.Return(incompatible);
+        StringBuilder rented = pool.Rent();
+
+        await Assert.That(rented).IsNotSameReferenceAs(incompatible);
+        await Assert.That(rented.MaxCapacity).IsEqualTo(int.MaxValue);
+    }
+
+    [Test]
     [Arguments("list")]
     [Arguments("dictionary")]
     [Arguments("hash-set")]
