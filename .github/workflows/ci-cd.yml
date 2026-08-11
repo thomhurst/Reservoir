@@ -1,0 +1,139 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish-packages:
+        description: Publish package to NuGet.org and create GitHub release?
+        type: boolean
+        required: true
+        default: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Reservoir.slnx
+
+      - name: Build
+        run: dotnet build Reservoir.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/Reservoir.Tests/Reservoir.Tests.csproj --configuration Release --no-build
+
+  package:
+    name: Pack
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Generate package version
+        id: version
+        shell: pwsh
+        run: |
+          $version = ./build/Get-PackageVersion.ps1
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Pack
+        run: >-
+          dotnet pack src/Reservoir/Reservoir.csproj
+          --configuration Release
+          --output artifacts/packages
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:PackageVersion=${{ steps.version.outputs.version }}
+          -p:ContinuousIntegrationBuild=true
+
+      - name: Upload package
+        uses: actions/upload-artifact@v7
+        with:
+          name: Reservoir-${{ steps.version.outputs.version }}
+          path: artifacts/packages/*.nupkg
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: package
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.publish-packages
+    runs-on: ubuntu-latest
+    environment: Production
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@v8
+        with:
+          pattern: Reservoir-*
+          path: artifacts/packages
+          merge-multiple: true
+
+      - name: NuGet login
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Publish to NuGet.org
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: |
+          Get-ChildItem artifacts/packages/*.nupkg | ForEach-Object {
+            dotnet nuget push $_.FullName `
+              --source https://api.nuget.org/v3/index.json `
+              --api-key $env:NUGET_API_KEY `
+              --skip-duplicate
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $package = Get-ChildItem artifacts/packages/Reservoir.*.nupkg | Select-Object -First 1
+          $version = $package.BaseName.Substring('Reservoir.'.Length)
+          $tag = "v$version"
+
+          gh release create $tag $package.FullName `
+            --target $env:GITHUB_SHA `
+            --title $version `
+            --generate-notes
