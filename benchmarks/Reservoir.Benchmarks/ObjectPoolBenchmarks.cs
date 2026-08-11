@@ -31,6 +31,13 @@ public class ObjectPoolBenchmarks
         return lease.Value;
     }
 
+    [Benchmark]
+    public Payload ScopedOutRentReturn()
+    {
+        using PooledLease<Payload, PayloadPolicy> lease = _pool.RentScoped(out Payload payload);
+        return payload;
+    }
+
     public sealed class Payload;
 
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>

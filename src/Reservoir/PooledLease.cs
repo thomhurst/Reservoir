@@ -1,3 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+
 namespace Reservoir;
 
 /// <summary>
@@ -9,20 +12,14 @@ public ref struct PooledLease<T, TPolicy>
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
-    private ObjectPool<T, TPolicy>? _pool;
-    private PooledLeaseState<T>[]? _states;
-    private readonly int _stateIndex;
+    private PooledLeaseState<T, TPolicy>? _state;
     private readonly long _token;
 
     internal PooledLease(
-        ObjectPool<T, TPolicy> pool,
-        PooledLeaseState<T>[] states,
-        int stateIndex,
+        PooledLeaseState<T, TPolicy> state,
         long token)
     {
-        _pool = pool;
-        _states = states;
-        _stateIndex = stateIndex;
+        _state = state;
         _token = token;
     }
 
@@ -31,26 +28,23 @@ public ref struct PooledLease<T, TPolicy>
     {
         get
         {
-            PooledLeaseState<T>[] states = _states
-                ?? throw new ObjectDisposedException(nameof(PooledLease<T, TPolicy>));
-            return states[_stateIndex].GetValue(_token);
+            PooledLeaseState<T, TPolicy>? state = _state;
+            if (state is null)
+            {
+                PooledLeaseThrowHelper.ThrowDisposed();
+            }
+
+            return state.GetValue(_token);
         }
     }
 
     /// <summary>Returns the rented object. Repeated calls on this lease are ignored.</summary>
     public void Dispose()
     {
-        ObjectPool<T, TPolicy>? pool = _pool;
-        PooledLeaseState<T>[]? states = _states;
+        PooledLeaseState<T, TPolicy>? state = _state;
 
-        _pool = null;
-        _states = null;
-
-        if (pool is not null
-            && states![_stateIndex].TryRelease(_token, out T? value))
-        {
-            pool.Return(value!);
-        }
+        _state = null;
+        state?.Release(_token);
     }
 }
 
@@ -75,15 +69,22 @@ public ref struct PooledLease<T>
     public void Dispose() => _lease.Dispose();
 }
 
-internal struct PooledLeaseState<T>
+internal sealed class PooledLeaseState<T, TPolicy>
     where T : class
+    where TPolicy : struct, IPooledObjectPolicy<T>
 {
     // Thread-local slots use even versions when idle and odd versions to identify
     // active leases, so stale copies cannot release a later lease using the slot.
     private long _version;
+    private ObjectPool<T, TPolicy>? _pool;
     private T? _value;
 
-    internal bool TryAcquire(T value, out long token)
+    internal PooledLeaseState<T, TPolicy>? Next { get; set; }
+
+    internal bool TryAcquire(
+        ObjectPool<T, TPolicy> pool,
+        T value,
+        out long token)
     {
         if ((_version & 1) != 0)
         {
@@ -92,6 +93,7 @@ internal struct PooledLeaseState<T>
         }
 
         token = _version + 1;
+        _pool = pool;
         _value = value;
         _version = token;
         return true;
@@ -100,22 +102,34 @@ internal struct PooledLeaseState<T>
     internal T GetValue(long token)
     {
         T? value = _value;
-        return value is not null && _version == token
-            ? value
-            : throw new ObjectDisposedException(nameof(PooledLease<T>));
+        if (value is null || _version != token)
+        {
+            PooledLeaseThrowHelper.ThrowDisposed();
+        }
+
+        return value;
     }
 
-    internal bool TryRelease(long token, out T? value)
+    internal void Release(long token)
     {
         if (_version != token)
         {
-            value = null;
-            return false;
+            return;
         }
 
-        value = _value;
+        ObjectPool<T, TPolicy> pool = _pool!;
+        T value = _value!;
+        _pool = null;
         _value = null;
         _version = token + 1;
-        return true;
+        pool.Return(value);
     }
+}
+
+internal static class PooledLeaseThrowHelper
+{
+    [DoesNotReturn]
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal static void ThrowDisposed()
+        => throw new ObjectDisposedException("PooledLease");
 }
