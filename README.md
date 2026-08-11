@@ -16,7 +16,7 @@ finally
 }
 ```
 
-Implement `IPooledObjectPolicy<T>` on a struct to let the JIT specialize and inline policy calls. `Create()` supplies an object when the pool is empty. `TryReset()` prepares a returned object for reuse; returning `false` discards it.
+Implement `IPooledObjectPolicy<T>` on a struct to let the JIT specialize and inline policy calls. `Create()` supplies an object when the pool is empty. `TryReset()` prepares a returned object for reuse; returning `false` discards it. `Destroy()` defaults to calling `IDisposable.Dispose()` and can be overridden when permanent destruction needs different behavior.
 
 Types designed for pooling can implement `IResettable` and use the constrained built-in policy. This avoids runtime type checks on the rent/return path:
 
@@ -45,6 +45,31 @@ For a direct local without a separate `Value` access:
 ```csharp
 using var lease = pool.RentScoped(out MyBuffer buffer);
 ```
+
+## Cancellation token sources
+
+`CancellationTokenSourcePool` reuses sources only when
+`CancellationTokenSource.TryReset()` confirms cancellation never fired. Canceled sources are
+disposed and discarded. Timers and callbacks from an unfired rental are removed before reuse.
+
+```csharp
+CancellationTokenSourcePool pool = CancellationTokenSourcePool.Shared;
+using CancellationTokenSource source = pool.Rent();
+source.CancelAfter(TimeSpan.FromSeconds(30));
+// Use source.Token.
+```
+
+Each rented source returns to its originating pool when disposed. Dispose it only after becoming
+its sole owner again: no outstanding token readers and no concurrent `Cancel`, `CancelAfter`,
+registration, or disposal operation may remain. Disposal races unsafely with those operations
+because `TryReset()` is not thread-safe with concurrent use. Disposal transfers ownership to the
+pool; dispose each rental exactly once, and do not use or dispose another alias afterward. Linked
+sources created by `CancellationTokenSource.CreateLinkedTokenSource` are ordinary sources; dispose
+them normally.
+
+Dedicated pools own their retained sources. Call `Clear()` to release them while keeping the pool
+usable, or dispose the pool when its lifetime ends. Disposing the process-wide shared pool only
+clears its retained sources; it does not close the pool.
 
 ## Benchmarks
 

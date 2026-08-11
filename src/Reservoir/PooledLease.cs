@@ -12,7 +12,7 @@ namespace Reservoir;
 /// Owns an object rented from an <see cref="ObjectPool{T,TPolicy}"/> and returns it on disposal.
 /// </summary>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
-/// <typeparam name="TPolicy">The policy used to create and reset objects.</typeparam>
+/// <typeparam name="TPolicy">The policy used to create, reset, and destroy objects.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 #if RESERVOIR_PUBLIC

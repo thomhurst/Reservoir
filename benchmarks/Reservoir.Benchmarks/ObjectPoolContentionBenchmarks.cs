@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Runtime.ExceptionServices;
 using BenchmarkDotNet.Attributes;
 using Microsoft.Extensions.ObjectPool;
 
@@ -11,7 +10,7 @@ public class ObjectPoolContentionBenchmarks
     private const int OperationsPerInvocation = 327_680;
     private const int PoolCapacity = 32;
 
-    private WorkerGroup? _workers;
+    private BenchmarkWorkerGroup? _workers;
 
     [Params(1, 4, 8, 16, 32)]
     public int WorkerCount { get; set; }
@@ -22,7 +21,7 @@ public class ObjectPoolContentionBenchmarks
         var pool = new ObjectPool<Payload, PayloadPolicy>(maxCapacity: PoolCapacity);
         WarmReservoirPool(pool);
         int operationsPerWorker = OperationsPerInvocation / WorkerCount;
-        _workers = new WorkerGroup(
+        _workers = new BenchmarkWorkerGroup(
             WorkerCount,
             () => RunReservoir(pool, operationsPerWorker));
     }
@@ -35,7 +34,7 @@ public class ObjectPoolContentionBenchmarks
             PoolCapacity);
         WarmMicrosoftPool(pool);
         int operationsPerWorker = OperationsPerInvocation / WorkerCount;
-        _workers = new WorkerGroup(
+        _workers = new BenchmarkWorkerGroup(
             WorkerCount,
             () => RunMicrosoftPool(pool, operationsPerWorker));
     }
@@ -50,7 +49,7 @@ public class ObjectPoolContentionBenchmarks
         }
 
         int operationsPerWorker = OperationsPerInvocation / WorkerCount;
-        _workers = new WorkerGroup(
+        _workers = new BenchmarkWorkerGroup(
             WorkerCount,
             () => RunConcurrentBag(bag, operationsPerWorker));
     }
@@ -131,93 +130,6 @@ public class ObjectPoolContentionBenchmarks
             }
 
             bag.Add(item);
-        }
-    }
-
-    private sealed class WorkerGroup : IDisposable
-    {
-        private readonly Barrier _finish;
-        private readonly AutoResetEvent[] _starts;
-        private readonly Thread[] _threads;
-        private ExceptionDispatchInfo? _failure;
-        private volatile bool _stopping;
-
-        internal WorkerGroup(int workerCount, Action action)
-        {
-            _finish = new Barrier(workerCount + 1);
-            _starts = new AutoResetEvent[workerCount];
-            _threads = new Thread[workerCount];
-
-            for (int i = 0; i < workerCount; i++)
-            {
-                AutoResetEvent start = _starts[i] = new AutoResetEvent(false);
-                _threads[i] = new Thread(() => Work(start, action))
-                {
-                    IsBackground = true,
-                };
-                _threads[i].Start();
-            }
-        }
-
-        internal void Run()
-        {
-            foreach (AutoResetEvent start in _starts)
-            {
-                start.Set();
-            }
-
-            _finish.SignalAndWait();
-            _failure?.Throw();
-        }
-
-        public void Dispose()
-        {
-            _stopping = true;
-
-            foreach (AutoResetEvent start in _starts)
-            {
-                start.Set();
-            }
-
-            foreach (Thread thread in _threads)
-            {
-                thread.Join();
-            }
-
-            foreach (AutoResetEvent start in _starts)
-            {
-                start.Dispose();
-            }
-
-            _finish.Dispose();
-        }
-
-        private void Work(AutoResetEvent start, Action action)
-        {
-            while (true)
-            {
-                start.WaitOne();
-                if (_stopping)
-                {
-                    return;
-                }
-
-                try
-                {
-                    action();
-                }
-                catch (Exception exception)
-                {
-                    Interlocked.CompareExchange(
-                        ref _failure,
-                        ExceptionDispatchInfo.Capture(exception),
-                        null);
-                }
-                finally
-                {
-                    _finish.SignalAndWait();
-                }
-            }
         }
     }
 

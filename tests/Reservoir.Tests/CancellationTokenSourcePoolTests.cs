@@ -1,0 +1,414 @@
+using System.Collections.Concurrent;
+
+namespace Reservoir.Tests;
+
+public class CancellationTokenSourcePoolTests
+{
+    [Test]
+    public async Task UnfiredSourceIsResetAndReused()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource expected = pool.Rent();
+        expected.CancelAfter(TimeSpan.FromMilliseconds(250));
+
+        expected.Dispose();
+        CancellationTokenSource actual = pool.Rent();
+        await Task.Delay(TimeSpan.FromMilliseconds(750));
+
+        await Assert.That(actual).IsSameReferenceAs(expected);
+        await Assert.That(actual.IsCancellationRequested).IsFalse();
+
+        actual.Dispose();
+    }
+
+    [Test]
+    public async Task CanceledSourceIsDiscarded()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource canceled = pool.Rent();
+        canceled.Cancel();
+
+        canceled.Dispose();
+        CancellationTokenSource replacement = pool.Rent();
+
+        await Assert.That(replacement).IsNotSameReferenceAs(canceled);
+        await Assert.That(replacement.IsCancellationRequested).IsFalse();
+        await Assert.That(() => canceled.Cancel()).Throws<ObjectDisposedException>();
+
+        replacement.Dispose();
+    }
+
+    [Test]
+    public async Task TimerFiredSourceIsDiscarded()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource fired = pool.Rent();
+        fired.CancelAfter(TimeSpan.Zero);
+        await WaitForCancellation(fired.Token);
+
+        fired.Dispose();
+        CancellationTokenSource replacement = pool.Rent();
+
+        await Assert.That(replacement).IsNotSameReferenceAs(fired);
+        await Assert.That(replacement.IsCancellationRequested).IsFalse();
+
+        replacement.Dispose();
+    }
+
+    [Test]
+    public async Task ConcurrentStressPreservesOwnershipAndFreshState()
+    {
+        const int iterations = 10_000;
+        int[] workerCounts = [1, 4, 8, 16, 32];
+        var pool = new CancellationTokenSourcePool(maxCapacity: 32);
+        var state = new StressState();
+
+        foreach (int workerCount in workerCounts)
+        {
+            using var start = new Barrier(workerCount + 1);
+            Task[] workers = Enumerable.Range(0, workerCount)
+                .Select(_ => Task.Factory.StartNew(
+                    () => StressPool(pool, state, start, iterations),
+                    CancellationToken.None,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default))
+                .ToArray();
+
+            start.SignalAndWait();
+            await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30));
+        }
+
+        await Assert.That(state.Failures).IsEmpty();
+        await Assert.That(state.ActiveSources).IsEmpty();
+    }
+
+    [Test]
+    public async Task ConcurrentTimerDisarmStressNeverProducesCanceledRental()
+    {
+        const int workerCount = 16;
+        const int iterations = 5_000;
+        var pool = new CancellationTokenSourcePool(maxCapacity: 32);
+        var state = new StressState();
+        using var start = new Barrier(workerCount + 1);
+        Task[] workers = Enumerable.Range(0, workerCount)
+            .Select(_ => Task.Factory.StartNew(
+                () => StressTimerDisarm(pool, state, start, iterations),
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default))
+            .ToArray();
+
+        start.SignalAndWait();
+        await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30));
+
+        await Assert.That(state.Failures).IsEmpty();
+    }
+
+    [Test]
+    public async Task PreviousRentalCallbacksAreUnregistered()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource source = pool.Rent();
+        int callbackCount = 0;
+        _ = source.Token.Register(() => callbackCount++);
+
+        source.Dispose();
+        CancellationTokenSource reused = pool.Rent();
+        reused.Cancel();
+
+        await Assert.That(reused).IsSameReferenceAs(source);
+        await Assert.That(callbackCount).IsEqualTo(0);
+
+        reused.Dispose();
+    }
+
+    [Test]
+    public async Task ReusedSourceCanArmNewTimer()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource source = pool.Rent();
+        source.Dispose();
+
+        CancellationTokenSource reused = pool.Rent();
+        reused.CancelAfter(TimeSpan.Zero);
+        await WaitForCancellation(reused.Token);
+
+        await Assert.That(reused).IsSameReferenceAs(source);
+        await Assert.That(reused.IsCancellationRequested).IsTrue();
+
+        reused.Dispose();
+    }
+
+    [Test]
+    public async Task ScopedLeaseReturnsSource()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource expected;
+        bool valuesMatch;
+
+        {
+            using CancellationTokenSourcePool.Lease lease = pool.RentScoped(out expected);
+            valuesMatch = ReferenceEquals(lease.Value, expected);
+        }
+
+        CancellationTokenSource actual = pool.Rent();
+        await Assert.That(valuesMatch).IsTrue();
+        await Assert.That(actual).IsSameReferenceAs(expected);
+        actual.Dispose();
+    }
+
+    [Test]
+    public async Task StaleScopedLeaseCopyCannotReturnLaterRental()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 2);
+        CancellationTokenSourcePool.Lease first = pool.RentScoped();
+        CancellationTokenSourcePool.Lease stale = first;
+        CancellationTokenSource firstSource = first.Value;
+        first.Dispose();
+
+        CancellationTokenSourcePool.Lease second = pool.RentScoped();
+        stale.Dispose();
+        CancellationTokenSource concurrent = pool.Rent();
+        bool reusedFirstSource = ReferenceEquals(second.Value, firstSource);
+        bool sourcesAreDistinct = !ReferenceEquals(concurrent, second.Value);
+
+        second.Dispose();
+        concurrent.Dispose();
+
+        await Assert.That(reusedFirstSource).IsTrue();
+        await Assert.That(sourcesAreDistinct).IsTrue();
+    }
+
+    [Test]
+    public async Task ClearDisposesRetainedSourceAndLeavesPoolUsable()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource retained = pool.Rent();
+        _ = retained.Token.WaitHandle;
+        retained.Dispose();
+
+        pool.Clear();
+        CancellationTokenSource replacement = pool.Rent();
+
+        await Assert.That(() => retained.Cancel()).Throws<ObjectDisposedException>();
+        await Assert.That(replacement).IsNotSameReferenceAs(retained);
+
+        replacement.Dispose();
+    }
+
+    [Test]
+    public async Task DisposeReleasesRetainedSourceAndClosesPool()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource retained = pool.Rent();
+        _ = retained.Token.WaitHandle;
+        retained.Dispose();
+
+        pool.Dispose();
+
+        await Assert.That(() => retained.Cancel()).Throws<ObjectDisposedException>();
+        await Assert.That(() => pool.Rent()).Throws<ObjectDisposedException>();
+    }
+
+    [Test]
+    public async Task RentalDisposedAfterPoolIsClosedIsPermanentlyDisposed()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource outstanding = pool.Rent();
+
+        pool.Dispose();
+        outstanding.Dispose();
+
+        await Assert.That(() => outstanding.Cancel()).Throws<ObjectDisposedException>();
+    }
+
+    [Test]
+    public async Task CapacityOverflowPermanentlyDisposesExcessSource()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource retained = pool.Rent();
+        CancellationTokenSource excess = pool.Rent();
+
+        retained.Dispose();
+        excess.Dispose();
+
+        await Assert.That(() => excess.Cancel()).Throws<ObjectDisposedException>();
+
+        CancellationTokenSource reused = pool.Rent();
+        await Assert.That(reused).IsSameReferenceAs(retained);
+        reused.Dispose();
+    }
+
+    [Test]
+    public async Task DisposeClearsSharedPoolWithoutClosingIt()
+    {
+        CancellationTokenSourcePool pool = CancellationTokenSourcePool.Shared;
+        CancellationTokenSource retained = pool.Rent();
+        _ = retained.Token.WaitHandle;
+        retained.Dispose();
+
+        pool.Dispose();
+        CancellationTokenSource replacement = pool.Rent();
+
+        await Assert.That(() => retained.Cancel()).Throws<ObjectDisposedException>();
+        await Assert.That(replacement).IsNotSameReferenceAs(retained);
+
+        replacement.Dispose();
+    }
+
+#if !DEBUG && !RESERVOIR_DIAGNOSTICS
+    [Test]
+    public async Task WarmRentAndDisposeAllocatesNothing()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource warm = pool.Rent();
+        warm.Dispose();
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+
+        for (int i = 0; i < 1_000; i++)
+        {
+            CancellationTokenSource source = pool.Rent();
+            source.Dispose();
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        await Assert.That(allocated).IsEqualTo(0);
+    }
+#endif
+
+    [Test]
+    public async Task InvalidCapacityThrows()
+    {
+        await Assert.That(() => new CancellationTokenSourcePool(0))
+            .Throws<ArgumentOutOfRangeException>();
+    }
+
+    private static async Task WaitForCancellation(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, token)
+                .WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private static void StressPool(
+        CancellationTokenSourcePool pool,
+        StressState state,
+        Barrier start,
+        int iterations)
+    {
+        start.SignalAndWait();
+
+        for (int iteration = 0; iteration < iterations; iteration++)
+        {
+            CancellationTokenSource source = pool.Rent();
+            state.TrackRental(source);
+
+            if (source.IsCancellationRequested)
+            {
+                state.RecordFailure("Pool returned a canceled source.");
+            }
+
+            if ((iteration & 3) == 0)
+            {
+                _ = source.Token.Register(
+                    static callbackState => ((StressState)callbackState!).RecordFailure(
+                        "Callback survived a prior rental."),
+                    state);
+            }
+
+            if ((iteration & 7) == 0)
+            {
+                source.CancelAfter(TimeSpan.FromMinutes(1));
+            }
+
+            Thread.SpinWait(8);
+            state.CompleteRental(source);
+            source.Dispose();
+
+            if ((iteration & 63) == 0)
+            {
+                CancellationTokenSource canceled = pool.Rent();
+                state.TrackRental(canceled);
+
+                if (canceled.IsCancellationRequested)
+                {
+                    state.RecordFailure("Pool returned a canceled source.");
+                }
+
+                canceled.Cancel();
+                state.CompleteRental(canceled);
+                canceled.Dispose();
+            }
+        }
+    }
+
+    private static void StressTimerDisarm(
+        CancellationTokenSourcePool pool,
+        StressState state,
+        Barrier start,
+        int iterations)
+    {
+        start.SignalAndWait();
+
+        for (int iteration = 0; iteration < iterations; iteration++)
+        {
+            CancellationTokenSource source = pool.Rent();
+            state.TrackRental(source);
+            source.CancelAfter(TimeSpan.FromMinutes(1));
+            state.CompleteRental(source);
+            source.Dispose();
+
+            CancellationTokenSource next = pool.Rent();
+            state.TrackRental(next);
+            if (next.IsCancellationRequested)
+            {
+                state.RecordFailure("Timer disarm produced a canceled rental.");
+            }
+
+            state.CompleteRental(next);
+            next.Dispose();
+        }
+    }
+
+    private sealed class StressState
+    {
+        private const int MaximumRecordedFailures = 100;
+        private int _failureCount;
+
+        internal ConcurrentDictionary<CancellationTokenSource, byte> ActiveSources { get; }
+            = new(ReferenceEqualityComparer.Instance);
+
+        internal ConcurrentQueue<string> Failures { get; } = new();
+
+        internal void TrackRental(CancellationTokenSource source)
+        {
+            if (!ActiveSources.TryAdd(source, 0))
+            {
+                RecordFailure("One source was rented concurrently.");
+            }
+        }
+
+        internal void CompleteRental(CancellationTokenSource source)
+        {
+            if (!ActiveSources.TryRemove(source, out _))
+            {
+                RecordFailure("Rental ownership tracking was lost.");
+            }
+        }
+
+        internal void RecordFailure(string message)
+        {
+            if (Interlocked.Increment(ref _failureCount) <= MaximumRecordedFailures)
+            {
+                Failures.Enqueue(message);
+            }
+        }
+    }
+}
