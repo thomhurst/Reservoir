@@ -135,11 +135,138 @@ public class ObjectPoolTests
         await Assert.That(failures).IsEmpty();
     }
 
+    [Test]
+    public async Task RentReturnStressPreservesOwnershipAndStateAcrossWorkerCounts()
+    {
+        const int capacity = 32;
+        const int iterations = 100_000;
+        int[] workerCounts = [1, 4, 8, 16, 32];
+        var state = new StressState();
+        var pool = new ObjectPool<StressItem, StressPolicy>(
+            new StressPolicy(state),
+            maxCapacity: capacity);
+        var initialItems = new StressItem[capacity];
+
+        for (int i = 0; i < initialItems.Length; i++)
+        {
+            initialItems[i] = pool.Rent();
+        }
+
+        foreach (StressItem item in initialItems)
+        {
+            pool.Return(item);
+        }
+
+        foreach (int workerCount in workerCounts)
+        {
+            using var start = new Barrier(workerCount + 1);
+            Task[] workers = Enumerable.Range(0, workerCount)
+                .Select(workerIndex => Task.Factory.StartNew(
+                    () => StressPool(pool, state, start, workerIndex, iterations),
+                    CancellationToken.None,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default))
+                .ToArray();
+
+            start.SignalAndWait();
+            await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30));
+        }
+
+        var retainedItems = new HashSet<StressItem>();
+        for (int i = 0; i < capacity; i++)
+        {
+            retainedItems.Add(pool.Rent());
+        }
+
+        int expectedResetCount = capacity + (workerCounts.Sum() * iterations);
+
+        await Assert.That(state.Failures).IsEmpty();
+        await Assert.That(state.CreatedCount).IsEqualTo(capacity);
+        await Assert.That(state.ResetCount).IsEqualTo(expectedResetCount);
+        await Assert.That(retainedItems.Count).IsEqualTo(capacity);
+    }
+
+    private static void StressPool(
+        ObjectPool<StressItem, StressPolicy> pool,
+        StressState state,
+        Barrier start,
+        int workerIndex,
+        int iterations)
+    {
+        start.SignalAndWait();
+
+        for (int iteration = 0; iteration < iterations; iteration++)
+        {
+            StressItem item = pool.Rent();
+            if (Interlocked.Exchange(ref item.InUse, 1) != 0)
+            {
+                state.RecordFailure($"Item {item.Id} was rented concurrently.");
+            }
+
+            if (item.Value != 0 || item.ValueComplement != 0)
+            {
+                state.RecordFailure($"Item {item.Id} was rented with stale or torn state.");
+            }
+
+            long value = ((long)workerIndex << 32) | (uint)(iteration + 1);
+            item.Value = value;
+            item.ValueComplement = ~value;
+            Volatile.Write(ref item.InUse, 0);
+            pool.Return(item);
+        }
+    }
+
     private sealed class PooledItem(int id)
     {
         internal int Id { get; } = id;
         internal int InUse;
         internal int ResetCount;
+    }
+
+    private sealed class StressItem(int id)
+    {
+        internal int Id { get; } = id;
+        internal int InUse;
+        internal long Value;
+        internal long ValueComplement;
+    }
+
+    private sealed class StressState
+    {
+        private const int MaximumRecordedFailures = 100;
+        private int _failureCount;
+
+        internal ConcurrentQueue<string> Failures { get; } = new();
+        internal int CreatedCount;
+        internal int ResetCount;
+
+        internal void RecordFailure(string message)
+        {
+            if (Interlocked.Increment(ref _failureCount) <= MaximumRecordedFailures)
+            {
+                Failures.Enqueue(message);
+            }
+        }
+    }
+
+    private readonly struct StressPolicy(StressState state) : IPooledObjectPolicy<StressItem>
+    {
+        public StressItem Create()
+            => new(Interlocked.Increment(ref state.CreatedCount));
+
+        public bool TryReset(StressItem obj)
+        {
+            if ((obj.Value != 0 || obj.ValueComplement != 0)
+                && obj.ValueComplement != ~obj.Value)
+            {
+                state.RecordFailure($"Item {obj.Id} contained torn state during reset.");
+            }
+
+            obj.Value = 0;
+            obj.ValueComplement = 0;
+            Interlocked.Increment(ref state.ResetCount);
+            return true;
+        }
     }
 
     private struct CountingPolicy : IPooledObjectPolicy<PooledItem>
