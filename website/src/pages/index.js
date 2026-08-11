@@ -4,38 +4,66 @@ import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 import styles from './index.module.css';
 
-const features = [
-  {
-    number: '01',
-    title: 'Own the code',
-    text: 'Reservoir ships as C# source and compiles into your assembly. No runtime package, binding conflict, or dependency version to coordinate.',
-  },
-  {
-    number: '02',
-    title: 'Keep the hot path cold',
-    text: 'Warm rent and return operations allocate 0 B. Struct policies let the JIT specialize creation, reset, and destruction calls.',
-  },
-  {
-    number: '03',
-    title: 'Pool with guardrails',
-    text: 'Bounded retention, deterministic disposal, stack-only leases, and debug diagnostics make ownership mistakes visible.',
-  },
+const poolSlots = Array.from({length: 16}, (_, index) => index);
+
+const builtInPools = [
+  ['List<T>', '1,024'],
+  ['Dictionary<TKey, TValue>', '1,024'],
+  ['HashSet<T>', '1,024'],
+  ['Queue<T>', '1,024'],
+  ['Stack<T>', '1,024'],
+  ['StringBuilder', '4,096'],
+  ['CancellationTokenSource', 'reset-safe'],
 ];
 
-const pools = ['ObjectPool', 'List', 'Dictionary', 'HashSet', 'Queue', 'Stack', 'StringBuilder', 'CancellationTokenSource'];
-
-function CodeWindow() {
+function ArrowIcon() {
   return (
-    <div className={styles.codeWindow} aria-label="Reservoir quick-start example">
-      <div className={styles.codeTopbar}>
-        <div className={styles.windowDots}><i /><i /><i /></div>
-        <span>RequestHandler.cs</span>
-        <span className={styles.live}><i /> 0 B warm</span>
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M4 10h11M11 6l4 4-4 4" />
+    </svg>
+  );
+}
+
+function PoolInstrument() {
+  return (
+    <div className={styles.instrument} aria-label="An illustrative Reservoir object pool with bounded slots">
+      <div className={styles.instrumentHead}>
+        <span>POOL / BUFFER</span>
+        <span className={styles.warmStatus}><i /> warm path</span>
       </div>
-      <pre className={styles.code}><code><span className={styles.keyword}>var</span> pool = <span className={styles.keyword}>new</span>{'\n'}    <span className={styles.type}>ObjectPool</span>&lt;Buffer, BufferPolicy&gt;(<span className={styles.number}>64</span>);{'\n\n'}<span className={styles.keyword}>using var</span> lease = pool.RentScoped();{'\n'}<span className={styles.type}>Buffer</span> buffer = lease.Value;{'\n\n'}buffer.Write(payload);</code></pre>
-      <div className={styles.pipeline}>
-        <span>rent</span><div className={styles.track}><i /><i /><i /></div><span>reset + return</span>
+
+      <div className={styles.dial} aria-hidden="true">
+        <div className={styles.orbit}>
+          {poolSlots.map((slot) => (
+            <i
+              className={clsx(styles.slot, slot === 3 || slot === 4 ? styles.slotRented : '')}
+              key={slot}
+              style={{'--slot': slot}}
+            />
+          ))}
+        </div>
+        <div className={styles.dialCore}>
+          <strong>0 B</strong>
+          <span>rent + return</span>
+        </div>
+        <span className={styles.rentLabel}>rent</span>
+        <span className={styles.returnLabel}>return</span>
       </div>
+
+      <div className={styles.ledger}>
+        <div><span>retained</span><strong>14</strong><small>/ 16</small></div>
+        <div><span>global locks</span><strong>none</strong></div>
+        <div><span>delivery</span><strong>.cs</strong><small> source</small></div>
+      </div>
+    </div>
+  );
+}
+
+function InstallCommand() {
+  return (
+    <div className={styles.installCommand} aria-label="Install Reservoir with the .NET CLI">
+      <span aria-hidden="true">$</span>
+      <code>dotnet add package Reservoir</code>
     </div>
   );
 }
@@ -43,43 +71,148 @@ function CodeWindow() {
 function Hero() {
   return (
     <header className={styles.hero}>
-      <div className={styles.rings} aria-hidden="true"><i /><i /><i /></div>
-      <div className={clsx('container', styles.heroGrid)}>
+      <div className={styles.heroGrid} aria-hidden="true" />
+      <div className={clsx('container', styles.heroLayout)}>
         <div className={styles.heroCopy}>
-          <div className={styles.eyebrow}><span>.NET 10</span> Source-only object pooling</div>
-          <Heading as="h1">Performance<br />you <em>keep.</em></Heading>
-          <p>Bounded, thread-safe object pools with a zero-allocation warm path—shipped as source so the optimized code becomes yours.</p>
-          <div className={styles.actions}>
-            <Link className={styles.primaryButton} to="/docs/quick-start">Fill the pool <span>→</span></Link>
-            <Link className={styles.secondaryButton} href="https://github.com/thomhurst/Reservoir">View source</Link>
+          <div className={styles.eyebrow}>
+            <span>Reservoir / .NET 10+</span>
+            <span>source-only pooling</span>
           </div>
-          <div className={styles.trustLine}><span>MIT licensed</span><span>Zero runtime dependencies</span><span>Debug diagnostics</span></div>
+          <Heading as="h1">Stop allocating the same thing <em>twice.</em></Heading>
+          <p className={styles.heroLead}>Bounded, thread-safe object pools with a 0 B warm path. Reservoir compiles into your assembly, so the fast code is your code.</p>
+          <InstallCommand />
+          <div className={styles.heroActions}>
+            <Link className={styles.primaryButton} to="/docs/quick-start">Start pooling <ArrowIcon /></Link>
+            <Link className={styles.textLink} to="/docs/design">Read the design notes <ArrowIcon /></Link>
+          </div>
         </div>
-        <CodeWindow />
+        <PoolInstrument />
       </div>
-      <div className={styles.ticker} aria-hidden="true">
-        <div>{[...pools, ...pools].map((pool, index) => <span key={`${pool}-${index}`}><i />{pool}</span>)}</div>
+
+      <div className={styles.proofBar}>
+        <div className={clsx('container', styles.proofGrid)}>
+          <div><strong>11.83 ns</strong><span>warm rent + return</span></div>
+          <div><strong>0 B</strong><span>allocated on every measured warm path</span></div>
+          <div><strong>64 slots</strong><span>capacity is explicit and bounded</span></div>
+          <small>BenchmarkDotNet · ShortRun · .NET 10 · i7-12700K</small>
+        </div>
       </div>
     </header>
   );
 }
 
-function Features() {
+function CodePanel() {
   return (
-    <section className={styles.features}>
+    <div className={styles.codePanel}>
+      <div className={styles.codePanelHead}>
+        <span>BufferPool.cs</span>
+        <span>lexical ownership</span>
+      </div>
+      <pre><code><span className={styles.syntaxKeyword}>var</span> pool = <span className={styles.syntaxKeyword}>new</span>{'\n'}    <span className={styles.syntaxType}>ObjectPool</span>&lt;Buffer, BufferPolicy&gt;(<span className={styles.syntaxNumber}>64</span>);{'\n\n'}<span className={styles.syntaxKeyword}>using var</span> lease = pool.RentScoped({'\n'}    <span className={styles.syntaxKeyword}>out</span> <span className={styles.syntaxType}>Buffer</span> buffer);{'\n\n'}buffer.Write(payload);{'\n'}<span className={styles.syntaxComment}>// reset + return at scope exit</span></code></pre>
+      <div className={styles.codeFlow} aria-hidden="true">
+        <span>rent</span><i /><span>work</span><i /><span>return</span>
+      </div>
+    </div>
+  );
+}
+
+function ContractSection() {
+  return (
+    <section className={styles.contractSection}>
       <div className="container">
-        <div className={styles.sectionIntro}>
-          <span className={styles.kicker}>Designed for the ownership boundary</span>
-          <Heading as="h2">Small API.<br />Sharp guarantees.</Heading>
-          <p>Reservoir handles contention and retention. Your policy owns object lifecycle.</p>
+        <div className={styles.sectionHeading}>
+          <span className={styles.kicker}>The ownership contract</span>
+          <Heading as="h2">Rent. Work. Return.</Heading>
+          <p>A small lifecycle that stays explicit, even under contention. The pool owns retention; your policy owns creation, reset, and cleanup.</p>
         </div>
-        <div className={styles.featureGrid}>
-          {features.map((feature) => (
-            <article className={styles.featureCard} key={feature.number}>
-              <span>{feature.number}</span>
-              <Heading as="h3">{feature.title}</Heading>
-              <p>{feature.text}</p>
+
+        <div className={styles.contractGrid}>
+          <CodePanel />
+          <ol className={styles.workflow}>
+            <li>
+              <span>01 / rent</span>
+              <Heading as="h3">Take sole ownership</Heading>
+              <p>Rent from a per-thread stripe. A miss asks your policy to create an instance.</p>
+            </li>
+            <li>
+              <span>02 / work</span>
+              <Heading as="h3">Use it like it is yours</Heading>
+              <p>Because it is—until return. No wrapper sits between your code and the object.</p>
+            </li>
+            <li>
+              <span>03 / return</span>
+              <Heading as="h3">Transfer ownership back</Heading>
+              <p>The policy resets it. Oversized or invalid objects are destroyed instead of retained.</p>
+            </li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function GuaranteesSection() {
+  const guarantees = [
+    {
+      label: 'Bounded by design',
+      title: 'A pool, not a leak.',
+      text: 'Fixed retention limits keep memory behavior legible. Capacity controls idle objects, never the number of concurrent rentals.',
+      detail: 'maxCapacity',
+    },
+    {
+      label: 'Compiled in',
+      title: 'A package, not a passenger.',
+      text: 'C# source joins your compilation. Reservoir stays private, adds no runtime DLL, and gives the JIT concrete policy calls to specialize.',
+      detail: 'PrivateAssets="all"',
+    },
+    {
+      label: 'Guarded in debug',
+      title: 'Fast, with receipts.',
+      text: 'Wrong-pool returns, double returns, and leaked rentals become visible during development, then compile out of the release hot path.',
+      detail: 'RESERVOIR_DIAGNOSTICS',
+    },
+  ];
+
+  return (
+    <section className={styles.guaranteesSection}>
+      <div className="container">
+        <div className={styles.guaranteesHead}>
+          <span className={styles.kicker}>Why Reservoir</span>
+          <Heading as="h2">Performance with edges.</Heading>
+        </div>
+        <div className={styles.guaranteeGrid}>
+          {guarantees.map((item) => (
+            <article key={item.label}>
+              <span>{item.label}</span>
+              <Heading as="h3">{item.title}</Heading>
+              <p>{item.text}</p>
+              <code>{item.detail}</code>
             </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function BuiltInsSection() {
+  return (
+    <section className={styles.builtInsSection}>
+      <div className={clsx('container', styles.builtInsLayout)}>
+        <div className={styles.builtInsCopy}>
+          <span className={styles.kicker}>Useful on install</span>
+          <Heading as="h2">Common pools,<br />already primed.</Heading>
+          <p>Shared pools arrive ready for collections, text building, and cancellation. Collections return empty; unusually large backing stores do not return at all.</p>
+          <Link className={styles.textLink} to="/docs/api/collection-pools">Explore built-in pools <ArrowIcon /></Link>
+        </div>
+
+        <div className={styles.poolIndex}>
+          <div className={styles.poolIndexHead}><span>pool type</span><span>largest retained</span></div>
+          {builtInPools.map(([name, limit]) => (
+            <div className={styles.poolRow} key={name}>
+              <code>{name}</code>
+              <span>{limit}</span>
+            </div>
           ))}
         </div>
       </div>
@@ -90,30 +223,19 @@ function Features() {
 function SourceSection() {
   return (
     <section className={styles.sourceSection}>
-      <div className={clsx('container', styles.sourceGrid)}>
-        <div className={styles.sourceVisual} aria-hidden="true">
-          <span>NuGet</span><i>→</i><strong>Your assembly</strong>
-          <small>C# source · internal by default</small>
+      <div className={clsx('container', styles.sourceLayout)}>
+        <div className={styles.sourceRoute} aria-label="Reservoir source package compiles into your assembly">
+          <span>NuGet</span><i /><span>C# source</span><i /><strong>your assembly</strong>
         </div>
         <div className={styles.sourceCopy}>
-          <span className={styles.kicker}>A development dependency</span>
-          <Heading as="h2">No DLL follows you.</Heading>
-          <p>The package contributes C# files at build time. Reservoir types compile into your project and the package stays private from downstream consumers automatically.</p>
-          <Link to="/docs/installation">See what gets installed <span>→</span></Link>
+          <span className={styles.kicker}>Nothing follows at runtime</span>
+          <Heading as="h2">Install the source.<br />Keep the code.</Heading>
+          <p>One development dependency. No binding conflicts, transitive runtime package, or extra DLL in build output.</p>
+          <div className={styles.sourceActions}>
+            <Link className={styles.darkButton} to="/docs/installation">Installation <ArrowIcon /></Link>
+            <Link className={styles.darkTextLink} href="https://github.com/thomhurst/Reservoir">View on GitHub <ArrowIcon /></Link>
+          </div>
         </div>
-      </div>
-    </section>
-  );
-}
-
-function FinalCta() {
-  return (
-    <section className={styles.finalCta}>
-      <div className="container">
-        <span className={styles.kicker}>One package. One policy.</span>
-        <Heading as="h2">Rent. Work. Return.</Heading>
-        <p>Start with a shared collection pool or define lifecycle rules for your own type.</p>
-        <Link className={styles.primaryButton} to="/docs/quick-start">Read the quick start <span>→</span></Link>
       </div>
     </section>
   );
@@ -121,8 +243,14 @@ function FinalCta() {
 
 export default function Home() {
   return (
-    <Layout title="Source-only object pooling for .NET" description="Reservoir provides bounded, thread-safe, zero-allocation object pooling as source for .NET.">
-      <main><Hero /><Features /><SourceSection /><FinalCta /></main>
+    <Layout title="Bounded object pooling for .NET" description="Reservoir provides bounded, thread-safe, zero-allocation object pooling as C# source for .NET.">
+      <main>
+        <Hero />
+        <ContractSection />
+        <GuaranteesSection />
+        <BuiltInsSection />
+        <SourceSection />
+      </main>
     </Layout>
   );
 }

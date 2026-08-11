@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img">
+  <title>Reservoir</title>
+  <path fill="#54e1b6" d="M16 2a14 14 0 1 0 13.2 9.33l-4.71 1.67A9 9 0 1 1 16 7V2Z"/>
+  <path fill="#ff8b68" d="M19 2.32a14 14 0 0 1 8.79 6.16l-4.24 2.64A9 9 0 0 0 19 7.52v-5.2Z"/>
+  <circle cx="16" cy="16" r="3.5" fill="#edf3f1"/>
+</svg>

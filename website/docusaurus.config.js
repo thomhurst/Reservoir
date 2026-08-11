@@ -35,13 +35,17 @@ const config = {
     ({
       image: 'img/og.png',
       metadata: [
-        {name: 'theme-color', content: '#071521'},
+        {name: 'theme-color', content: '#07171c'},
         {name: 'keywords', content: '.NET, C#, object pool, allocation-free, source package, performance'},
         {name: 'twitter:card', content: 'summary_large_image'},
       ],
       colorMode: {defaultMode: 'dark', respectPrefersColorScheme: true},
       navbar: {
         title: 'Reservoir',
+        logo: {
+          alt: 'Reservoir',
+          src: 'img/reservoir-mark.svg',
+        },
         items: [
           {type: 'docSidebar', sidebarId: 'docsSidebar', position: 'left', label: 'Docs'},
           {to: '/docs/api/object-pools', label: 'API', position: 'left'},

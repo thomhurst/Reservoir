@@ -1,33 +1,37 @@
 # Reservoir
 
-Reservoir is bounded, thread-safe object pooling for .NET with a **0 B warm rent/return path**. It ships as C# source, so the implementation compiles into your assembly: no runtime dependency, dependency conflict, or extra DLL.
+**Stop allocating the same thing twice.**
+
+Reservoir is bounded, thread-safe object pooling for .NET with a **0 B warm rent/return path**. It ships as C# source, so the optimized code compiles into your assembly—no runtime dependency, version conflict, or extra DLL.
+
+[![NuGet](https://img.shields.io/nuget/v/Reservoir.svg)](https://www.nuget.org/packages/Reservoir)
+[![CI/CD](https://github.com/thomhurst/Reservoir/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/thomhurst/Reservoir/actions/workflows/ci-cd.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-54e1b6.svg)](LICENSE)
 
 ```shell
 dotnet add package Reservoir
 ```
 
-Reservoir is a development dependency, so `PrivateAssets="all"` is automatic. Package source files join your project compilation, Reservoir types are `internal` by default, and no `Reservoir.dll` appears in build output. Requires .NET 10 and C# 12 or later.
+Requires .NET 10 and C# 12 or later.
 
-[Full documentation](https://thomhurst.github.io/Reservoir/) · [Quick start](https://thomhurst.github.io/Reservoir/docs/quick-start) · [Design notes](https://thomhurst.github.io/Reservoir/docs/design) · [Benchmarks](https://thomhurst.github.io/Reservoir/docs/benchmarks)
+## Why Reservoir?
 
-## Quick start
+- **Zero allocations when warm.** Rent and return reuse fixed slots without allocating nodes.
+- **Bounded retention.** You choose the maximum number of idle objects; the pool cannot grow without limit.
+- **Source-only delivery.** Reservoir stays private to your project and adds no runtime package or assembly.
+- **Ownership guardrails.** Debug builds detect invalid returns and report leaked rentals.
 
-Use a struct policy so the JIT can specialize and inline lifecycle calls:
+## Rent. Work. Return.
+
+Define lifecycle behavior as a struct policy so the JIT can specialize and inline it:
 
 ```csharp
 using Reservoir;
 
 var pool = new ObjectPool<Buffer, BufferPolicy>(maxCapacity: 64);
-Buffer buffer = pool.Rent();
 
-try
-{
-    buffer.Write(payload);
-}
-finally
-{
-    pool.Return(buffer);
-}
+using var lease = pool.RentScoped(out Buffer buffer);
+buffer.Write(payload);
 
 sealed class Buffer
 {
@@ -47,18 +51,15 @@ readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
 }
 ```
 
-`Create()` handles a miss. `TryReset()` prepares a return and may return `false` to discard it. `Destroy()` defaults to `IDisposable.Dispose()` and can be overridden for custom cleanup.
+`Create()` handles a miss. `TryReset()` prepares an object for reuse or returns `false` to discard it. The scoped lease guarantees return when control leaves the synchronous scope.
 
-For synchronous scopes, a stack-only lease guarantees return:
+For work that crosses an `await`, use `Rent()` and return the object in `finally`. See the [quick start](https://thomhurst.github.io/Reservoir/docs/quick-start) for both patterns.
 
-```csharp
-using var lease = pool.RentScoped(out Buffer buffer);
-buffer.Write(payload);
-```
+## Pools included
 
-Use manual `try`/`finally` when ownership crosses an `await`; `PooledLease` is a `ref struct` and cannot cross one.
+Reservoir includes ready-to-use pools for:
 
-## Built-in pools
+`List<T>` · `Dictionary<TKey,TValue>` · `HashSet<T>` · `Queue<T>` · `Stack<T>` · `StringBuilder` · `CancellationTokenSource`
 
 ```csharp
 List<int> values = ListPool<int>.Shared.Rent();
@@ -73,82 +74,41 @@ finally
 }
 ```
 
-| Pool | Purpose | Default largest retained capacity |
-| --- | --- | ---: |
-| `ListPool<T>` | `List<T>` | 1,024 |
-| `DictionaryPool<TKey,TValue>` | `Dictionary<TKey,TValue>` with optional comparer | 1,024 |
-| `HashSetPool<T>` | `HashSet<T>` with optional comparer | 1,024 |
-| `QueuePool<T>` | `Queue<T>` | 1,024 |
-| `StackPool<T>` | `Stack<T>` | 1,024 |
-| `StringBuilderPool` | `StringBuilder` | 4,096 |
-| `CancellationTokenSourcePool` | Uncanceled timeout/registration sources | n/a |
+Collections return empty. Oversized backing stores are discarded instead of retained. Each pool exposes a shared instance and constructors for custom limits.
 
-Collections arrive empty. Oversized backing stores are discarded rather than trimmed. Each pool has a `Shared` instance and constructors for custom retained-object and backing-capacity limits.
+## The ownership rule
 
-`CancellationTokenSourcePool` returns a rental to its originating pool when disposed:
+> Returning an object transfers ownership to the pool. Do not touch it, return it twice, or return it to another pool.
 
-```csharp
-using CancellationTokenSource source = CancellationTokenSourcePool.Shared.Rent();
-source.CancelAfter(TimeSpan.FromSeconds(30));
-await ProcessAsync(source.Token);
-```
+Another thread may rent the same object immediately. Debug diagnostics make violations visible and report rentals that become unreachable without being returned. Read the complete [ownership rules](https://thomhurst.github.io/Reservoir/docs/ownership-rules).
 
-It reuses a source only when `TryReset()` confirms cancellation never fired. Dispose it exactly once as sole owner, after all token reads and cancellation operations finish. See the [complete concurrency rules](https://thomhurst.github.io/Reservoir/docs/api/cancellation-token-sources).
-
-## Core API
-
-- `ObjectPool<T,TPolicy>`: generic struct-policy fast path.
-- `ObjectPool<T>`: convenient `Func<T>` or interface-policy overload.
-- `IResettable` + `ResettablePooledObjectPolicy<T>`: reset logic owned by the pooled type.
-- `Rent`, `Return`, `RentScoped`: manual or lexical ownership.
-- `Clear`: destroy retained objects while keeping a core pool usable.
-- `Dispose`: drain and permanently close a core pool; later rents throw and later returns are destroyed.
-
-Pools retain at most `maxCapacity` idle objects. Default retention is `Math.Max(32, 2 * Environment.ProcessorCount)`. This does not throttle concurrent rentals: size it for peak simultaneous holders. Specialized pools also accept `maxRetainedCapacity` to reject unusually large backing stores.
-
-## Ownership rules
-
-Returning an object transfers ownership to the pool. After `Return`:
-
-- never touch the object;
-- never return it twice;
-- never return it to a different pool.
-
-Another thread may rent it immediately. Debug builds detect double returns and wrong-pool returns. They also report rentals that become unreachable without return, including the rent-site stack trace, through `Trace` and `ObjectPoolDiagnostics.LeakDetected`.
-
-Define `RESERVOIR_DIAGNOSTICS` to enable those checks in Release or staging builds. When neither it nor `DEBUG` is defined, diagnostic fields and calls are compiled out of the hot path.
-
-Define `RESERVOIR_PUBLIC` when Reservoir types must appear in your assembly's public API:
-
-```xml
-<PropertyGroup>
-  <DefineConstants>$(DefineConstants);RESERVOIR_PUBLIC</DefineConstants>
-</PropertyGroup>
-```
-
-## Benchmarks
+## Measured, not promised
 
 BenchmarkDotNet 0.15.8 `ShortRun`, .NET 10.0.10, Windows 11, Intel Core i7-12700K:
 
 | Method | Mean | Ratio | Allocated |
 | --- | ---: | ---: | ---: |
 | `new` | 12.67 ns | 1.00 | 304 B |
-| Reservoir | 11.83 ns | 0.93 | 0 B |
+| **Reservoir** | **11.83 ns** | **0.93** | **0 B** |
 | `Microsoft.Extensions.ObjectPool` | 14.56 ns | 1.15 | 0 B |
 | `ConcurrentBag<T>` pool | 39.48 ns | 3.12 | 0 B |
 
-Every measured warm Reservoir path allocated 0 B. Run the suite:
+Every measured warm Reservoir path allocated **0 B**. Timings vary by machine; compare methods within the same run.
+
+[See all benchmark results](https://thomhurst.github.io/Reservoir/docs/benchmarks) or reproduce them locally:
 
 ```shell
 dotnet run -c Release --project benchmarks/Reservoir.Benchmarks
 ```
 
-Raw Markdown, CSV, and HTML exports—including 1–32 worker contention results—are under [`benchmarks/results/20260811-200439`](benchmarks/results/20260811-200439).
+## When it fits
 
-## Why Reservoir
+Choose Reservoir when you want bounded custom-object reuse, source ownership, struct-policy specialization, scoped leases, or debug ownership diagnostics.
 
-The core uses a fixed, bounded slot array, per-thread stripe affinity, atomic exchange/compare-exchange operations, and cache-line-spaced logical slots. It has no global lock and allocates no nodes on a warm return. Struct policies expose concrete lifecycle calls to generic specialization.
+Use `ArrayPool<T>` for raw arrays. Use `Microsoft.Extensions.ObjectPool` when ecosystem integration matters more than source-only delivery.
 
-Use `ArrayPool<T>` for raw arrays. Use `Microsoft.Extensions.ObjectPool` when ecosystem integration and a normal runtime dependency matter more. Use Reservoir when source ownership, bounded custom-object reuse, struct-policy specialization, scoped leases, and debug ownership diagnostics fit the application.
+## Go deeper
+
+[Documentation](https://thomhurst.github.io/Reservoir/) · [Installation](https://thomhurst.github.io/Reservoir/docs/installation) · [API guide](https://thomhurst.github.io/Reservoir/docs/api/object-pools) · [Design notes](https://thomhurst.github.io/Reservoir/docs/design)
 
 Reservoir is available under the [MIT license](LICENSE).
