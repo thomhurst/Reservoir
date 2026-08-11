@@ -170,7 +170,19 @@ public sealed class ObjectPool<T, TPolicy> : IDisposable
             return;
         }
 
-        if (!_policy.TryReset(obj))
+        bool canReuse;
+
+        try
+        {
+            canReuse = _policy.TryReset(obj);
+        }
+        catch
+        {
+            DisposeItem(obj);
+            throw;
+        }
+
+        if (!canReuse)
         {
             DisposeItem(obj);
             return;

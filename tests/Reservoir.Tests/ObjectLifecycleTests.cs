@@ -34,6 +34,29 @@ public class ObjectLifecycleTests
     }
 
     [Test]
+    public async Task ResetExceptionDisposesItemAndPropagates()
+    {
+        var expected = new InvalidOperationException("Reset failed.");
+        var pool = new ObjectPool<DisposableItem, ThrowingPolicy>(
+            new ThrowingPolicy(expected),
+            maxCapacity: 1);
+        DisposableItem item = pool.Rent();
+        Exception? caught = null;
+
+        try
+        {
+            pool.Return(item);
+        }
+        catch (Exception exception)
+        {
+            caught = exception;
+        }
+
+        await Assert.That(caught).IsSameReferenceAs(expected);
+        await Assert.That(item.DisposeCount).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task FullPoolDisposesReturnedExcessItem()
     {
         var pool = new ObjectPool<DisposableItem, DisposablePolicy>(maxCapacity: 1);
@@ -158,6 +181,14 @@ public class ObjectLifecycleTests
         public DisposableItem Create() => new();
 
         public bool TryReset(DisposableItem obj) => true;
+    }
+
+    private readonly struct ThrowingPolicy(Exception exception)
+        : IPooledObjectPolicy<DisposableItem>
+    {
+        public DisposableItem Create() => new();
+
+        public bool TryReset(DisposableItem obj) => throw exception;
     }
 
     private readonly struct ObjectPolicy : IPooledObjectPolicy<object>
