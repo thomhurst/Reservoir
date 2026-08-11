@@ -23,7 +23,7 @@ public
 #else
 internal
 #endif
-sealed class CancellationTokenSourcePool
+sealed class CancellationTokenSourcePool : IDisposable
 {
     private readonly ObjectPool<CancellationTokenSource, Policy> _pool;
 
@@ -61,6 +61,16 @@ sealed class CancellationTokenSourcePool
     /// Returns a solely owned source. Canceled sources are disposed instead of retained.
     /// </summary>
     public void Return(CancellationTokenSource source) => _pool.Return(source);
+
+    /// <summary>
+    /// Disposes all retained sources while leaving the pool usable.
+    /// </summary>
+    public void Clear() => _pool.Clear();
+
+    /// <summary>
+    /// Disposes all retained sources and permanently closes the pool.
+    /// </summary>
+    public void Dispose() => _pool.Dispose();
 
     /// <summary>Owns a rented source and returns it on disposal.</summary>
     [ExcludeFromCodeCoverage]

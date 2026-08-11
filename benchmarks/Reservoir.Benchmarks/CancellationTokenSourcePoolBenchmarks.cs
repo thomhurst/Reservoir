@@ -17,6 +17,9 @@ public class CancellationTokenSourcePoolBenchmarks
         using CancellationTokenSourcePool.Lease lease = _pool.RentScoped();
     }
 
+    [GlobalCleanup]
+    public void Cleanup() => _pool.Dispose();
+
     [Benchmark(Baseline = true)]
     public bool NewDispose()
     {
@@ -56,6 +59,9 @@ public class CancellationTokenSourceTimerBenchmarks
         _pool.Return(source);
     }
 
+    [GlobalCleanup]
+    public void Cleanup() => _pool.Dispose();
+
     [Benchmark(Baseline = true)]
     public bool NewScheduleDispose()
     {
@@ -90,6 +96,9 @@ public class CancellationTokenSourceRegistrationBenchmarks
         _pool.Return(source);
     }
 
+    [GlobalCleanup]
+    public void Cleanup() => _pool.Dispose();
+
     [Benchmark(Baseline = true)]
     public bool NewRegisterDispose()
     {
@@ -122,6 +131,9 @@ public class CancellationTokenSourceCanceledBenchmarks
         _pool.Return(source);
     }
 
+    [GlobalCleanup]
+    public void Cleanup() => _pool.Dispose();
+
     [Benchmark(Baseline = true)]
     public bool NewCancelDispose()
     {
@@ -149,6 +161,7 @@ public class CancellationTokenSourcePoolContentionBenchmarks
     private const int PoolCapacity = 32;
 
     private BenchmarkWorkerGroup? _workers;
+    private CancellationTokenSourcePool? _pool;
 
     [Params(1, 4, 16, 32)]
     public int WorkerCount { get; set; }
@@ -165,7 +178,7 @@ public class CancellationTokenSourcePoolContentionBenchmarks
     [GlobalSetup(Target = nameof(RentReturn))]
     public void SetupPool()
     {
-        var pool = new CancellationTokenSourcePool(maxCapacity: PoolCapacity);
+        var pool = _pool = new CancellationTokenSourcePool(maxCapacity: PoolCapacity);
         var sources = new CancellationTokenSource[PoolCapacity];
 
         for (int i = 0; i < sources.Length; i++)
@@ -185,7 +198,11 @@ public class CancellationTokenSourcePoolContentionBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _workers?.Dispose();
+    public void Cleanup()
+    {
+        _workers?.Dispose();
+        _pool?.Dispose();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation, Baseline = true)]
     public void NewDispose() => _workers!.Run();

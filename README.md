@@ -73,6 +73,10 @@ source races unsafely with those operations because `TryReset()` is not thread-s
 use. Do not return sources created by `CancellationTokenSource.CreateLinkedTokenSource`; dispose
 linked sources instead.
 
+Dedicated pools own their retained sources. Call `Clear()` to release them while keeping the pool
+usable, or dispose the pool when its lifetime ends. The shared pool is process-wide and should not
+be disposed.
+
 ## Benchmarks
 
 Run the full .NET 10 suite in Release mode:

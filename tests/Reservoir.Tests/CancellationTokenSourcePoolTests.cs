@@ -174,6 +174,37 @@ public class CancellationTokenSourcePoolTests
         pool.Return(actual);
     }
 
+    [Test]
+    public async Task ClearDisposesRetainedSourceAndLeavesPoolUsable()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource retained = pool.Rent();
+        _ = retained.Token.WaitHandle;
+        pool.Return(retained);
+
+        pool.Clear();
+        CancellationTokenSource replacement = pool.Rent();
+
+        await Assert.That(() => retained.Cancel()).Throws<ObjectDisposedException>();
+        await Assert.That(replacement).IsNotSameReferenceAs(retained);
+
+        pool.Return(replacement);
+    }
+
+    [Test]
+    public async Task DisposeReleasesRetainedSourceAndClosesPool()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource retained = pool.Rent();
+        _ = retained.Token.WaitHandle;
+        pool.Return(retained);
+
+        pool.Dispose();
+
+        await Assert.That(() => retained.Cancel()).Throws<ObjectDisposedException>();
+        await Assert.That(() => pool.Rent()).Throws<ObjectDisposedException>();
+    }
+
 #if !DEBUG && !RESERVOIR_DIAGNOSTICS
     [Test]
     public async Task WarmRentAndReturnAllocatesNothing()
