@@ -1,0 +1,93 @@
+namespace Reservoir;
+
+/// <summary>Provides pools of reusable <see cref="HashSet{T}"/> instances.</summary>
+/// <typeparam name="T">The element type.</typeparam>
+public sealed class HashSetPool<T>
+{
+    private readonly ObjectPool<HashSet<T>, Policy> _pool;
+
+    /// <summary>Gets the default largest hash-set capacity retained by a pool.</summary>
+    public const int DefaultMaximumRetainedCapacity = 1024;
+
+    /// <summary>Gets the shared pool using the default element comparer.</summary>
+    public static HashSetPool<T> Shared { get; } = new();
+
+    /// <summary>Initializes a pool with default limits and element comparer.</summary>
+    public HashSetPool()
+        : this(null)
+    {
+    }
+
+    /// <summary>Initializes a pool with default limits and a custom element comparer.</summary>
+    public HashSetPool(IEqualityComparer<T>? comparer)
+        : this(
+            comparer,
+            DefaultMaximumRetainedCapacity,
+            ObjectPool<HashSet<T>, Policy>.DefaultMaximumRetained)
+    {
+    }
+
+    /// <summary>Initializes a pool with a custom hash-set capacity limit.</summary>
+    public HashSetPool(int maxRetainedCapacity)
+        : this(null, maxRetainedCapacity)
+    {
+    }
+
+    /// <summary>Initializes a pool with a custom element comparer and hash-set capacity limit.</summary>
+    public HashSetPool(IEqualityComparer<T>? comparer, int maxRetainedCapacity)
+        : this(
+            comparer,
+            maxRetainedCapacity,
+            ObjectPool<HashSet<T>, Policy>.DefaultMaximumRetained)
+    {
+    }
+
+    /// <summary>Initializes a pool with custom limits and the default element comparer.</summary>
+    public HashSetPool(int maxRetainedCapacity, int maxCapacity)
+        : this(null, maxRetainedCapacity, maxCapacity)
+    {
+    }
+
+    /// <summary>Initializes a pool with a custom comparer and custom limits.</summary>
+    public HashSetPool(
+        IEqualityComparer<T>? comparer,
+        int maxRetainedCapacity,
+        int maxCapacity)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxRetainedCapacity);
+        Comparer = comparer ?? EqualityComparer<T>.Default;
+        MaximumRetainedCapacity = maxRetainedCapacity;
+        _pool = new ObjectPool<HashSet<T>, Policy>(
+            new Policy(Comparer, maxRetainedCapacity),
+            maxCapacity);
+    }
+
+    /// <summary>Gets the comparer used by hash sets from this pool.</summary>
+    public IEqualityComparer<T> Comparer { get; }
+
+    /// <summary>Gets the maximum number of hash sets retained by this pool.</summary>
+    public int MaximumRetained => _pool.MaximumRetained;
+
+    /// <summary>Gets the largest hash-set capacity retained by this pool.</summary>
+    public int MaximumRetainedCapacity { get; }
+
+    /// <summary>Rents an empty hash set.</summary>
+    public HashSet<T> Rent() => _pool.Rent();
+
+    /// <summary>Clears and returns a hash set, discarding it when its capacity is too large.</summary>
+    public void Return(HashSet<T> set) => _pool.Return(set);
+
+    private readonly struct Policy(
+        IEqualityComparer<T> comparer,
+        int maxRetainedCapacity) : IPooledObjectPolicy<HashSet<T>>
+    {
+        public HashSet<T> Create() => new(comparer);
+
+        public bool TryReset(HashSet<T> obj)
+        {
+            obj.Clear();
+            return ReferenceEquals(obj.Comparer, comparer)
+                && obj.EnsureCapacity(0) <= maxRetainedCapacity;
+        }
+    }
+}
