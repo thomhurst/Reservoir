@@ -85,14 +85,14 @@ Another thread may rent the same object immediately. Debug diagnostics make viol
 ## Measured, not promised
 
 <!-- BENCHMARK_RESULTS_START -->
-BenchmarkDotNet 0.15.8 `ShortRun`, .NET 10.0.10, Windows 11, Intel Core i7-12700K:
+BenchmarkDotNet 0.15.8 `MediumRun`, .NET 10.0.11, Windows 11, AMD EPYC 9V74:
 
 | Method | Mean | Ratio | Allocated |
 | --- | ---: | ---: | ---: |
-| `new` | 12.67 ns | 1.00 | 304 B |
-| **Reservoir** | **11.83 ns** | **0.93** | **0 B** |
-| `Microsoft.Extensions.ObjectPool` | 14.56 ns | 1.15 | 0 B |
-| `ConcurrentBag<T>` pool | 39.48 ns | 3.12 | 0 B |
+| `new` | 11.83 ns | 1.00 | 304 B |
+| **Reservoir** | **10.36 ns** | **0.88** | **0 B** |
+| `Microsoft.Extensions.ObjectPool` | 11.57 ns | 0.98 | 0 B |
+| `ConcurrentBag<T>` pool | 25.19 ns | 2.13 | 0 B |
 <!-- BENCHMARK_RESULTS_END -->
 
 Every measured warm Reservoir path allocated **0 B**. Timings vary by machine; compare methods within the same run.
