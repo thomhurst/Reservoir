@@ -24,7 +24,7 @@ Types designed for pooling can implement `IResettable` and use the constrained b
 var pool = new ObjectPool<MyResettableBuffer, ResettablePooledObjectPolicy<MyResettableBuffer>>();
 ```
 
-Discarded objects are disposed when their pooled type implements `IDisposable`. `Clear()` drains retained objects and disposes them while leaving the pool usable. `Dispose()` drains and permanently closes the pool; later returns are disposed immediately.
+Discarded objects are disposed when they implement `IDisposable`. `Clear()` drains retained objects and disposes them while leaving the pool usable. `Dispose()` drains and permanently closes the pool; later returns are disposed immediately and later rents throw `ObjectDisposedException`.
 
 Returning an object transfers ownership to the pool. Do not access it afterward and never return it twice. Another thread may rent it immediately after `Return()` completes.
 

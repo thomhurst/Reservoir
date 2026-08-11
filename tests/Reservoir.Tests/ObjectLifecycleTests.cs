@@ -2,6 +2,8 @@ namespace Reservoir.Tests;
 
 public class ObjectLifecycleTests
 {
+    private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(10);
+
     [Test]
     public async Task ResettablePolicyCallsTryResetOnReturn()
     {
@@ -47,6 +49,29 @@ public class ObjectLifecycleTests
     }
 
     [Test]
+    public async Task ResetFailureDisposesRuntimeDisposableSubtype()
+    {
+        var pool = new ObjectPool<object, RejectingObjectPolicy>(maxCapacity: 1);
+        var item = (DisposableItem)pool.Rent();
+
+        pool.Return(item);
+
+        await Assert.That(item.DisposeCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task ClearDisposesRuntimeDisposableSubtype()
+    {
+        var pool = new ObjectPool<object, ObjectPolicy>(maxCapacity: 1);
+        var item = (DisposableItem)pool.Rent();
+        pool.Return(item);
+
+        pool.Clear();
+
+        await Assert.That(item.DisposeCount).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task ClearDisposesRetainedItemsAndLeavesPoolUsable()
     {
         var pool = new ObjectPool<DisposableItem, DisposablePolicy>(maxCapacity: 2);
@@ -81,19 +106,24 @@ public class ObjectLifecycleTests
     [Test]
     public async Task ReturnRacingWithDisposeDoesNotLeaveItemRetained()
     {
-        var resetStarted = new ManualResetEventSlim();
-        var continueReset = new ManualResetEventSlim();
+        var state = new BlockingPolicyState();
         var pool = new ObjectPool<DisposableItem, BlockingPolicy>(
-            new BlockingPolicy(resetStarted, continueReset),
+            new BlockingPolicy(state),
             maxCapacity: 1);
         DisposableItem item = pool.Rent();
         Task returnTask = Task.Run(() => pool.Return(item));
-        resetStarted.Wait();
+        bool resetObserved = state.ResetStarted.Wait(TestTimeout);
 
-        pool.Dispose();
-        continueReset.Set();
-        await returnTask;
+        if (resetObserved)
+        {
+            pool.Dispose();
+        }
 
+        state.ContinueReset.Set();
+        await returnTask.WaitAsync(TestTimeout);
+
+        await Assert.That(resetObserved).IsTrue();
+        await Assert.That(state.ContinueResetObserved).IsTrue();
         await Assert.That(item.DisposeCount).IsEqualTo(1);
     }
 
@@ -130,17 +160,37 @@ public class ObjectLifecycleTests
         public bool TryReset(DisposableItem obj) => true;
     }
 
-    private readonly struct BlockingPolicy(
-        ManualResetEventSlim resetStarted,
-        ManualResetEventSlim continueReset) : IPooledObjectPolicy<DisposableItem>
+    private readonly struct ObjectPolicy : IPooledObjectPolicy<object>
+    {
+        public object Create() => new DisposableItem();
+
+        public bool TryReset(object obj) => true;
+    }
+
+    private readonly struct RejectingObjectPolicy : IPooledObjectPolicy<object>
+    {
+        public object Create() => new DisposableItem();
+
+        public bool TryReset(object obj) => false;
+    }
+
+    private readonly struct BlockingPolicy(BlockingPolicyState state)
+        : IPooledObjectPolicy<DisposableItem>
     {
         public DisposableItem Create() => new();
 
         public bool TryReset(DisposableItem obj)
         {
-            resetStarted.Set();
-            continueReset.Wait();
-            return true;
+            state.ResetStarted.Set();
+            state.ContinueResetObserved = state.ContinueReset.Wait(TestTimeout);
+            return state.ContinueResetObserved;
         }
+    }
+
+    private sealed class BlockingPolicyState
+    {
+        internal ManualResetEventSlim ResetStarted { get; } = new();
+        internal ManualResetEventSlim ContinueReset { get; } = new();
+        internal bool ContinueResetObserved { get; set; }
     }
 }

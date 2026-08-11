@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
@@ -21,8 +22,10 @@ public sealed class ObjectPool<T, TPolicy> : IDisposable
     private int _isDisposed;
     private T? _fastItem;
 
-    private static readonly bool s_isDisposable
+    private static readonly bool s_isStaticallyDisposable
         = typeof(IDisposable).IsAssignableFrom(typeof(T));
+
+    private static readonly bool s_mayHaveDisposableImplementations = !typeof(T).IsSealed;
 
     /// <summary>Initializes a pool with the default policy value and capacity.</summary>
     public ObjectPool()
@@ -73,8 +76,7 @@ public sealed class ObjectPool<T, TPolicy> : IDisposable
         }
 
         DisposeItem(rented);
-        ThrowDisposed();
-        return null!;
+        return ThrowDisposed();
     }
 
     /// <summary>Rents an object owned by a stack-only lease that returns it on disposal.</summary>
@@ -255,16 +257,23 @@ public sealed class ObjectPool<T, TPolicy> : IDisposable
         }
     }
 
+    [DoesNotReturn]
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void ThrowDisposed()
+    private static T ThrowDisposed()
         => throw new ObjectDisposedException(typeof(ObjectPool<T, TPolicy>).FullName);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void DisposeItem(T obj)
     {
-        if (s_isDisposable)
+        if (s_isStaticallyDisposable)
         {
             ((IDisposable)obj).Dispose();
+            return;
+        }
+
+        if (s_mayHaveDisposableImplementations && obj is IDisposable disposable)
+        {
+            disposable.Dispose();
         }
     }
 
