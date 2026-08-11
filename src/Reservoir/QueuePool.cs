@@ -1,0 +1,57 @@
+namespace Reservoir;
+
+/// <summary>Provides pools of reusable <see cref="Queue{T}"/> instances.</summary>
+/// <typeparam name="T">The element type.</typeparam>
+public sealed class QueuePool<T>
+{
+    private readonly ObjectPool<Queue<T>, Policy> _pool;
+
+    /// <summary>Gets the default largest queue capacity retained by a pool.</summary>
+    public const int DefaultMaximumRetainedCapacity = 1024;
+
+    /// <summary>Gets the shared pool.</summary>
+    public static QueuePool<T> Shared { get; } = new();
+
+    /// <summary>Initializes a pool with default limits.</summary>
+    public QueuePool()
+        : this(DefaultMaximumRetainedCapacity, ObjectPool<Queue<T>, Policy>.DefaultMaximumRetained)
+    {
+    }
+
+    /// <summary>Initializes a pool with a custom maximum retained queue capacity.</summary>
+    public QueuePool(int maxRetainedCapacity)
+        : this(maxRetainedCapacity, ObjectPool<Queue<T>, Policy>.DefaultMaximumRetained)
+    {
+    }
+
+    /// <summary>Initializes a pool with custom item and queue capacity limits.</summary>
+    public QueuePool(int maxRetainedCapacity, int maxCapacity)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxRetainedCapacity);
+        MaximumRetainedCapacity = maxRetainedCapacity;
+        _pool = new ObjectPool<Queue<T>, Policy>(new Policy(maxRetainedCapacity), maxCapacity);
+    }
+
+    /// <summary>Gets the maximum number of queues retained by this pool.</summary>
+    public int MaximumRetained => _pool.MaximumRetained;
+
+    /// <summary>Gets the largest queue capacity retained by this pool.</summary>
+    public int MaximumRetainedCapacity { get; }
+
+    /// <summary>Rents an empty queue.</summary>
+    public Queue<T> Rent() => _pool.Rent();
+
+    /// <summary>Clears and returns a queue, discarding it when its capacity is too large.</summary>
+    public void Return(Queue<T> queue) => _pool.Return(queue);
+
+    private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<Queue<T>>
+    {
+        public Queue<T> Create() => [];
+
+        public bool TryReset(Queue<T> obj)
+        {
+            obj.Clear();
+            return obj.EnsureCapacity(0) <= maxRetainedCapacity;
+        }
+    }
+}

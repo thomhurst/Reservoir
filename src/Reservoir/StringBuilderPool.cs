@@ -1,0 +1,60 @@
+using System.Text;
+
+namespace Reservoir;
+
+/// <summary>Provides pools of reusable <see cref="StringBuilder"/> instances.</summary>
+public sealed class StringBuilderPool
+{
+    private readonly ObjectPool<StringBuilder, Policy> _pool;
+
+    /// <summary>Gets the default largest builder capacity retained by a pool.</summary>
+    public const int DefaultMaximumRetainedCapacity = 4096;
+
+    /// <summary>Gets the shared pool.</summary>
+    public static StringBuilderPool Shared { get; } = new();
+
+    /// <summary>Initializes a pool with default limits.</summary>
+    public StringBuilderPool()
+        : this(
+            DefaultMaximumRetainedCapacity,
+            ObjectPool<StringBuilder, Policy>.DefaultMaximumRetained)
+    {
+    }
+
+    /// <summary>Initializes a pool with a custom maximum retained builder capacity.</summary>
+    public StringBuilderPool(int maxRetainedCapacity)
+        : this(maxRetainedCapacity, ObjectPool<StringBuilder, Policy>.DefaultMaximumRetained)
+    {
+    }
+
+    /// <summary>Initializes a pool with custom item and builder capacity limits.</summary>
+    public StringBuilderPool(int maxRetainedCapacity, int maxCapacity)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxRetainedCapacity);
+        MaximumRetainedCapacity = maxRetainedCapacity;
+        _pool = new ObjectPool<StringBuilder, Policy>(new Policy(maxRetainedCapacity), maxCapacity);
+    }
+
+    /// <summary>Gets the maximum number of builders retained by this pool.</summary>
+    public int MaximumRetained => _pool.MaximumRetained;
+
+    /// <summary>Gets the largest builder capacity retained by this pool.</summary>
+    public int MaximumRetainedCapacity { get; }
+
+    /// <summary>Rents an empty string builder.</summary>
+    public StringBuilder Rent() => _pool.Rent();
+
+    /// <summary>Clears and returns a builder, discarding it when its capacity is too large.</summary>
+    public void Return(StringBuilder builder) => _pool.Return(builder);
+
+    private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<StringBuilder>
+    {
+        public StringBuilder Create() => new();
+
+        public bool TryReset(StringBuilder obj)
+        {
+            obj.Clear();
+            return obj.Capacity <= maxRetainedCapacity;
+        }
+    }
+}

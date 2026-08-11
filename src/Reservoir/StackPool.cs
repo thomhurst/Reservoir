@@ -1,0 +1,57 @@
+namespace Reservoir;
+
+/// <summary>Provides pools of reusable <see cref="Stack{T}"/> instances.</summary>
+/// <typeparam name="T">The element type.</typeparam>
+public sealed class StackPool<T>
+{
+    private readonly ObjectPool<Stack<T>, Policy> _pool;
+
+    /// <summary>Gets the default largest stack capacity retained by a pool.</summary>
+    public const int DefaultMaximumRetainedCapacity = 1024;
+
+    /// <summary>Gets the shared pool.</summary>
+    public static StackPool<T> Shared { get; } = new();
+
+    /// <summary>Initializes a pool with default limits.</summary>
+    public StackPool()
+        : this(DefaultMaximumRetainedCapacity, ObjectPool<Stack<T>, Policy>.DefaultMaximumRetained)
+    {
+    }
+
+    /// <summary>Initializes a pool with a custom maximum retained stack capacity.</summary>
+    public StackPool(int maxRetainedCapacity)
+        : this(maxRetainedCapacity, ObjectPool<Stack<T>, Policy>.DefaultMaximumRetained)
+    {
+    }
+
+    /// <summary>Initializes a pool with custom item and stack capacity limits.</summary>
+    public StackPool(int maxRetainedCapacity, int maxCapacity)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxRetainedCapacity);
+        MaximumRetainedCapacity = maxRetainedCapacity;
+        _pool = new ObjectPool<Stack<T>, Policy>(new Policy(maxRetainedCapacity), maxCapacity);
+    }
+
+    /// <summary>Gets the maximum number of stacks retained by this pool.</summary>
+    public int MaximumRetained => _pool.MaximumRetained;
+
+    /// <summary>Gets the largest stack capacity retained by this pool.</summary>
+    public int MaximumRetainedCapacity { get; }
+
+    /// <summary>Rents an empty stack.</summary>
+    public Stack<T> Rent() => _pool.Rent();
+
+    /// <summary>Clears and returns a stack, discarding it when its capacity is too large.</summary>
+    public void Return(Stack<T> stack) => _pool.Return(stack);
+
+    private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<Stack<T>>
+    {
+        public Stack<T> Create() => [];
+
+        public bool TryReset(Stack<T> obj)
+        {
+            obj.Clear();
+            return obj.EnsureCapacity(0) <= maxRetainedCapacity;
+        }
+    }
+}

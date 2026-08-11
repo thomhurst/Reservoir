@@ -1,0 +1,95 @@
+namespace Reservoir;
+
+/// <summary>Provides pools of reusable <see cref="Dictionary{TKey,TValue}"/> instances.</summary>
+/// <typeparam name="TKey">The key type.</typeparam>
+/// <typeparam name="TValue">The value type.</typeparam>
+public sealed class DictionaryPool<TKey, TValue>
+    where TKey : notnull
+{
+    private readonly ObjectPool<Dictionary<TKey, TValue>, Policy> _pool;
+
+    /// <summary>Gets the default largest dictionary capacity retained by a pool.</summary>
+    public const int DefaultMaximumRetainedCapacity = 1024;
+
+    /// <summary>Gets the shared pool using the default key comparer.</summary>
+    public static DictionaryPool<TKey, TValue> Shared { get; } = new();
+
+    /// <summary>Initializes a pool with default limits and key comparer.</summary>
+    public DictionaryPool()
+        : this(null)
+    {
+    }
+
+    /// <summary>Initializes a pool with default limits and a custom key comparer.</summary>
+    public DictionaryPool(IEqualityComparer<TKey>? comparer)
+        : this(
+            comparer,
+            DefaultMaximumRetainedCapacity,
+            ObjectPool<Dictionary<TKey, TValue>, Policy>.DefaultMaximumRetained)
+    {
+    }
+
+    /// <summary>Initializes a pool with a custom dictionary capacity limit.</summary>
+    public DictionaryPool(int maxRetainedCapacity)
+        : this(null, maxRetainedCapacity)
+    {
+    }
+
+    /// <summary>Initializes a pool with a custom key comparer and dictionary capacity limit.</summary>
+    public DictionaryPool(IEqualityComparer<TKey>? comparer, int maxRetainedCapacity)
+        : this(
+            comparer,
+            maxRetainedCapacity,
+            ObjectPool<Dictionary<TKey, TValue>, Policy>.DefaultMaximumRetained)
+    {
+    }
+
+    /// <summary>Initializes a pool with custom limits and the default key comparer.</summary>
+    public DictionaryPool(int maxRetainedCapacity, int maxCapacity)
+        : this(null, maxRetainedCapacity, maxCapacity)
+    {
+    }
+
+    /// <summary>Initializes a pool with a custom comparer and custom limits.</summary>
+    public DictionaryPool(
+        IEqualityComparer<TKey>? comparer,
+        int maxRetainedCapacity,
+        int maxCapacity)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxRetainedCapacity);
+        Comparer = comparer ?? EqualityComparer<TKey>.Default;
+        MaximumRetainedCapacity = maxRetainedCapacity;
+        _pool = new ObjectPool<Dictionary<TKey, TValue>, Policy>(
+            new Policy(Comparer, maxRetainedCapacity),
+            maxCapacity);
+    }
+
+    /// <summary>Gets the comparer used by dictionaries from this pool.</summary>
+    public IEqualityComparer<TKey> Comparer { get; }
+
+    /// <summary>Gets the maximum number of dictionaries retained by this pool.</summary>
+    public int MaximumRetained => _pool.MaximumRetained;
+
+    /// <summary>Gets the largest dictionary capacity retained by this pool.</summary>
+    public int MaximumRetainedCapacity { get; }
+
+    /// <summary>Rents an empty dictionary.</summary>
+    public Dictionary<TKey, TValue> Rent() => _pool.Rent();
+
+    /// <summary>Clears and returns a dictionary, discarding it when its capacity is too large.</summary>
+    public void Return(Dictionary<TKey, TValue> dictionary) => _pool.Return(dictionary);
+
+    private readonly struct Policy(
+        IEqualityComparer<TKey> comparer,
+        int maxRetainedCapacity) : IPooledObjectPolicy<Dictionary<TKey, TValue>>
+    {
+        public Dictionary<TKey, TValue> Create() => new(comparer);
+
+        public bool TryReset(Dictionary<TKey, TValue> obj)
+        {
+            obj.Clear();
+            return ReferenceEquals(obj.Comparer, comparer)
+                && obj.EnsureCapacity(0) <= maxRetainedCapacity;
+        }
+    }
+}
