@@ -8,6 +8,7 @@ internal sealed class BenchmarkWorkerGroup : IDisposable
     private readonly AutoResetEvent[] _starts;
     private readonly Thread[] _threads;
     private ExceptionDispatchInfo? _failure;
+    private int _isDisposed;
     private volatile bool _stopping;
 
     internal BenchmarkWorkerGroup(int workerCount, Action action)
@@ -40,6 +41,11 @@ internal sealed class BenchmarkWorkerGroup : IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _isDisposed, 1) != 0)
+        {
+            return;
+        }
+
         _stopping = true;
 
         foreach (AutoResetEvent start in _starts)

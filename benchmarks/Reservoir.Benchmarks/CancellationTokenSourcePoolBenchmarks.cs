@@ -12,7 +12,7 @@ public class CancellationTokenSourcePoolBenchmarks
     public void WarmPool()
     {
         CancellationTokenSource source = _pool.Rent();
-        _pool.Return(source);
+        source.Dispose();
 
         using CancellationTokenSourcePool.Lease lease = _pool.RentScoped();
     }
@@ -28,16 +28,16 @@ public class CancellationTokenSourcePoolBenchmarks
     }
 
     [Benchmark]
-    public bool RentReturn()
+    public bool RentDispose()
     {
         CancellationTokenSource source = _pool.Rent();
         bool isCanceled = source.IsCancellationRequested;
-        _pool.Return(source);
+        source.Dispose();
         return isCanceled;
     }
 
     [Benchmark]
-    public bool ScopedRentReturn()
+    public bool ScopedRentDispose()
     {
         using CancellationTokenSourcePool.Lease lease = _pool.RentScoped();
         return lease.Value.IsCancellationRequested;
@@ -56,7 +56,7 @@ public class CancellationTokenSourceTimerBenchmarks
     {
         CancellationTokenSource source = _pool.Rent();
         source.CancelAfter(_timeout);
-        _pool.Return(source);
+        source.Dispose();
     }
 
     [GlobalCleanup]
@@ -71,12 +71,12 @@ public class CancellationTokenSourceTimerBenchmarks
     }
 
     [Benchmark]
-    public bool RentScheduleReturn()
+    public bool RentScheduleDispose()
     {
         CancellationTokenSource source = _pool.Rent();
         source.CancelAfter(_timeout);
         bool isCanceled = source.IsCancellationRequested;
-        _pool.Return(source);
+        source.Dispose();
         return isCanceled;
     }
 }
@@ -93,7 +93,7 @@ public class CancellationTokenSourceRegistrationBenchmarks
     {
         CancellationTokenSource source = _pool.Rent();
         _ = source.Token.Register(s_callback);
-        _pool.Return(source);
+        source.Dispose();
     }
 
     [GlobalCleanup]
@@ -108,12 +108,12 @@ public class CancellationTokenSourceRegistrationBenchmarks
     }
 
     [Benchmark]
-    public bool RentRegisterReturn()
+    public bool RentRegisterDispose()
     {
         CancellationTokenSource source = _pool.Rent();
         _ = source.Token.Register(s_callback);
         bool isCanceled = source.IsCancellationRequested;
-        _pool.Return(source);
+        source.Dispose();
         return isCanceled;
     }
 }
@@ -128,7 +128,7 @@ public class CancellationTokenSourceCanceledBenchmarks
     public void WarmPool()
     {
         CancellationTokenSource source = _pool.Rent();
-        _pool.Return(source);
+        source.Dispose();
     }
 
     [GlobalCleanup]
@@ -143,12 +143,12 @@ public class CancellationTokenSourceCanceledBenchmarks
     }
 
     [Benchmark]
-    public bool RentCancelReturn()
+    public bool RentCancelDispose()
     {
         CancellationTokenSource source = _pool.Rent();
         source.Cancel();
         bool isCanceled = source.IsCancellationRequested;
-        _pool.Return(source);
+        source.Dispose();
         return isCanceled;
     }
 }
@@ -163,19 +163,19 @@ public class CancellationTokenSourcePoolContentionBenchmarks
     private BenchmarkWorkerGroup? _workers;
     private CancellationTokenSourcePool? _pool;
 
-    [Params(1, 4, 16, 32)]
+    [Params(1, 4, 8, 16, 32)]
     public int WorkerCount { get; set; }
 
     [GlobalSetup(Target = nameof(NewDispose))]
     public void SetupNewDispose()
     {
-        int operationsPerWorker = OperationsPerInvocation / WorkerCount;
+        int operationsPerWorker = GetOperationsPerWorker();
         _workers = new BenchmarkWorkerGroup(
             WorkerCount,
             () => RunNewDispose(operationsPerWorker));
     }
 
-    [GlobalSetup(Target = nameof(RentReturn))]
+    [GlobalSetup(Target = nameof(RentDispose))]
     public void SetupPool()
     {
         var pool = _pool = new CancellationTokenSourcePool(maxCapacity: PoolCapacity);
@@ -188,10 +188,10 @@ public class CancellationTokenSourcePoolContentionBenchmarks
 
         foreach (CancellationTokenSource source in sources)
         {
-            pool.Return(source);
+            source.Dispose();
         }
 
-        int operationsPerWorker = OperationsPerInvocation / WorkerCount;
+        int operationsPerWorker = GetOperationsPerWorker();
         _workers = new BenchmarkWorkerGroup(
             WorkerCount,
             () => RunPool(pool, operationsPerWorker));
@@ -208,7 +208,7 @@ public class CancellationTokenSourcePoolContentionBenchmarks
     public void NewDispose() => _workers!.Run();
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void RentReturn() => _workers!.Run();
+    public void RentDispose() => _workers!.Run();
 
     private static void RunNewDispose(int operationCount)
     {
@@ -218,12 +218,23 @@ public class CancellationTokenSourcePoolContentionBenchmarks
         }
     }
 
+    private int GetOperationsPerWorker()
+    {
+        if (OperationsPerInvocation % WorkerCount != 0)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(OperationsPerInvocation)} must be divisible by {nameof(WorkerCount)}.");
+        }
+
+        return OperationsPerInvocation / WorkerCount;
+    }
+
     private static void RunPool(CancellationTokenSourcePool pool, int operationCount)
     {
         for (int i = 0; i < operationCount; i++)
         {
             CancellationTokenSource source = pool.Rent();
-            pool.Return(source);
+            source.Dispose();
         }
     }
 }
