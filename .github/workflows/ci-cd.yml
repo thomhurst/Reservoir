@@ -77,6 +77,13 @@ jobs:
           -p:PackageVersion=${{ steps.version.outputs.version }}
           -p:ContinuousIntegrationBuild=true
 
+      - name: Test package consumers
+        run: >-
+          dotnet build tests/Reservoir.Package.Consumer/Reservoir.Package.Consumer.csproj
+          --configuration Release
+          -p:ReservoirPackageVersion=${{ steps.version.outputs.version }}
+          -p:RestoreAdditionalProjectSources=${{ github.workspace }}/artifacts/packages
+
       - name: Upload package
         uses: actions/upload-artifact@v7
         with:

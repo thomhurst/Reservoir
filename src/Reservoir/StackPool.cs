@@ -42,7 +42,13 @@ sealed class StackPool<T>
     /// <summary>Initializes a pool with custom item and stack capacity limits.</summary>
     public StackPool(int maxRetainedCapacity, int maxCapacity)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(maxRetainedCapacity);
+        if (maxRetainedCapacity < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxRetainedCapacity),
+                maxRetainedCapacity,
+                null);
+        }
         MaximumRetainedCapacity = maxRetainedCapacity;
         _pool = new ObjectPool<Stack<T>, Policy>(new Policy(maxRetainedCapacity), maxCapacity);
     }
@@ -61,12 +67,27 @@ sealed class StackPool<T>
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<Stack<T>>
     {
+#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+        private static readonly Func<Stack<T>, int, int>? s_ensureCapacity
+            = RuntimeCompatibility.CreateEnsureCapacity<Stack<T>>();
+#endif
+
         public Stack<T> Create() => [];
 
         public bool TryReset(Stack<T> obj)
         {
             obj.Clear();
+#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+            if (s_ensureCapacity is not null)
+            {
+                return s_ensureCapacity(obj, 0) <= maxRetainedCapacity;
+            }
+
+            obj.TrimExcess();
+            return true;
+#else
             return obj.EnsureCapacity(0) <= maxRetainedCapacity;
+#endif
         }
     }
 }

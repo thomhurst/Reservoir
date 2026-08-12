@@ -18,7 +18,7 @@ var pool = new ObjectPool<Buffer, BufferPolicy>(
 ## Write a policy
 
 ```csharp
-readonly struct BufferPolicy(int maxRetainedBytes) : IPooledObjectPolicy<Buffer>
+readonly struct BufferPolicy(int maxRetainedBytes) : IPooledObjectDestroyPolicy<Buffer>
 {
     public Buffer Create() => new(initialCapacity: 4096);
 
@@ -36,7 +36,9 @@ readonly struct BufferPolicy(int maxRetainedBytes) : IPooledObjectPolicy<Buffer>
 | --- | --- | --- |
 | `Create()` | No retained object is available | Return a non-null object. |
 | `TryReset(T)` | An object is returned | Restore clean state; return `false` to discard. |
-| `Destroy(T)` | An object is discarded, cleared, or returned after disposal | Permanently release resources. Default implementation disposes `IDisposable`. |
+| `Destroy(T)` | An object is discarded, cleared, or returned after disposal | Permanently release resources when implementing `IPooledObjectDestroyPolicy<T>`. |
+
+Implement `IPooledObjectPolicy<T>` when default destruction is sufficient. Reservoir automatically disposes discarded objects that implement `IDisposable`. Implement `IPooledObjectDestroyPolicy<T>` only when cleanup needs different behavior.
 
 A `readonly struct` policy avoids an interface-object allocation and gives the JIT a concrete call target. Policy state should be immutable or explicitly thread-safe because pool operations may call it concurrently.
 
@@ -70,7 +72,7 @@ var factoryPool = new ObjectPool<Buffer>(() => new Buffer(), maxCapacity: 32);
 var policyPool = new ObjectPool<Buffer>(new RuntimeBufferPolicy(), maxCapacity: 32);
 ```
 
-The factory overload retains every returned object after no-op reset. It still disposes discarded `IDisposable` instances. The interface-policy overload delegates all three lifecycle operations.
+The factory overload retains every returned object after no-op reset. It still disposes discarded `IDisposable` instances. The interface-policy overload delegates creation and reset. It also delegates destruction when the policy implements `IPooledObjectDestroyPolicy<T>`.
 
 ## Rent and return
 

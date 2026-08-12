@@ -46,7 +46,7 @@ ref struct PooledLease<T, TPolicy>
                 PooledLeaseThrowHelper.ThrowDisposed();
             }
 
-            return state.GetValue(_token);
+            return state!.GetValue(_token);
         }
     }
 
@@ -128,7 +128,7 @@ internal sealed class PooledLeaseState<T, TPolicy>
             PooledLeaseThrowHelper.ThrowDisposed();
         }
 
-        return value;
+        return value!;
     }
 
     internal void Release(long token)
@@ -151,7 +151,6 @@ internal sealed class PooledLeaseState<T, TPolicy>
 [DebuggerNonUserCode]
 internal static class PooledLeaseThrowHelper
 {
-    [DoesNotReturn]
     [MethodImpl(MethodImplOptions.NoInlining)]
     internal static void ThrowDisposed()
         => throw new ObjectDisposedException("PooledLease");

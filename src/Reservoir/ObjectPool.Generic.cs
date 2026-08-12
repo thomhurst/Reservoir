@@ -4,8 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Numerics;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
@@ -41,7 +39,8 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
     private static int s_nextThreadStripe;
 
-    private static readonly bool s_hasCustomDestroy = HasCustomDestroy();
+    private static readonly bool s_hasCustomDestroy
+        = typeof(IPooledObjectDestroyPolicy<T>).IsAssignableFrom(typeof(TPolicy));
     private static readonly bool s_isStaticallyDisposable
         = typeof(IDisposable).IsAssignableFrom(typeof(T));
 
@@ -54,6 +53,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
 #if DEBUG || RESERVOIR_DIAGNOSTICS
     private readonly ConditionalWeakTable<T, RentalTracker> _outstandingRentals = new();
+#if NETSTANDARD2_0
+    private static readonly RuntimeCompatibility.ConditionalWeakTableRemove<T, RentalTracker>?
+        s_removeOutstandingRental
+            = RuntimeCompatibility.CreateConditionalWeakTableRemove<T, RentalTracker>();
+#endif
 #endif
 
     /// <summary>Initializes a pool with the default policy value and capacity.</summary>
@@ -77,11 +81,14 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     /// <summary>Initializes a pool with the supplied policy and capacity.</summary>
     public ObjectPool(TPolicy policy, int maxCapacity)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCapacity);
+        if (maxCapacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxCapacity), maxCapacity, null);
+        }
 
         _policy = policy;
         MaximumRetained = maxCapacity;
-        _indexMask = BitOperations.IsPow2((uint)maxCapacity) ? maxCapacity - 1 : -1;
+        _indexMask = (maxCapacity & (maxCapacity - 1)) == 0 ? maxCapacity - 1 : -1;
         _items = new ObjectWrapper[checked(maxCapacity * CacheLineSlotStride)];
     }
 
@@ -203,7 +210,10 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Return(T obj)
     {
-        ArgumentNullException.ThrowIfNull(obj);
+        if (obj is null)
+        {
+            throw new ArgumentNullException(nameof(obj));
+        }
 
 #if DEBUG || RESERVOIR_DIAGNOSTICS
         bool wasRented = TryCompleteRental(obj);
@@ -355,7 +365,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
     }
 
-    [DoesNotReturn]
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static T ThrowDisposed()
         => throw new ObjectDisposedException(typeof(ObjectPool<T, TPolicy>).FullName);
@@ -365,7 +374,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     {
         if (s_hasCustomDestroy)
         {
-            _policy.Destroy(obj);
+            ((IPooledObjectDestroyPolicy<T>)(object)_policy).Destroy(obj);
             return;
         }
 
@@ -385,22 +394,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         {
             disposable.Dispose();
         }
-    }
-
-    private static bool HasCustomDestroy()
-    {
-        Type policyInterface = typeof(IPooledObjectPolicy<T>);
-        InterfaceMapping mapping = typeof(TPolicy).GetInterfaceMap(policyInterface);
-
-        for (int i = 0; i < mapping.InterfaceMethods.Length; i++)
-        {
-            if (mapping.InterfaceMethods[i].Name == nameof(IPooledObjectPolicy<T>.Destroy))
-            {
-                return mapping.TargetMethods[i].DeclaringType != policyInterface;
-            }
-        }
-
-        return false;
     }
 
     private void DisposeRetained(T? obj, ref Exception? firstException)
@@ -442,12 +435,22 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.NoInlining)]
     private bool TryCompleteRental(T obj)
     {
-        if (!_outstandingRentals.Remove(obj, out RentalTracker? tracker))
+#if NETSTANDARD2_0
+        RentalTracker? tracker;
+        bool removed = s_removeOutstandingRental is not null
+            ? s_removeOutstandingRental(_outstandingRentals, obj, out tracker!)
+            : _outstandingRentals.TryGetValue(obj, out tracker)
+                && _outstandingRentals.Remove(obj);
+#else
+        bool removed = _outstandingRentals.Remove(obj, out RentalTracker? tracker);
+#endif
+
+        if (!removed)
         {
             return false;
         }
 
-        tracker.Complete();
+        tracker!.Complete();
         return true;
     }
 

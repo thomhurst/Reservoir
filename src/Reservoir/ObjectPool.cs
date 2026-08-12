@@ -32,7 +32,10 @@ sealed class ObjectPool<T> : IDisposable
     /// <summary>Initializes a pool backed by a policy instance.</summary>
     public ObjectPool(IPooledObjectPolicy<T> policy, int maxCapacity)
     {
-        ArgumentNullException.ThrowIfNull(policy);
+        if (policy is null)
+        {
+            throw new ArgumentNullException(nameof(policy));
+        }
         _pool = new ObjectPool<T, PolicyAdapter>(new PolicyAdapter(policy), maxCapacity);
     }
 
@@ -45,7 +48,10 @@ sealed class ObjectPool<T> : IDisposable
     /// <summary>Initializes a pool backed by a factory.</summary>
     public ObjectPool(Func<T> factory, int maxCapacity)
     {
-        ArgumentNullException.ThrowIfNull(factory);
+        if (factory is null)
+        {
+            throw new ArgumentNullException(nameof(factory));
+        }
         _pool = new ObjectPool<T, PolicyAdapter>(new PolicyAdapter(factory), maxCapacity);
     }
 
@@ -83,7 +89,7 @@ sealed class ObjectPool<T> : IDisposable
     /// </summary>
     public void Dispose() => _pool.Dispose();
 
-    internal readonly struct PolicyAdapter : IPooledObjectPolicy<T>
+    internal readonly struct PolicyAdapter : IPooledObjectDestroyPolicy<T>
     {
         private readonly Func<T>? _factory;
         private readonly IPooledObjectPolicy<T>? _policy;
@@ -106,9 +112,9 @@ sealed class ObjectPool<T> : IDisposable
 
         public void Destroy(T obj)
         {
-            if (_policy is not null)
+            if (_policy is IPooledObjectDestroyPolicy<T> destroyPolicy)
             {
-                _policy.Destroy(obj);
+                destroyPolicy.Destroy(obj);
             }
             else if (obj is IDisposable disposable)
             {

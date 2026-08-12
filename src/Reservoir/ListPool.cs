@@ -42,7 +42,13 @@ sealed class ListPool<T>
     /// <summary>Initializes a pool with custom item and list capacity limits.</summary>
     public ListPool(int maxRetainedCapacity, int maxCapacity)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(maxRetainedCapacity);
+        if (maxRetainedCapacity < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxRetainedCapacity),
+                maxRetainedCapacity,
+                null);
+        }
         MaximumRetainedCapacity = maxRetainedCapacity;
         _pool = new ObjectPool<List<T>, Policy>(new Policy(maxRetainedCapacity), maxCapacity);
     }

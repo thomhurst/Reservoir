@@ -156,7 +156,7 @@ internal readonly struct QuickStartBufferPolicy : IPooledObjectPolicy<Buffer>
 }
 
 internal readonly struct BufferPolicy(int maxRetainedBytes)
-    : IPooledObjectPolicy<Buffer>
+    : IPooledObjectDestroyPolicy<Buffer>
 {
     public Buffer Create() => new(initialCapacity: 4096);
 

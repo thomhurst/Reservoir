@@ -27,7 +27,7 @@ Collection pools have a separate `maxRetainedCapacity`. It prevents one unusuall
 - `StringBuilderPool` defaults to 4,096.
 - A negative value is rejected; zero means retain only instances with zero backing capacity.
 
-Returned instances are cleared and inspected. Oversized instances are discarded rather than trimmed.
+Returned instances are cleared and inspected. Runtimes with capacity inspection discard oversized instances rather than trimming. On older runtimes, hash sets, queues, and stacks are trimmed before retention; dictionaries are discarded.
 
 ## Compilation symbols
 
@@ -50,6 +50,6 @@ When neither `DEBUG` nor `RESERVOIR_DIAGNOSTICS` is defined, tracking fields and
 - Use `Clear()` to release retained resources while keeping a core pool open.
 - Use `Dispose()` when a dedicated core pool's lifetime ends.
 - Return `false` from `TryReset()` to reject a specific object.
-- Override `Destroy()` when cleanup is not `IDisposable.Dispose()`.
+- Implement `IPooledObjectDestroyPolicy<T>` when cleanup is not `IDisposable.Dispose()`.
 
 Shared collection pools are intended to live for the process lifetime. The shared cancellation-token-source pool treats disposal as a clear operation so one caller cannot close it globally.

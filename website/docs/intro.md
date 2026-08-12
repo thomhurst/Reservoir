@@ -20,7 +20,7 @@ Reservoir includes the general-purpose `ObjectPool<T,TPolicy>`, a convenient pol
 
 ## Requirements
 
-- .NET 10.0 or later
+- .NET Standard 2.0 or later
 - C# 12.0 or later
 
 ## Choose a starting point

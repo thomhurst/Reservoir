@@ -12,7 +12,7 @@ Reservoir is bounded, thread-safe object pooling for .NET with a **0 B warm rent
 dotnet add package Reservoir
 ```
 
-Requires .NET 10 and C# 12 or later.
+Requires .NET Standard 2.0 and C# 12 or later.
 
 ## Why Reservoir?
 
@@ -51,7 +51,7 @@ readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
 }
 ```
 
-`Create()` handles a miss. `TryReset()` prepares an object for reuse or returns `false` to discard it. The scoped lease guarantees return when control leaves the synchronous scope.
+`Create()` handles a miss. `TryReset()` prepares an object for reuse or returns `false` to discard it. Discarded `IDisposable` objects are disposed automatically; implement `IPooledObjectDestroyPolicy<T>` for custom cleanup. The scoped lease guarantees return when control leaves the synchronous scope.
 
 For work that crosses an `await`, use `Rent()` and return the object in `finally`. See the [quick start](https://thomhurst.github.io/Reservoir/docs/quick-start) for both patterns.
 
