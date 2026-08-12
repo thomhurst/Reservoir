@@ -1,11 +1,11 @@
 ---
 title: Configuration
-description: Configure capacity, visibility, diagnostics, and lifecycle behavior.
+description: Configure capacity and lifecycle behavior.
 ---
 
 # Configuration
 
-Reservoir uses constructor arguments and compilation symbols—no global runtime configuration.
+Reservoir uses constructor arguments and policy implementations for pool behavior. Ownership diagnostics use one process-wide opt-in captured by each new pool.
 
 ## Retained object count
 
@@ -31,21 +31,23 @@ Collection pools have a separate `maxRetainedCapacity`. It prevents one unusuall
 
 Returned instances are cleared and inspected. Runtimes with capacity inspection discard oversized instances rather than trimming. On older runtimes, hash sets, queues, and stacks are trimmed before retention; dictionaries are discarded.
 
-## Compilation symbols
+## Ownership diagnostics
 
-| Symbol | Effect |
-| --- | --- |
-| `RESERVOIR_PUBLIC` | Makes Reservoir's top-level consumer API public instead of internal. |
-| `RESERVOIR_DIAGNOSTICS` | Includes wrong-pool, double-return, and leak diagnostics outside Debug builds. |
-| `DEBUG` | Includes the same diagnostics automatically. |
+Enable diagnostics before constructing pools:
 
-```xml
-<PropertyGroup>
-  <DefineConstants>$(DefineConstants);RESERVOIR_PUBLIC</DefineConstants>
-</PropertyGroup>
+```csharp
+ObjectPoolDiagnostics.Enabled = true;
 ```
 
-When neither `DEBUG` nor `RESERVOIR_DIAGNOSTICS` is defined, tracking fields and calls are removed by conditional compilation; they do not remain on the Release hot path.
+Each pool captures the setting when constructed. Existing pools are unaffected by later changes. Enabled pools detect wrong-pool and duplicate returns, and report rentals that become unreachable without being returned.
+
+For development-only diagnostics, call this during application startup:
+
+```csharp
+ObjectPoolDiagnostics.EnableForDebugBuilds();
+```
+
+The method has `[Conditional("DEBUG")]`, so the consumer compiler omits the call from builds without `DEBUG`. Disabled pools allocate nothing for tracking but retain a small predictable branch on rent and return. Enabled diagnostics allocate tracking state and capture rent-site stack traces; do not use them for throughput measurements.
 
 ## Lifecycle choices
 

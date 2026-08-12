@@ -2,26 +2,25 @@
 sidebar_position: 1
 slug: /intro
 title: Reservoir
-description: Bounded, thread-safe object pooling that compiles into your .NET application.
+description: Bounded, thread-safe object pooling for .NET applications and libraries.
 ---
 
-# Keep the performance. Lose the dependency.
+# Keep the performance. Share the types.
 
-Reservoir is a high-performance object-pooling toolkit for .NET. Warm `ObjectPool<T,TPolicy>` rent and return operations allocate **0 B**, retention is bounded, and every implementation ships as C# source that compiles into your assembly. Legacy collection fallbacks may trim or replace backing storage.
+Reservoir is a high-performance object-pooling toolkit for .NET. Warm `ObjectPool<T,TPolicy>` rent and return operations allocate **0 B**, retention is bounded, and the conventional runtime package works cleanly across application and library boundaries. Legacy collection fallbacks may trim or replace backing storage.
 
-That distribution model changes the trade-off:
+The package provides:
 
-- **No runtime dependency.** No Reservoir DLL appears beside your application.
-- **No version conflict.** Each project compiles the exact source selected by its package reference.
-- **No hidden ownership.** Your assembly contains the code and the JIT optimizes it with the rest of your application.
+- **One public type identity.** Libraries can expose Reservoir types without embedding distinct copies.
+- **Normal dependency flow.** NuGet resolves Reservoir transitively through `PackageReference` graphs.
+- **Cross-assembly optimization.** The JIT can inline hot methods and specialize concrete struct policies.
 - **No unbounded cache.** Every pool has an explicit maximum retained-object count.
 
-Reservoir includes the general-purpose `ObjectPool<T,TPolicy>`, a convenient policy/factory overload, collection and `StringBuilder` pools, scoped leases, diagnostics, and a `CancellationTokenSource` pool.
+Reservoir includes the general-purpose `ObjectPool<T,TPolicy>`, a convenient policy/factory overload, collection and `StringBuilder` pools, scoped leases, opt-in ownership diagnostics, and a `CancellationTokenSource` pool.
 
 ## Requirements
 
-- .NET Standard 2.0 or later
-- C# 12.0 or later
+- .NET Standard 2.0-compatible runtime or later
 
 ## Choose a starting point
 

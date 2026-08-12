@@ -12,7 +12,9 @@ Pooling is an ownership protocol. Follow these rules for every Reservoir pool.
 
 After `Return(obj)` completes, do not read, mutate, dispose, or return `obj` again. Another thread may rent the same reference immediately.
 
-Never return an object twice. Never return an object to a pool that did not rent it. Debug diagnostics throw `InvalidOperationException` for both mistakes.
+Never return an object twice. Never return an object to a pool that did not rent it.
+
+Pools created while `ObjectPoolDiagnostics.Enabled` is `true` throw `InvalidOperationException` for both mistakes.
 
 ## One active owner
 
@@ -32,8 +34,8 @@ When `TryReset` returns `false`, Reservoir destroys the object instead of retain
 
 If `TryReset` throws, Reservoir destroys the object and rethrows the reset exception. If a full pool cannot retain a return, the returned object is destroyed.
 
-## Debug leak reports
+## Leak reports
 
-When `DEBUG` or `RESERVOIR_DIAGNOSTICS` is defined, Reservoir tracks outstanding rentals. If a rental becomes unreachable without being returned, it writes a `Trace` error containing the rent-site stack trace and raises `ObjectPoolDiagnostics.LeakDetected` on the finalizer thread.
+Enabled diagnostics track outstanding rentals. If a rental becomes unreachable without being returned, Reservoir writes a `Trace` error containing the rent-site stack trace and raises `ObjectPoolDiagnostics.LeakDetected` on the finalizer thread.
 
 Handlers must return quickly and must not throw. Leak detection depends on garbage collection and is a diagnostic signal, not deterministic resource cleanup.

@@ -10,11 +10,7 @@ namespace Reservoir;
 /// <typeparam name="T">The resettable reference type stored by the pool.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 readonly struct ResettablePooledObjectPolicy<T> : IPooledObjectPolicy<T>
     where T : class, IResettable, new()
 {

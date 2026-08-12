@@ -12,11 +12,7 @@ namespace Reservoir;
 /// <typeparam name="T">The element type.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 sealed class QueuePool<T>
 {
     private readonly ObjectPool<Queue<T>, Policy> _pool;
@@ -71,7 +67,7 @@ sealed class QueuePool<T>
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<Queue<T>>
     {
-#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+#if NETSTANDARD2_0
         private static readonly Func<Queue<T>, int, int>? s_ensureCapacity
             = RuntimeCompatibility.CreateEnsureCapacity<Queue<T>>();
 #endif
@@ -81,7 +77,7 @@ sealed class QueuePool<T>
         public bool TryReset(Queue<T> obj)
         {
             obj.Clear();
-#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+#if NETSTANDARD2_0
             if (s_ensureCapacity is not null)
             {
                 return s_ensureCapacity(obj, 0) <= maxRetainedCapacity;

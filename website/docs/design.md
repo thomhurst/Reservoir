@@ -1,19 +1,19 @@
 ---
 title: Design notes
-description: Why Reservoir ships as source and how its contention strategy works.
+description: How Reservoir is distributed and how its contention strategy works.
 ---
 
 # Design notes
 
 Reservoir optimizes for a narrow job: short, frequent ownership transfers of reusable reference objects inside one application.
 
-## Why source-only
+## Why a runtime library
 
-Object pooling often sits in hot code and exposes policy types in generic signatures. Shipping source gives the JIT the implementation and policy in the consuming assembly, while removing a runtime package from deployment.
+Reservoir ships as a conventional runtime library. The JIT can inline library methods and specialize `ObjectPool<T,TPolicy>` for concrete struct policies across the assembly boundary, so source injection is not required for the optimized hot path.
 
-The NuGet package is a development dependency. Its `contentFiles` compile into each referencing project, its types remain internal by default, and no Reservoir assembly crosses application or plugin boundaries.
+Compiled package assets give every project the same public type identity, allow dependencies to flow transitively, and keep Reservoir source outside consumer compiler and analyzer settings. Consumers also do not inherit Reservoir's C# language-version requirement.
 
-Trade-offs are explicit: each project compiles its own copy, upgrades rebuild the consumer, and internal types from different assemblies are distinct. Define `RESERVOIR_PUBLIC` only when a library intentionally exposes its compiled copy.
+Reservoir targets .NET Standard 2.0, .NET 8, and .NET 10. Modern targets use framework-specific fast paths; older compatible frameworks use the portable .NET Standard implementation.
 
 ## Storage and contention
 
@@ -33,17 +33,16 @@ Fixed storage provides the retention bound. It is not a semaphore: active rental
 
 `Dispose()` marks the pool closed before draining retained slots. A concurrent renter that observes disposal destroys any item it removed and throws. A concurrent return either sees closure immediately or stores then rechecks and participates in clearing. Outstanding rentals are destroyed when eventually returned.
 
-Debug ownership tracking uses weak keys so diagnostics do not keep leaked objects alive. Release builds omit tracking unless `RESERVOIR_DIAGNOSTICS` is defined.
+Ownership diagnostics are disabled by default and captured when each pool is constructed. Disabled pools perform a nullable tracking-state check without allocating. Enabled pools use weak keys so diagnostics do not keep leaked objects alive, and capture rent-site stack traces for leak reports.
 
 ## Compared with other pools
 
 | | Reservoir | `Microsoft.Extensions.ObjectPool` | `ArrayPool<T>` |
 | --- | --- | --- | --- |
 | Pooled value | Any reference type | Any reference type | Arrays only |
-| Distribution | Source compiled into consumer | Runtime assembly dependency | .NET runtime |
+| Distribution | Runtime assembly dependency | Runtime assembly dependency | .NET runtime |
 | Retention | Explicit bounded object count | Bounded retained object count | Implementation-managed buckets |
 | Reset policy | Struct or interface policy; may reject | Policy return decision | Caller clears optionally |
 | Scoped lease | Stack-only `PooledLease` | Not built in | Not built in |
-| Debug ownership diagnostics | Included | Not built in | Not built in |
 
-Choose `ArrayPool<T>` for raw arrays and established bucketed array reuse. Choose `Microsoft.Extensions.ObjectPool` when ecosystem integration and a conventional runtime dependency are preferred. Choose Reservoir when source ownership, struct-policy specialization, bounded custom-object retention, and its diagnostics match the application.
+Choose `ArrayPool<T>` for raw arrays and established bucketed array reuse. Choose `Microsoft.Extensions.ObjectPool` for Microsoft Extensions integration. Choose Reservoir when struct-policy specialization, bounded custom-object retention, capacity-aware storage, and scoped leases match the application.

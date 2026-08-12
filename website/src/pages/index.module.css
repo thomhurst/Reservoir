@@ -120,7 +120,7 @@
 }
 
 .heroActions,
-.sourceActions {
+.distributionActions {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
@@ -421,7 +421,7 @@
 .contractSection,
 .guaranteesSection,
 .builtInsSection,
-.sourceSection {
+.distributionSection {
   padding: clamp(5.5rem, 10vw, 9.5rem) 0;
 }
 
@@ -450,7 +450,7 @@
 .sectionHeading h2,
 .guaranteesHead h2,
 .builtInsCopy h2,
-.sourceCopy h2 {
+.distributionCopy h2 {
   color: inherit;
   font-family: var(--reservoir-display-font);
   font-size: clamp(3.7rem, 7.2vw, 7rem);
@@ -715,19 +715,19 @@
   text-transform: uppercase;
 }
 
-.sourceSection {
+.distributionSection {
   background: var(--reservoir-signal);
   color: var(--reservoir-basin-950);
 }
 
-.sourceLayout {
+.distributionLayout {
   align-items: center;
   display: grid;
   gap: clamp(4rem, 9vw, 9rem);
   grid-template-columns: 1fr 1fr;
 }
 
-.sourceRoute {
+.distributionRoute {
   align-items: center;
   border: 2px solid var(--reservoir-basin-950);
   display: grid;
@@ -743,7 +743,7 @@
   text-transform: uppercase;
 }
 
-.sourceRoute::after {
+.distributionRoute::after {
   border: 2px solid var(--reservoir-basin-950);
   content: '';
   inset: .7rem -.7rem -.7rem .7rem;
@@ -751,13 +751,13 @@
   position: absolute;
 }
 
-.sourceRoute i {
+.distributionRoute i {
   background: var(--reservoir-basin-950);
   height: 2px;
   position: relative;
 }
 
-.sourceRoute i::after {
+.distributionRoute i::after {
   border-right: 2px solid var(--reservoir-basin-950);
   border-top: 2px solid var(--reservoir-basin-950);
   content: '';
@@ -769,10 +769,10 @@
   width: 7px;
 }
 
-.sourceCopy .kicker { color: #542719; }
-.sourceCopy h2 { margin: 1.5rem 0 1.7rem; }
+.distributionCopy .kicker { color: #542719; }
+.distributionCopy h2 { margin: 1.5rem 0 1.7rem; }
 
-.sourceCopy p {
+.distributionCopy p {
   color: #542719;
   font-size: 1.05rem;
   line-height: 1.7;
@@ -798,7 +798,7 @@
   .heroLayout,
   .contractGrid,
   .builtInsLayout,
-  .sourceLayout {
+  .distributionLayout {
     grid-template-columns: 1fr;
   }
 
@@ -812,7 +812,7 @@
 
   .sectionHeading { grid-template-columns: 1fr; }
   .builtInsCopy { position: static; }
-  .sourceRoute { max-width: 44rem; width: 100%; }
+  .distributionRoute { max-width: 44rem; width: 100%; }
 }
 
 @media (max-width: 700px) {
@@ -827,7 +827,7 @@
   .sectionHeading h2,
   .guaranteesHead h2,
   .builtInsCopy h2,
-  .sourceCopy h2 { font-size: clamp(3.4rem, 17vw, 5.5rem); }
+  .distributionCopy h2 { font-size: clamp(3.4rem, 17vw, 5.5rem); }
 
   .workflow li { grid-template-columns: 5.3rem 1fr; }
 
@@ -844,12 +844,12 @@
   .guaranteeGrid article:last-child { border-bottom: 1px solid #afc2bf; }
   .guaranteeGrid code { margin-top: 1rem; }
 
-  .sourceRoute {
+  .distributionRoute {
     align-items: stretch;
     grid-template-columns: 1fr;
   }
-  .sourceRoute i { height: 2.5rem; margin: 0 auto; width: 2px; }
-  .sourceRoute i::after { bottom: 0; left: -3px; right: auto; top: auto; transform: rotate(135deg); }
+  .distributionRoute i { height: 2.5rem; margin: 0 auto; width: 2px; }
+  .distributionRoute i::after { bottom: 0; left: -3px; right: auto; top: auto; transform: rotate(135deg); }
 }
 
 @media (max-width: 430px) {

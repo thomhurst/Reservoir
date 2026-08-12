@@ -84,11 +84,19 @@ jobs:
           -p:ReservoirPackageVersion=${{ steps.version.outputs.version }}
           -p:RestoreAdditionalProjectSources=${{ github.workspace }}/artifacts/packages
 
+      - name: Test package contents
+        shell: pwsh
+        run: >-
+          ./build/Test-PackageContents.ps1
+          -PackagePath artifacts/packages/Reservoir.${{ steps.version.outputs.version }}.nupkg
+
       - name: Upload package
         uses: actions/upload-artifact@v7
         with:
           name: Reservoir-${{ steps.version.outputs.version }}
-          path: artifacts/packages/*.nupkg
+          path: |
+            artifacts/packages/*.nupkg
+            artifacts/packages/*.snupkg
           if-no-files-found: error
 
   publish:

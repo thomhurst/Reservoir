@@ -9,11 +9,7 @@ namespace Reservoir;
 /// Creates pooled objects, prepares returned objects for reuse, and destroys discarded objects.
 /// </summary>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 interface IPooledObjectPolicy<T>
     where T : class
 {

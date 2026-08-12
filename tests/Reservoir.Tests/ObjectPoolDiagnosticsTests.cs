@@ -1,10 +1,10 @@
-#if DEBUG || RESERVOIR_DIAGNOSTICS
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace Reservoir.Tests;
 
+[NotInParallel]
 public class ObjectPoolDiagnosticsTests
 {
     private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(10);
@@ -12,7 +12,7 @@ public class ObjectPoolDiagnosticsTests
     [Test]
     public async Task ReturningObjectTwiceThrows()
     {
-        var pool = new ObjectPool<PooledItem, PooledItemPolicy>(maxCapacity: 1);
+        var pool = CreateDiagnosticPool<PooledItem, PooledItemPolicy>();
         PooledItem item = pool.Rent();
 
         pool.Return(item);
@@ -23,8 +23,8 @@ public class ObjectPoolDiagnosticsTests
     [Test]
     public async Task ReturningObjectToWrongPoolThrows()
     {
-        var firstPool = new ObjectPool<PooledItem, PooledItemPolicy>(maxCapacity: 1);
-        var secondPool = new ObjectPool<PooledItem, PooledItemPolicy>(maxCapacity: 1);
+        var firstPool = CreateDiagnosticPool<PooledItem, PooledItemPolicy>();
+        var secondPool = CreateDiagnosticPool<PooledItem, PooledItemPolicy>();
         PooledItem item = firstPool.Rent();
 
         await Assert.That(() => secondPool.Return(item)).Throws<InvalidOperationException>();
@@ -35,8 +35,7 @@ public class ObjectPoolDiagnosticsTests
     [Test]
     public async Task UntrackedReturnAfterDisposalDisposesBeforeThrowing()
     {
-        var pool = new ObjectPool<DisposablePooledItem, DisposablePooledItemPolicy>(
-            maxCapacity: 1);
+        var pool = CreateDiagnosticPool<DisposablePooledItem, DisposablePooledItemPolicy>();
         var item = new DisposablePooledItem();
         pool.Dispose();
 
@@ -120,9 +119,26 @@ public class ObjectPoolDiagnosticsTests
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static WeakReference CreateLeakedRental()
     {
-        var pool = new ObjectPool<LeakedPooledItem, LeakedPooledItemPolicy>(maxCapacity: 1);
+        var pool = CreateDiagnosticPool<LeakedPooledItem, LeakedPooledItemPolicy>();
         LeakedPooledItem item = pool.Rent();
         return new WeakReference(item);
+    }
+
+    private static ObjectPool<T, TPolicy> CreateDiagnosticPool<T, TPolicy>()
+        where T : class
+        where TPolicy : struct, IPooledObjectPolicy<T>
+    {
+        bool wasEnabled = ObjectPoolDiagnostics.Enabled;
+        ObjectPoolDiagnostics.Enabled = true;
+
+        try
+        {
+            return new ObjectPool<T, TPolicy>(maxCapacity: 1);
+        }
+        finally
+        {
+            ObjectPoolDiagnostics.Enabled = wasEnabled;
+        }
     }
 
     private sealed class PooledItem;
@@ -167,4 +183,3 @@ public class ObjectPoolDiagnosticsTests
             => throw new InvalidOperationException("Trace failed.");
     }
 }
-#endif

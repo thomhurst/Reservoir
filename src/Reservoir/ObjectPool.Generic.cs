@@ -19,11 +19,7 @@ namespace Reservoir;
 /// <typeparam name="TPolicy">The policy used to create, reset, and destroy objects.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 sealed class ObjectPool<T, TPolicy> : IDisposable
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
@@ -60,13 +56,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private TPolicy _policy;
     private int _isDisposed;
 
-#if DEBUG || RESERVOIR_DIAGNOSTICS
-    private readonly ConditionalWeakTable<T, RentalTracker> _outstandingRentals = new();
-#if NETSTANDARD2_0
+    private readonly ConditionalWeakTable<T, RentalTracker>? _outstandingRentals;
+#if !NET10_0_OR_GREATER
     private static readonly RuntimeCompatibility.ConditionalWeakTableRemove<T, RentalTracker>?
         s_removeOutstandingRental
             = RuntimeCompatibility.CreateConditionalWeakTableRemove<T, RentalTracker>();
-#endif
 #endif
 
     /// <summary>Initializes a pool with the default policy value and capacity.</summary>
@@ -99,6 +93,9 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
 #endif
 
+        _outstandingRentals = ObjectPoolDiagnostics.Enabled
+            ? new ConditionalWeakTable<T, RentalTracker>()
+            : null;
         _policy = policy;
         MaximumRetained = maxCapacity;
 #if NET8_0_OR_GREATER
@@ -150,9 +147,12 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
         if (Volatile.Read(ref _isDisposed) == 0)
         {
-#if DEBUG || RESERVOIR_DIAGNOSTICS
-            TrackRental(rented);
-#endif
+            ConditionalWeakTable<T, RentalTracker>? outstandingRentals = _outstandingRentals;
+            if (outstandingRentals is not null)
+            {
+                TrackRental(outstandingRentals, rented);
+            }
+
             return rented;
         }
 
@@ -263,22 +263,25 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
 #endif
 
-#if DEBUG || RESERVOIR_DIAGNOSTICS
-        bool wasRented = TryCompleteRental(obj);
-#endif
+        ConditionalWeakTable<T, RentalTracker>? outstandingRentals = _outstandingRentals;
+        bool wasRented = outstandingRentals is null
+            || TryCompleteRental(outstandingRentals, obj);
 
         if (Volatile.Read(ref _isDisposed) != 0)
         {
             DisposeItem(obj);
-#if DEBUG || RESERVOIR_DIAGNOSTICS
-            ThrowIfNotRented(wasRented);
-#endif
+            if (!wasRented)
+            {
+                ThrowNotRented();
+            }
+
             return;
         }
 
-#if DEBUG || RESERVOIR_DIAGNOSTICS
-        ThrowIfNotRented(wasRented);
-#endif
+        if (!wasRented)
+        {
+            ThrowNotRented();
+        }
 
         bool canReuse;
 
@@ -514,15 +517,16 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
     }
 
-#if DEBUG || RESERVOIR_DIAGNOSTICS
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private void TrackRental(T obj)
+    private static void TrackRental(
+        ConditionalWeakTable<T, RentalTracker> outstandingRentals,
+        T obj)
     {
         var tracker = new RentalTracker();
 
         try
         {
-            _outstandingRentals.Add(obj, tracker);
+            outstandingRentals.Add(obj, tracker);
         }
         catch (ArgumentException exception)
         {
@@ -534,16 +538,18 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private bool TryCompleteRental(T obj)
+    private static bool TryCompleteRental(
+        ConditionalWeakTable<T, RentalTracker> outstandingRentals,
+        T obj)
     {
-#if NETSTANDARD2_0
+#if !NET10_0_OR_GREATER
         RentalTracker? tracker;
         bool removed = s_removeOutstandingRental is not null
-            ? s_removeOutstandingRental(_outstandingRentals, obj, out tracker!)
-            : _outstandingRentals.TryGetValue(obj, out tracker)
-                && _outstandingRentals.Remove(obj);
+            ? s_removeOutstandingRental(outstandingRentals, obj, out tracker!)
+            : outstandingRentals.TryGetValue(obj, out tracker)
+                && outstandingRentals.Remove(obj);
 #else
-        bool removed = _outstandingRentals.Remove(obj, out RentalTracker? tracker);
+        bool removed = outstandingRentals.Remove(obj, out RentalTracker? tracker);
 #endif
 
         if (!removed)
@@ -556,14 +562,9 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void ThrowIfNotRented(bool wasRented)
-    {
-        if (!wasRented)
-        {
-            throw new InvalidOperationException(
-                "The object was not rented from this pool or has already been returned.");
-        }
-    }
+    private static void ThrowNotRented()
+        => throw new InvalidOperationException(
+            "The object was not rented from this pool or has already been returned.");
 
     private sealed class RentalTracker
     {
@@ -585,8 +586,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             }
         }
     }
-#endif
-
     private struct ObjectWrapper
     {
         internal T? Element;

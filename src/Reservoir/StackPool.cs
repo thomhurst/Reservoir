@@ -12,11 +12,7 @@ namespace Reservoir;
 /// <typeparam name="T">The element type.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 sealed class StackPool<T>
 {
     private readonly ObjectPool<Stack<T>, Policy> _pool;
@@ -71,7 +67,7 @@ sealed class StackPool<T>
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<Stack<T>>
     {
-#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+#if NETSTANDARD2_0
         private static readonly Func<Stack<T>, int, int>? s_ensureCapacity
             = RuntimeCompatibility.CreateEnsureCapacity<Stack<T>>();
 #endif
@@ -81,7 +77,7 @@ sealed class StackPool<T>
         public bool TryReset(Stack<T> obj)
         {
             obj.Clear();
-#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+#if NETSTANDARD2_0
             if (s_ensureCapacity is not null)
             {
                 return s_ensureCapacity(obj, 0) <= maxRetainedCapacity;
