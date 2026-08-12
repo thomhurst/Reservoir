@@ -167,6 +167,75 @@ public class ObjectPoolTests
     }
 
     [Test]
+    public async Task RentReturnClearDisposeRacesPreserveExclusiveOwnership()
+    {
+        const int capacity = 32;
+        const int workerCount = 8;
+#if NET8_0
+        const int clearCount = 500;
+#else
+        const int clearCount = 2_000;
+#endif
+        var state = new StressState();
+        var pool = new ObjectPool<StressItem, StressPolicy>(
+            new StressPolicy(state),
+            capacity);
+        using var start = new Barrier(workerCount + 2);
+
+        Task[] workers = Enumerable.Range(0, workerCount)
+            .Select(workerIndex => Task.Factory.StartNew(
+                () => StressPoolUntilDisposed(pool, state, start, workerIndex),
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default))
+            .ToArray();
+        Task clearer = Task.Factory.StartNew(
+            () =>
+            {
+                start.SignalAndWait();
+                for (int i = 0; i < clearCount; i++)
+                {
+                    pool.Clear();
+                    Thread.SpinWait(16);
+                }
+
+                pool.Dispose();
+                Volatile.Write(ref state.Stopping, 1);
+            },
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+
+        start.SignalAndWait();
+        await Task.WhenAll(workers.Append(clearer)).WaitAsync(TimeSpan.FromSeconds(30));
+
+        await Assert.That(state.Failures).IsEmpty();
+        await Assert.That(state.ResetCount > 0).IsTrue();
+        await Assert.That(() => pool.Rent()).Throws<ObjectDisposedException>();
+    }
+
+    [Test]
+    public async Task WarmRentAndReturnAllocatesNothing()
+    {
+        const int iterations = 10_000;
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 32);
+        PooledItem warm = pool.Rent();
+        pool.Return(warm);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+
+        for (int i = 0; i < iterations; i++)
+        {
+            PooledItem item = pool.Rent();
+            pool.Return(item);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        await Assert.That(allocated).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task RentReturnStressPreservesOwnershipAndStateAcrossWorkerCounts()
     {
         const int capacity = 32;
@@ -348,6 +417,41 @@ public class ObjectPoolTests
         }
     }
 
+    private static void StressPoolUntilDisposed(
+        ObjectPool<StressItem, StressPolicy> pool,
+        StressState state,
+        Barrier start,
+        int workerIndex)
+    {
+        start.SignalAndWait();
+        int iteration = 0;
+
+        while (Volatile.Read(ref state.Stopping) == 0)
+        {
+            StressItem item;
+            try
+            {
+                item = pool.Rent();
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+
+            if (Interlocked.Exchange(ref item.InUse, 1) != 0)
+            {
+                state.RecordFailure($"Item {item.Id} was rented concurrently.");
+            }
+
+            long value = ((long)workerIndex << 32) | (uint)++iteration;
+            item.Value = value;
+            item.ValueComplement = ~value;
+            Thread.SpinWait(4);
+            Volatile.Write(ref item.InUse, 0);
+            pool.Return(item);
+        }
+    }
+
     private sealed class PooledItem(int id)
     {
         internal int Id { get; } = id;
@@ -371,6 +475,7 @@ public class ObjectPoolTests
         internal ConcurrentQueue<string> Failures { get; } = new();
         internal int CreatedCount;
         internal int ResetCount;
+        internal int Stopping;
 
         internal void RecordFailure(string message)
         {
