@@ -12,6 +12,11 @@ internal sealed class BenchmarkWorkerGroup : IDisposable
     private volatile bool _stopping;
 
     internal BenchmarkWorkerGroup(int workerCount, Action action)
+        : this(workerCount, _ => action())
+    {
+    }
+
+    internal BenchmarkWorkerGroup(int workerCount, Action<int> action)
     {
         _finish = new Barrier(workerCount + 1);
         _starts = new AutoResetEvent[workerCount];
@@ -20,7 +25,8 @@ internal sealed class BenchmarkWorkerGroup : IDisposable
         for (int i = 0; i < workerCount; i++)
         {
             AutoResetEvent start = _starts[i] = new AutoResetEvent(false);
-            _threads[i] = new Thread(() => Work(start, action))
+            int workerIndex = i;
+            _threads[i] = new Thread(() => Work(start, () => action(workerIndex)))
             {
                 IsBackground = true,
             };

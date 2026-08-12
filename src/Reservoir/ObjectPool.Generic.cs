@@ -133,7 +133,15 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         if (largeStore is null)
         {
             startIndex = GetStartIndex();
-            item = Interlocked.Exchange(ref GetSlot(startIndex), null);
+            ref T? startSlot = ref GetSlot(startIndex);
+            T? observed = Volatile.Read(ref startSlot);
+            // A failed CAS is a permitted pool miss; RentSlow scans the remaining slots.
+            item = observed is not null
+                && ReferenceEquals(
+                    Interlocked.CompareExchange(ref startSlot, null, observed),
+                    observed)
+                ? observed
+                : null;
         }
         else
         {
