@@ -17,6 +17,8 @@ Math.Max(32, 2 * Environment.ProcessorCount)
 
 Size this for peak simultaneous holders, not operations per second. If callers retain objects across asynchronous work, use peak in-flight operations rather than processor count. `maxCapacity` must be positive.
 
+Large capacities automatically use dense striped storage. Empty-pool misses and burst transfers inspect at most the stripe count rather than scanning every retained slot, allowing async workloads to retain thousands of objects without capacity-linear hot-path work.
+
 The bound does not throttle rentals. When all retained objects are busy, `Rent()` creates another object; on return, excess objects are destroyed.
 
 ## Retained backing capacity

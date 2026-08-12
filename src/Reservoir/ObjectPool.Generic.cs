@@ -30,6 +30,8 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 {
     // One logical slot per 64-byte cache line on 64-bit runtimes.
     private const int CacheLineSlotStride = 8;
+    // Bound the cache-line store to 4 KiB and a 64-slot worst-case scan.
+    private const int MaximumCacheLineSlotCapacity = 64;
     private const uint StripeHashMultiplier = 2_654_435_769u;
 
     [ThreadStatic]
@@ -54,6 +56,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
     private readonly ObjectWrapper[] _items;
     private readonly int _indexMask;
+    private readonly StripedObjectStore<T>? _largeStore;
     private TPolicy _policy;
     private int _isDisposed;
 
@@ -103,7 +106,15 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 #else
         _indexMask = (maxCapacity & (maxCapacity - 1)) == 0 ? maxCapacity - 1 : -1;
 #endif
-        _items = new ObjectWrapper[checked(maxCapacity * CacheLineSlotStride)];
+        if (maxCapacity <= MaximumCacheLineSlotCapacity)
+        {
+            _items = new ObjectWrapper[checked(maxCapacity * CacheLineSlotStride)];
+        }
+        else
+        {
+            _items = Array.Empty<ObjectWrapper>();
+            _largeStore = new StripedObjectStore<T>(maxCapacity);
+        }
     }
 
     /// <summary>Gets the default maximum number of retained objects.</summary>
@@ -118,9 +129,24 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     {
         ThrowIfDisposed();
 
-        int startIndex = GetStartIndex();
-        T? item = Interlocked.Exchange(ref GetSlot(startIndex), null);
-        T rented = item ?? RentSlow(startIndex);
+        StripedObjectStore<T>? largeStore = _largeStore;
+        int startIndex = 0;
+        T? item;
+
+        if (largeStore is null)
+        {
+            startIndex = GetStartIndex();
+            item = Interlocked.Exchange(ref GetSlot(startIndex), null);
+        }
+        else
+        {
+            _ = largeStore.TryPop(out item);
+        }
+
+        T rented = item
+            ?? (largeStore is null
+                ? RentSlow(startIndex)
+                : CreateItem());
 
         if (Volatile.Read(ref _isDisposed) == 0)
         {
@@ -216,9 +242,13 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             }
         }
 
-        return _policy.Create()
-            ?? throw new InvalidOperationException("The pool policy returned null from Create().");
+        return CreateItem();
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private T CreateItem()
+        => _policy.Create()
+            ?? throw new InvalidOperationException("The pool policy returned null from Create().");
 
     /// <summary>Resets and returns an object. Objects exceeding capacity are discarded.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -268,6 +298,18 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             return;
         }
 
+        StripedObjectStore<T>? largeStore = _largeStore;
+        if (largeStore is not null)
+        {
+            if (!largeStore.TryPush(obj))
+            {
+                DisposeItem(obj);
+            }
+
+            ClearIfDisposed();
+            return;
+        }
+
         int startIndex = GetStartIndex();
         ref T? startSlot = ref GetSlot(startIndex);
         T? displaced = Interlocked.Exchange(ref startSlot, obj);
@@ -288,6 +330,22 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     public void Clear()
     {
         Exception? firstException = null;
+
+        StripedObjectStore<T>? largeStore = _largeStore;
+        if (largeStore is not null)
+        {
+            while (largeStore.TryPop(out T? item))
+            {
+                DisposeRetained(item, ref firstException);
+            }
+
+            if (firstException is not null)
+            {
+                ExceptionDispatchInfo.Capture(firstException).Throw();
+            }
+
+            return;
+        }
 
         for (int i = 0; i < MaximumRetained; i++)
         {
