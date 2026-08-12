@@ -62,7 +62,7 @@ sealed class StackPool<T>
     /// <summary>Rents an empty stack.</summary>
     public Stack<T> Rent() => _pool.Rent();
 
-    /// <summary>Clears and returns a stack, discarding it when its capacity is too large.</summary>
+    /// <summary>Returns a stack, clearing it when retained and discarding it when too large.</summary>
     public void Return(Stack<T> stack) => _pool.Return(stack);
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<Stack<T>>
@@ -76,17 +76,29 @@ sealed class StackPool<T>
 
         public bool TryReset(Stack<T> obj)
         {
-            obj.Clear();
 #if NETSTANDARD2_0
             if (s_ensureCapacity is not null)
             {
-                return s_ensureCapacity(obj, 0) <= maxRetainedCapacity;
+                if (s_ensureCapacity(obj, 0) > maxRetainedCapacity)
+                {
+                    return false;
+                }
+
+                obj.Clear();
+                return true;
             }
 
+            obj.Clear();
             obj.TrimExcess();
             return true;
 #else
-            return obj.EnsureCapacity(0) <= maxRetainedCapacity;
+            if (obj.EnsureCapacity(0) > maxRetainedCapacity)
+            {
+                return false;
+            }
+
+            obj.Clear();
+            return true;
 #endif
         }
     }

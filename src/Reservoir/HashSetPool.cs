@@ -95,7 +95,7 @@ sealed class HashSetPool<T>
     /// <summary>Rents an empty hash set.</summary>
     public HashSet<T> Rent() => _pool.Rent();
 
-    /// <summary>Clears and returns a hash set, discarding it when its capacity is too large.</summary>
+    /// <summary>Returns a hash set, clearing it when retained and discarding it when incompatible or too large.</summary>
     public void Return(HashSet<T> set) => _pool.Return(set);
 
     private readonly struct Policy(
@@ -111,23 +111,34 @@ sealed class HashSetPool<T>
 
         public bool TryReset(HashSet<T> obj)
         {
-            obj.Clear();
-#if NETSTANDARD2_0
             if (!ReferenceEquals(obj.Comparer, comparer))
             {
                 return false;
             }
 
+#if NETSTANDARD2_0
             if (s_ensureCapacity is not null)
             {
-                return s_ensureCapacity(obj, 0) <= maxRetainedCapacity;
+                if (s_ensureCapacity(obj, 0) > maxRetainedCapacity)
+                {
+                    return false;
+                }
+
+                obj.Clear();
+                return true;
             }
 
+            obj.Clear();
             obj.TrimExcess();
             return true;
 #else
-            return ReferenceEquals(obj.Comparer, comparer)
-                && obj.EnsureCapacity(0) <= maxRetainedCapacity;
+            if (obj.EnsureCapacity(0) > maxRetainedCapacity)
+            {
+                return false;
+            }
+
+            obj.Clear();
+            return true;
 #endif
         }
     }

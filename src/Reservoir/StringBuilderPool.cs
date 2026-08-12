@@ -63,7 +63,7 @@ sealed class StringBuilderPool
     /// <summary>Rents an empty string builder.</summary>
     public StringBuilder Rent() => _pool.Rent();
 
-    /// <summary>Clears and returns a builder, discarding it when its capacity is too large.</summary>
+    /// <summary>Returns a builder, clearing it when retained and discarding it when incompatible or too large.</summary>
     public void Return(StringBuilder builder) => _pool.Return(builder);
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<StringBuilder>
@@ -72,9 +72,14 @@ sealed class StringBuilderPool
 
         public bool TryReset(StringBuilder obj)
         {
+            if (obj.MaxCapacity != int.MaxValue
+                || obj.Capacity > maxRetainedCapacity)
+            {
+                return false;
+            }
+
             obj.Clear();
-            return obj.MaxCapacity == int.MaxValue
-                && obj.Capacity <= maxRetainedCapacity;
+            return true;
         }
     }
 }

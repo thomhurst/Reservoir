@@ -62,7 +62,7 @@ sealed class ListPool<T>
     /// <summary>Rents an empty list.</summary>
     public List<T> Rent() => _pool.Rent();
 
-    /// <summary>Clears and returns a list, discarding it when its capacity is too large.</summary>
+    /// <summary>Returns a list, clearing it when retained and discarding it when too large.</summary>
     public void Return(List<T> list) => _pool.Return(list);
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<List<T>>
@@ -71,8 +71,13 @@ sealed class ListPool<T>
 
         public bool TryReset(List<T> obj)
         {
+            if (obj.Capacity > maxRetainedCapacity)
+            {
+                return false;
+            }
+
             obj.Clear();
-            return obj.Capacity <= maxRetainedCapacity;
+            return true;
         }
     }
 }
