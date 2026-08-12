@@ -98,6 +98,31 @@ public class ObjectLifecycleTests
     }
 
     [Test]
+    public async Task LargeFullPoolDisposesReturnedExcessItem()
+    {
+        const int capacity = 65;
+        var pool = new ObjectPool<DisposableItem, DisposablePolicy>(capacity);
+        var retained = new DisposableItem[capacity];
+
+        for (int i = 0; i < retained.Length; i++)
+        {
+            retained[i] = pool.Rent();
+        }
+
+        DisposableItem excess = pool.Rent();
+
+        foreach (DisposableItem item in retained)
+        {
+            pool.Return(item);
+        }
+
+        pool.Return(excess);
+
+        await Assert.That(excess.DisposeCount).IsEqualTo(1);
+        await Assert.That(retained.All(item => item.DisposeCount == 0)).IsTrue();
+    }
+
+    [Test]
     public async Task ResetFailureDisposesRuntimeDisposableSubtype()
     {
         var pool = new ObjectPool<object, RejectingObjectPolicy>(maxCapacity: 1);
@@ -134,6 +159,29 @@ public class ObjectLifecycleTests
         await Assert.That(first.DisposeCount).IsEqualTo(1);
         await Assert.That(second.DisposeCount).IsEqualTo(1);
         await Assert.That(pool.Rent()).IsNotSameReferenceAs(first);
+    }
+
+    [Test]
+    public async Task LargePoolClearDisposesEveryRetainedItem()
+    {
+        const int capacity = 65;
+        var pool = new ObjectPool<DisposableItem, DisposablePolicy>(capacity);
+        var retained = new DisposableItem[capacity];
+
+        for (int i = 0; i < retained.Length; i++)
+        {
+            retained[i] = pool.Rent();
+        }
+
+        foreach (DisposableItem item in retained)
+        {
+            pool.Return(item);
+        }
+
+        pool.Clear();
+
+        await Assert.That(retained.All(item => item.DisposeCount == 1)).IsTrue();
+        await Assert.That(retained).DoesNotContain(pool.Rent());
     }
 
     [Test]

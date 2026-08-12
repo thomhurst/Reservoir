@@ -17,11 +17,11 @@ Trade-offs are explicit: each project compiles its own copy, upgrades rebuild th
 
 ## Storage and contention
 
-The core pool stores retained references in a fixed-size array. Logical slots are spaced one 64-byte cache line apart on 64-bit runtimes to reduce false sharing between contending threads.
+The core pool chooses between two fixed-size stores. Pools retaining up to 64 objects use an array whose logical slots are spaced one 64-byte cache line apart on 64-bit runtimes. Larger pools use dense striped stacks backed by preallocated node arrays. Version-stamped compare-and-swap heads prevent ABA while nodes move between each stripe's available and free lists.
 
-Each thread receives a stable stripe affinity. `Rent()` tries that stripe with an atomic exchange, then scans other logical slots on a miss. `Return()` atomically places the object into the preferred stripe and probes remaining slots only when needed. There is no global lock and no separately allocated node per return.
+Each thread receives stable stripe affinity. Small-pool `Rent()` tries that slot with an atomic exchange, then scans other logical slots on a miss. Large-pool operations try the preferred stripe, then steal across at most 32 stripes. Their work is bounded by stripe count rather than retained capacity. There is no global lock and no separately allocated node per return.
 
-The fixed array provides the retention bound. It is not a semaphore: active rentals are outside the array, so the pool can create beyond the retained count under bursts.
+Fixed storage provides the retention bound. It is not a semaphore: active rentals are outside the store, so the pool can create beyond the retained count under bursts.
 
 ## Why struct policies
 

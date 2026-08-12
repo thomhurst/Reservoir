@@ -136,6 +136,8 @@ $coreRows = Import-BenchmarkReport 'CorePoolComparisonBenchmarks'
 $allocationRows = Import-BenchmarkReport 'CollectionPoolAllocationBenchmarks'
 $listRows = Import-BenchmarkReport 'ListPoolBenchmarks'
 $objectPoolRows = Import-BenchmarkReport 'ObjectPoolBenchmarks'
+$capacityRows = Import-BenchmarkReport 'ObjectPoolCapacityScalingBenchmarks'
+$burstRows = Import-BenchmarkReport 'ObjectPoolBurstBenchmarks'
 $stringBuilderRows = Import-BenchmarkReport 'StringBuilderPoolBenchmarks'
 
 $coreNew = Get-BenchmarkRow $coreRows 'New'
@@ -170,6 +172,14 @@ $stringBuilderReservoir = Get-BenchmarkRow $stringBuilderRows 'Reservoir'
 $stringBuilderTls = Get-BenchmarkRow $stringBuilderRows 'ThreadStaticCache'
 $manualRent = Get-BenchmarkRow $objectPoolRows 'RentReturn'
 $scopedRent = Get-BenchmarkRow $objectPoolRows 'ScopedRentReturn'
+$capacityResults = @(32, 256, 4096, 65536 | ForEach-Object {
+    [pscustomobject]@{
+        Capacity = $_
+        RentReturn = Get-BenchmarkRow $capacityRows 'RentReturn' @{ Capacity = $_ }
+        EmptyRent = Get-BenchmarkRow $capacityRows 'EmptyRent' @{ Capacity = $_ }
+        DrainAndRefill = Get-BenchmarkRow $burstRows 'DrainAndRefill' @{ Capacity = $_ }
+    }
+})
 
 $publishedWarmRows = @(
     $coreReservoir
@@ -277,6 +287,25 @@ foreach ($item in $coreTableRows) {
 
 $docsContent += @(
     ''
+    '## Capacity scaling'
+    ''
+    'Small pools use cache-line-separated slots. Large pools use dense striped storage so empty misses and burst transfers do not scan every retained slot. `Drain and refill` rents and returns the full retained capacity once.'
+    ''
+    '| Retained capacity | Warm rent/return | Empty rent | Drain and refill |'
+    '| ---: | ---: | ---: | ---: |'
+)
+
+foreach ($result in $capacityResults) {
+    $docsContent += '| {0} | {1} | {2} | {3} |' -f @(
+        ([int] $result.Capacity).ToString('N0', $culture),
+        (Format-Duration $result.RentReturn.Mean),
+        (Format-Duration $result.EmptyRent.Mean),
+        (Format-Duration $result.DrainAndRefill.Mean)
+    )
+}
+
+$docsContent += @(
+    ''
     '## Warm allocation guarantee'
     ''
     '| Pool | Mean | Allocated |'
@@ -327,11 +356,11 @@ $docsContent += @(
 
 $relativeResultsPath = [IO.Path]::GetRelativePath($repositoryPath, $resultsPath).Replace('\', '/')
 if ($ResultsUrl) {
-    $resultsLink = "Raw Markdown, CSV, and HTML exports—including 1–32 worker contention results—are available from the [GitHub Actions run]($ResultsUrl)."
+    $resultsLink = "Raw Markdown, CSV, and HTML exports—including capacity scaling and 1–32 worker contention results—are available from the [GitHub Actions run]($ResultsUrl)."
 }
 else {
     $sourceUrl = "https://github.com/thomhurst/Reservoir/tree/main/$relativeResultsPath"
-    $resultsLink = 'Raw Markdown, CSV, and HTML exports—including 1–32 worker contention results—live in [`{0}`]({1}).' -f @(
+    $resultsLink = 'Raw Markdown, CSV, and HTML exports—including capacity scaling and 1–32 worker contention results—live in [`{0}`]({1}).' -f @(
         $relativeResultsPath,
         $sourceUrl
     )

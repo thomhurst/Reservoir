@@ -18,6 +18,7 @@ Requires .NET Standard 2.0 and C# 12 or later.
 
 - **Zero general-purpose pool allocations when warm.** `ObjectPool<T,TPolicy>` rent and return reuse fixed slots without allocating nodes. Legacy collection fallbacks may trim or replace backing storage.
 - **Bounded retention.** You choose the maximum number of idle objects; the pool cannot grow without limit.
+- **Capacity-aware storage.** Cache-line-separated slots keep small pools fast; dense striped storage keeps large async working sets scalable.
 - **Source-only delivery.** Reservoir stays private to your project and adds no runtime package or assembly.
 - **Ownership guardrails.** Debug builds detect invalid returns and report leaked rentals.
 

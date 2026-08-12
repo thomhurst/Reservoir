@@ -50,6 +50,37 @@ public class ObjectPoolTests
     }
 
     [Test]
+    [Arguments(64)]
+    [Arguments(65)]
+    [Arguments(257)]
+    public async Task PoolRetainsConfiguredCapacityAcrossStorageBackends(int capacity)
+    {
+        var policy = new CountingPolicy();
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(policy, capacity);
+        var items = new PooledItem[capacity + 1];
+
+        for (int i = 0; i < items.Length; i++)
+        {
+            items[i] = pool.Rent();
+        }
+
+        foreach (PooledItem item in items)
+        {
+            pool.Return(item);
+        }
+
+        var retained = new HashSet<PooledItem>();
+        for (int i = 0; i < capacity; i++)
+        {
+            retained.Add(pool.Rent());
+        }
+
+        await Assert.That(retained.Count).IsEqualTo(capacity);
+        await Assert.That(retained).DoesNotContain(items[^1]);
+        await Assert.That(policy.Created).IsEqualTo(capacity + 1);
+    }
+
+    [Test]
     public async Task ResetFalseDiscardsInstance()
     {
         var policy = new CountingPolicy { DiscardReturned = true };
@@ -188,6 +219,103 @@ public class ObjectPoolTests
         await Assert.That(state.CreatedCount).IsEqualTo(capacity);
         await Assert.That(state.ResetCount).IsEqualTo(expectedResetCount);
         await Assert.That(retainedItems.Count).IsEqualTo(capacity);
+    }
+
+    [Test]
+    public async Task LargePoolPreservesOwnershipUnderContention()
+    {
+        const int capacity = 256;
+        const int workerCount = 16;
+        const int iterations = 20_000;
+        var state = new StressState();
+        var pool = new ObjectPool<StressItem, StressPolicy>(
+            new StressPolicy(state),
+            capacity);
+        var initialItems = new StressItem[capacity];
+
+        for (int i = 0; i < initialItems.Length; i++)
+        {
+            initialItems[i] = pool.Rent();
+        }
+
+        foreach (StressItem item in initialItems)
+        {
+            pool.Return(item);
+        }
+
+        using var start = new Barrier(workerCount + 1);
+        Task[] workers = Enumerable.Range(0, workerCount)
+            .Select(workerIndex => Task.Factory.StartNew(
+                () => StressPool(pool, state, start, workerIndex, iterations),
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default))
+            .ToArray();
+
+        start.SignalAndWait();
+        await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30));
+
+        var retainedItems = new HashSet<StressItem>();
+        for (int i = 0; i < capacity; i++)
+        {
+            retainedItems.Add(pool.Rent());
+        }
+
+        await Assert.That(state.Failures).IsEmpty();
+        await Assert.That(state.CreatedCount).IsEqualTo(capacity);
+        await Assert.That(retainedItems.Count).IsEqualTo(capacity);
+    }
+
+    [Test]
+    public async Task LargePoolReusesInstanceAcrossThreadHandoffs()
+    {
+        const int iterations = 20_000;
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 65);
+        PooledItem expected = pool.Rent();
+        pool.Return(expected);
+        using var rented = new AutoResetEvent(false);
+        using var returned = new AutoResetEvent(false);
+        PooledItem? handoff = null;
+
+        Task producer = Task.Factory.StartNew(
+            () =>
+            {
+                for (int i = 0; i < iterations; i++)
+                {
+                    handoff = pool.Rent();
+                    rented.Set();
+                    if (!returned.WaitOne(TimeSpan.FromSeconds(10)))
+                    {
+                        throw new TimeoutException("Return thread did not complete the handoff.");
+                    }
+                }
+            },
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+
+        Task consumer = Task.Factory.StartNew(
+            () =>
+            {
+                for (int i = 0; i < iterations; i++)
+                {
+                    if (!rented.WaitOne(TimeSpan.FromSeconds(10)))
+                    {
+                        throw new TimeoutException("Rent thread did not complete the handoff.");
+                    }
+
+                    pool.Return(handoff!);
+                    returned.Set();
+                }
+            },
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+
+        await Task.WhenAll(producer, consumer).WaitAsync(TimeSpan.FromSeconds(30));
+
+        await Assert.That(pool.Rent()).IsSameReferenceAs(expected);
+        await Assert.That(expected.ResetCount).IsEqualTo(iterations + 1);
     }
 
     private static void StressPool(
