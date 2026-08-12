@@ -18,7 +18,7 @@ internal sealed class StripedObjectStore<T>
 {
     private const int EmptyIndex = -1;
     private const int MaximumStripeCount = 32;
-    private const int MinimumSlotsPerStripe = 16;
+    private const int MinimumSlotsPerStripe = 8;
 
     [ThreadStatic]
     private static int _threadStripe;

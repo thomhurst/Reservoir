@@ -8,7 +8,7 @@ public class ObjectPoolCapacityScalingBenchmarks
     private ObjectPool<Payload, PayloadPolicy>? _pool;
     private ObjectPool<Payload, SingletonPolicy>? _emptyPool;
 
-    [Params(32, 256, 4096, 65536)]
+    [Params(32, 64, 65, 256, 4096, 65536)]
     public int Capacity { get; set; }
 
     [GlobalSetup]
@@ -56,7 +56,7 @@ public class ObjectPoolBurstBenchmarks
     private ObjectPool<Payload, PayloadPolicy>? _pool;
     private Payload[]? _items;
 
-    [Params(32, 256, 4096, 65536)]
+    [Params(32, 64, 65, 256, 4096, 65536)]
     public int Capacity { get; set; }
 
     [GlobalSetup]
