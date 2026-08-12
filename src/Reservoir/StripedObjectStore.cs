@@ -27,11 +27,18 @@ internal sealed class StripedObjectStore<T>
 
     private readonly Stripe[] _stripes;
     private readonly int _stripeMask;
+    private readonly ulong _stripeModulusMultiplier;
 
     internal StripedObjectStore(int capacity)
+        : this(capacity, Environment.ProcessorCount)
     {
-        int stripeCount = GetStripeCount(capacity);
-        _stripeMask = stripeCount - 1;
+    }
+
+    internal StripedObjectStore(int capacity, int processorLimit)
+    {
+        int stripeCount = GetStripeCount(capacity, processorLimit);
+        _stripeMask = (stripeCount & (stripeCount - 1)) == 0 ? stripeCount - 1 : -1;
+        _stripeModulusMultiplier = ulong.MaxValue / (uint)stripeCount + 1;
         _stripes = new Stripe[stripeCount];
 
         int baseCapacity = capacity / stripeCount;
@@ -55,7 +62,10 @@ internal sealed class StripedObjectStore<T>
                 return true;
             }
 
-            stripeIndex = (stripeIndex + 1) & _stripeMask;
+            if (++stripeIndex == _stripes.Length)
+            {
+                stripeIndex = 0;
+            }
         }
 
         item = null;
@@ -74,7 +84,10 @@ internal sealed class StripedObjectStore<T>
                 return true;
             }
 
-            stripeIndex = (stripeIndex + 1) & _stripeMask;
+            if (++stripeIndex == _stripes.Length)
+            {
+                stripeIndex = 0;
+            }
         }
 
         return false;
@@ -156,23 +169,36 @@ internal sealed class StripedObjectStore<T>
             _threadStripe = threadStripe;
         }
 
-        return (threadStripe - 1) & _stripeMask;
+        return GetAffinityIndex(unchecked((uint)(threadStripe - 1)));
     }
 
-    private static int GetStripeCount(int capacity)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int GetAffinityIndex(uint threadOrdinal)
     {
-        int limit = Math.Min(
-            Environment.ProcessorCount,
-            Math.Min(MaximumStripeCount, capacity / MinimumSlotsPerStripe));
-        int stripeCount = 1;
-
-        while (stripeCount <= limit / 2)
+        if (_stripeMask >= 0)
         {
-            stripeCount *= 2;
+            return (int)(threadOrdinal & (uint)_stripeMask);
         }
 
-        return stripeCount;
+        uint stripeCount = (uint)_stripes.Length;
+        if (IntPtr.Size == 8)
+        {
+            return (int)FastMod(threadOrdinal, stripeCount, _stripeModulusMultiplier);
+        }
+
+        return (int)(threadOrdinal % stripeCount);
     }
+
+    internal static int GetStripeCount(int capacity, int processorLimit)
+    {
+        int capacityLimit = Math.Max(1, capacity / MinimumSlotsPerStripe);
+        int processorCount = Math.Min(processorLimit, MaximumStripeCount);
+        return Math.Max(1, Math.Min(processorCount, capacityLimit));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint FastMod(uint value, uint divisor, ulong multiplier)
+        => (uint)(((((multiplier * value) >> 32) + 1) * divisor) >> 32);
 
     private static long PackHead(int version, int index)
         => ((long)version << 32) | (uint)index;

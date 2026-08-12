@@ -28,6 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Reservoir.Benchmarks" />
     <InternalsVisibleTo Include="Reservoir.Tests" />
   </ItemGroup>
 </Project>

@@ -5,10 +5,59 @@ namespace Reservoir.Tests;
 public class StripedObjectStoreTests
 {
     [Test]
-    public async Task PushPopPreservesItemsAcrossFullAndEmptyTransitions()
+    [Arguments(65, 20, 4)]
+    [Arguments(256, 20, 16)]
+    [Arguments(4_096, 20, 20)]
+    [Arguments(4_096, 24, 24)]
+    [Arguments(65_536, 40, 32)]
+    public async Task StripeCountUsesEveryCapacitySupportedProcessor(
+        int capacity,
+        int processorLimit,
+        int expected)
     {
-        const int capacity = 65;
-        var store = new StripedObjectStore<StoreItem>(capacity);
+        int stripeCount = StripedObjectStore<StoreItem>.GetStripeCount(
+            capacity,
+            processorLimit);
+
+        await Assert.That(stripeCount).IsEqualTo(expected);
+        await Assert.That(capacity / stripeCount).IsGreaterThanOrEqualTo(16);
+    }
+
+    [Test]
+    [Arguments(20)]
+    [Arguments(24)]
+    public async Task InitialThreadOrdinalsUseEveryStripeBeforeRepeating(int stripeCount)
+    {
+        var store = new StripedObjectStore<StoreItem>(stripeCount * 16, stripeCount);
+        var distribution = new int[stripeCount];
+        bool matchesModulo = true;
+
+        for (uint threadOrdinal = 0; threadOrdinal < 65_536; threadOrdinal++)
+        {
+            int stripeIndex = store.GetAffinityIndex(threadOrdinal);
+            matchesModulo &= stripeIndex == (int)(threadOrdinal % (uint)stripeCount);
+
+            if (threadOrdinal < stripeCount)
+            {
+                distribution[stripeIndex]++;
+            }
+        }
+
+        matchesModulo &= store.GetAffinityIndex(uint.MaxValue)
+            == (int)(uint.MaxValue % (uint)stripeCount);
+
+        await Assert.That(matchesModulo).IsTrue();
+        await Assert.That(distribution).IsEquivalentTo(Enumerable.Repeat(1, stripeCount));
+    }
+
+    [Test]
+    [Arguments(65, 4)]
+    [Arguments(320, 20)]
+    public async Task PushPopPreservesItemsAcrossFullAndEmptyTransitions(
+        int capacity,
+        int processorLimit)
+    {
+        var store = new StripedObjectStore<StoreItem>(capacity, processorLimit);
         StoreItem[] expected = Enumerable.Range(0, capacity)
             .Select(static id => new StoreItem(id))
             .ToArray();
