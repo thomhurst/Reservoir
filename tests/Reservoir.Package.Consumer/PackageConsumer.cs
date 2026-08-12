@@ -4,9 +4,6 @@ namespace ReservoirPackageConsumer;
 
 internal static class PackageConsumer
 {
-    internal static void EnableDiagnosticsForDebugBuilds()
-        => ObjectPoolDiagnostics.EnableForDebugBuilds();
-
     internal static object RentAndReturn()
     {
         var pool = new ObjectPool<PooledItem, Policy>(maxCapacity: 1);

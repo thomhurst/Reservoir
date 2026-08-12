@@ -21,7 +21,6 @@ Requires a .NET Standard 2.0-compatible runtime or later.
 - **Capacity-aware storage.** Cache-line-separated slots keep small pools fast; dense striped storage keeps large async working sets scalable.
 - **Library-friendly delivery.** One public assembly identity flows normally through `PackageReference` dependency graphs.
 - **Scoped ownership.** Stack-only leases return rentals automatically when synchronous work leaves scope.
-- **Opt-in ownership diagnostics.** Detect invalid returns and report leaked rentals during development.
 
 ## Rent. Work. Return.
 
@@ -83,8 +82,6 @@ Collections return empty. Oversized backing stores are discarded instead of reta
 > Returning an object transfers ownership to the pool. Do not touch it, return it twice, or return it to another pool.
 
 Another thread may rent the same object immediately. Read the complete [ownership rules](https://thomhurst.github.io/Reservoir/docs/ownership-rules).
-
-Call `ObjectPoolDiagnostics.EnableForDebugBuilds()` during startup to enable diagnostics only when the consuming project defines `DEBUG`. Enable diagnostics before constructing pools; tracking adds development-time overhead.
 
 ## Measured, not promised
 

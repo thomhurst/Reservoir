@@ -16,7 +16,7 @@ The package provides:
 - **Cross-assembly optimization.** The JIT can inline hot methods and specialize concrete struct policies.
 - **No unbounded cache.** Every pool has an explicit maximum retained-object count.
 
-Reservoir includes the general-purpose `ObjectPool<T,TPolicy>`, a convenient policy/factory overload, collection and `StringBuilder` pools, scoped leases, opt-in ownership diagnostics, and a `CancellationTokenSource` pool.
+Reservoir includes the general-purpose `ObjectPool<T,TPolicy>`, a convenient policy/factory overload, collection and `StringBuilder` pools, scoped leases, and a `CancellationTokenSource` pool.
 
 ## Requirements
 
