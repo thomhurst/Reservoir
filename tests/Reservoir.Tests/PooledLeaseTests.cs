@@ -93,6 +93,49 @@ public class PooledLeaseTests
     }
 
     [Test]
+    public async Task ValueThrowsAfterLeaseIsDisposed()
+    {
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 1);
+        PooledLease<PooledItem, CountingPolicy> lease = pool.RentScoped();
+
+        lease.Dispose();
+
+        bool threw = false;
+        try
+        {
+            _ = lease.Value;
+        }
+        catch (ObjectDisposedException)
+        {
+            threw = true;
+        }
+
+        await Assert.That(threw).IsTrue();
+    }
+
+    [Test]
+    public async Task StaleCopyCannotReturnLaterRental()
+    {
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 2);
+        PooledLease<PooledItem, CountingPolicy> first = pool.RentScoped();
+        PooledLease<PooledItem, CountingPolicy> stale = first;
+        PooledItem firstValue = first.Value;
+        first.Dispose();
+
+        PooledLease<PooledItem, CountingPolicy> second = pool.RentScoped();
+        stale.Dispose();
+        PooledItem concurrent = pool.Rent();
+        bool reusedFirstValue = ReferenceEquals(second.Value, firstValue);
+        bool valuesAreDistinct = !ReferenceEquals(concurrent, second.Value);
+
+        second.Dispose();
+        pool.Return(concurrent);
+
+        await Assert.That(reusedFirstValue).IsTrue();
+        await Assert.That(valuesAreDistinct).IsTrue();
+    }
+
+    [Test]
     public async Task NestedLeasesUseIndependentState()
     {
         var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 2);

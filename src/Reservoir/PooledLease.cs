@@ -20,14 +20,20 @@ ref struct PooledLease<T, TPolicy>
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
-    private PooledLeaseState<T, TPolicy>? _state;
+    private readonly PooledLeaseState<T, TPolicy>? _state;
+    private readonly ObjectPool<T, TPolicy> _pool;
+    private readonly T _value;
     private readonly long _token;
 
     internal PooledLease(
         PooledLeaseState<T, TPolicy> state,
+        ObjectPool<T, TPolicy> pool,
+        T value,
         long token)
     {
         _state = state;
+        _pool = pool;
+        _value = value;
         _token = token;
     }
 
@@ -42,7 +48,8 @@ ref struct PooledLease<T, TPolicy>
                 PooledLeaseThrowHelper.ThrowDisposed();
             }
 
-            return state!.GetValue(_token);
+            state!.ValidateOwnership(_token);
+            return _value;
         }
     }
 
@@ -51,8 +58,10 @@ ref struct PooledLease<T, TPolicy>
     {
         PooledLeaseState<T, TPolicy>? state = _state;
 
-        _state = null;
-        state?.Release(_token);
+        if (state is not null && state.TryRelease(_token))
+        {
+            _pool.Return(_value);
+        }
     }
 }
 
@@ -89,15 +98,10 @@ internal sealed class PooledLeaseState<T, TPolicy>
     // Thread-local slots use even versions when idle and odd versions to identify
     // active leases, so stale copies cannot release a later lease using the slot.
     private long _version;
-    private ObjectPool<T, TPolicy>? _pool;
-    private T? _value;
-
     internal PooledLeaseState<T, TPolicy>? Next { get; set; }
 
-    internal bool TryAcquire(
-        ObjectPool<T, TPolicy> pool,
-        T value,
-        out long token)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryAcquire(out long token)
     {
         if ((_version & 1) != 0)
         {
@@ -106,36 +110,29 @@ internal sealed class PooledLeaseState<T, TPolicy>
         }
 
         token = _version + 1;
-        _pool = pool;
-        _value = value;
         _version = token;
         return true;
     }
 
-    internal T GetValue(long token)
-    {
-        T? value = _value;
-        if (value is null || _version != token)
-        {
-            PooledLeaseThrowHelper.ThrowDisposed();
-        }
-
-        return value!;
-    }
-
-    internal void Release(long token)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void ValidateOwnership(long token)
     {
         if (_version != token)
         {
-            return;
+            PooledLeaseThrowHelper.ThrowDisposed();
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryRelease(long token)
+    {
+        if (_version != token)
+        {
+            return false;
         }
 
-        ObjectPool<T, TPolicy> pool = _pool!;
-        T value = _value!;
-        _pool = null;
-        _value = null;
         _version = token + 1;
-        pool.Return(value);
+        return true;
     }
 }
 

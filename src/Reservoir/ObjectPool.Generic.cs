@@ -175,9 +175,9 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     {
         PooledLeaseState<T, TPolicy>? state = _threadLeaseState;
 
-        if (state is not null && state.TryAcquire(this, value, out long token))
+        if (state is not null && state.TryAcquire(out long token))
         {
-            return new PooledLease<T, TPolicy>(state, token);
+            return new PooledLease<T, TPolicy>(state, this, value, token);
         }
 
         return RentScopedSlow(value, state);
@@ -198,9 +198,9 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             while (state.Next is not null)
             {
                 state = state.Next;
-                if (state.TryAcquire(this, value, out long token))
+                if (state.TryAcquire(out long token))
                 {
-                    return new PooledLease<T, TPolicy>(state, token);
+                    return new PooledLease<T, TPolicy>(state, this, value, token);
                 }
             }
 
@@ -208,8 +208,8 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             state = state.Next;
         }
 
-        _ = state.TryAcquire(this, value, out long firstToken);
-        return new PooledLease<T, TPolicy>(state, firstToken);
+        _ = state.TryAcquire(out long firstToken);
+        return new PooledLease<T, TPolicy>(state, this, value, firstToken);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
