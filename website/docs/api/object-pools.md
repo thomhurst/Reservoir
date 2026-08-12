@@ -38,7 +38,7 @@ readonly struct BufferPolicy(int maxRetainedBytes) : IPooledObjectDestroyPolicy<
 | `TryReset(T)` | An object is returned | Restore clean state; return `false` to discard. |
 | `Destroy(T)` | An object is discarded, cleared, or returned after disposal | Permanently release resources when implementing `IPooledObjectDestroyPolicy<T>`. |
 
-Implement `IPooledObjectPolicy<T>` when default destruction is sufficient. Reservoir automatically disposes discarded objects that implement `IDisposable`. Implement `IPooledObjectDestroyPolicy<T>` only when cleanup needs different behavior.
+Implement `IPooledObjectPolicy<T>` when default destruction is sufficient. Reservoir automatically disposes discarded objects that implement `IDisposable`. Implement `IPooledObjectDestroyPolicy<T>` only when cleanup needs different behavior. This derived interface is the portable custom-destruction contract, including on .NET Standard 2.0; modern targets retain the base interface's default `Destroy` method for compatibility.
 
 A `readonly struct` policy avoids an interface-object allocation and gives the JIT a concrete call target. Policy state should be immutable or explicitly thread-safe because pool operations may call it concurrently.
 
