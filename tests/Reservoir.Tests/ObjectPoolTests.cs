@@ -131,6 +131,31 @@ public class ObjectPoolTests
     }
 
     [Test]
+    [Arguments(1)]
+    [Arguments(8)]
+    [Arguments(31)]
+    [Arguments(32)]
+    [Arguments(40)]
+    [Arguments(63)]
+    [Arguments(64)]
+    public async Task AffinityIndexIsBoundedAndWellDistributed(int capacity)
+    {
+        const int stripeCount = 65_536;
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(capacity);
+        var distribution = new int[capacity];
+
+        for (uint stripe = 0; stripe < stripeCount; stripe++)
+        {
+            int index = pool.GetAffinityIndex(stripe);
+            await Assert.That(index >= 0 && index < capacity).IsTrue();
+            distribution[index]++;
+        }
+
+        await Assert.That(distribution).DoesNotContain(0);
+        await Assert.That(distribution.Max() - distribution.Min()).IsLessThanOrEqualTo(3);
+    }
+
+    [Test]
     public async Task NonPositiveCapacityThrows()
     {
         await Assert.That(() => new ObjectPool<PooledItem, CountingPolicy>(0))

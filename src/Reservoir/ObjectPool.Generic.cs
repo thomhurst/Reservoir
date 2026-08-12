@@ -424,10 +424,17 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             _threadStripe = threadStripe;
         }
 
-        uint mixedStripe = unchecked((uint)(threadStripe - 1)) * StripeHashMultiplier;
+        return GetAffinityIndex(unchecked((uint)(threadStripe - 1)));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int GetAffinityIndex(uint threadStripe)
+    {
+        uint mixedStripe = threadStripe * StripeHashMultiplier;
+        // Preserve masking for powers of two; scale other hashes without integer division.
         return _indexMask >= 0
             ? (int)(mixedStripe & (uint)_indexMask)
-            : (int)(mixedStripe % (uint)MaximumRetained);
+            : (int)(((ulong)mixedStripe * (uint)MaximumRetained) >> 32);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
