@@ -12,9 +12,12 @@ namespace Reservoir;
 /// Provides pools of reusable <see cref="CancellationTokenSource"/> instances.
 /// </summary>
 /// <remarks>
-/// A renter must dispose each rental exactly once as the source's sole owner. No token readers or
-/// cancellation operations may remain in flight because <c>CancellationTokenSource.TryReset()</c>
-/// is not thread-safe with concurrent use. Linked sources are not supported and should be disposed.
+/// A renter must dispose each rental exactly once as the source's sole owner. Except for the
+/// upstream callback owned by <see cref="RentLinked(CancellationToken)"/>, no token readers or
+/// cancellation operations may remain in flight because
+/// <c>CancellationTokenSource.TryReset()</c> is not thread-safe with concurrent use. Linked rentals
+/// register an upstream token with a pooled source; they do not pool sources created by
+/// <see cref="CancellationTokenSource.CreateLinkedTokenSource(CancellationToken)"/>.
 /// </remarks>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
@@ -49,6 +52,27 @@ sealed class CancellationTokenSourcePool : IDisposable
 
     /// <summary>Rents a source that returns to this pool when disposed.</summary>
     public CancellationTokenSource Rent() => _pool.Rent();
+
+    /// <summary>
+    /// Rents a source canceled by <paramref name="upstreamToken"/> that returns to this pool when
+    /// disposed.
+    /// </summary>
+    /// <remarks>
+    /// Disposal unregisters the upstream token and waits for any in-flight upstream callback before
+    /// the source can be reused. A token that cannot be canceled uses the normal <see cref="Rent"/>
+    /// path.
+    /// </remarks>
+    public CancellationTokenSource RentLinked(CancellationToken upstreamToken)
+    {
+        PooledCancellationTokenSource source = _pool.Rent();
+
+        if (upstreamToken.CanBeCanceled)
+        {
+            source.RegisterUpstream(upstreamToken);
+        }
+
+        return source;
+    }
 
     /// <summary>Rents a source owned by a stack-only lease that returns it on disposal.</summary>
     public Lease RentScoped()
@@ -91,21 +115,48 @@ sealed class CancellationTokenSourcePool : IDisposable
     internal sealed class PooledCancellationTokenSource : CancellationTokenSource
     {
         private readonly CancellationTokenSourcePool _owner;
+        private CancellationTokenRegistration _upstreamRegistration;
 
         internal PooledCancellationTokenSource(CancellationTokenSourcePool owner)
         {
             _owner = owner;
         }
 
-        internal void DisposePermanently() => base.Dispose(true);
+        internal void RegisterUpstream(CancellationToken upstreamToken)
+        {
+#if NETCOREAPP3_0_OR_GREATER
+            _upstreamRegistration = upstreamToken.UnsafeRegister(
+                static state => ((CancellationTokenSource)state!).Cancel(),
+                this);
+#else
+            _upstreamRegistration = upstreamToken.Register(
+                static state => ((CancellationTokenSource)state!).Cancel(),
+                this,
+                useSynchronizationContext: false);
+#endif
+        }
+
+        internal void DisposePermanently()
+        {
+            DisposeUpstreamRegistration();
+            base.Dispose(true);
+        }
 
         /// <inheritdoc />
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
+                DisposeUpstreamRegistration();
                 _owner.Return(this);
             }
+        }
+
+        private void DisposeUpstreamRegistration()
+        {
+            CancellationTokenRegistration registration = _upstreamRegistration;
+            _upstreamRegistration = default;
+            registration.Dispose();
         }
     }
 

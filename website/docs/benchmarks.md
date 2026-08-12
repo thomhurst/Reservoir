@@ -52,7 +52,7 @@ The single-thread TLS `StringBuilder` cache measured 10.35 ns and 0 B; it gives 
 ## Reproduce
 
 ```shell
-dotnet run -c Release --project benchmarks/Reservoir.Benchmarks -- --filter "*" --job Short
+dotnet run -c Release -f net10.0 --project benchmarks/Reservoir.Benchmarks -- --filter "*" --job Short --runtimes net8.0 net10.0 --apples
 ```
 
 <!-- BENCHMARK_RESULTS_LINK_START -->
