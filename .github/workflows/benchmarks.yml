@@ -32,7 +32,7 @@ jobs:
   benchmark:
     name: Run benchmarks
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
 
     steps:
       - name: Checkout
@@ -61,10 +61,13 @@ jobs:
           & dotnet run `
             --project benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj `
             --configuration Release `
+            --framework net10.0 `
             --no-build `
             -- `
             --filter "$env:BENCH_FILTER" `
             --job Dry `
+            --runtimes net8.0 net10.0 `
+            --apples `
             --artifacts artifacts/benchmark-dry-run *> artifacts/benchmark-dry-run.log
 
           $exitCode = $LASTEXITCODE
@@ -82,10 +85,13 @@ jobs:
           & dotnet run `
             --project benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj `
             --configuration Release `
+            --framework net10.0 `
             --no-build `
             -- `
             --filter "$env:BENCH_FILTER" `
             --job "$env:BENCH_JOB" `
+            --runtimes net8.0 net10.0 `
+            --apples `
             --artifacts artifacts/benchmarks *> artifacts/benchmark.log
 
           $exitCode = $LASTEXITCODE

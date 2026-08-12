@@ -153,6 +153,118 @@ public class CancellationTokenSourceCanceledBenchmarks
     }
 }
 
+[BenchmarkCategory("CancellationTokenSource", "Linked")]
+[MemoryDiagnoser(displayGenColumns: false)]
+public class CancellationTokenSourceLinkedBenchmarks
+{
+    private readonly CancellationTokenSourcePool _pool = new(maxCapacity: 1);
+    private readonly CancellationTokenSource _upstream = new();
+
+    [GlobalSetup]
+    public void WarmPool()
+    {
+        CancellationTokenSource source = _pool.RentLinked(_upstream.Token);
+        source.Dispose();
+    }
+
+    [GlobalCleanup]
+    public void Cleanup()
+    {
+        _upstream.Dispose();
+        _pool.Dispose();
+    }
+
+    [Benchmark(Baseline = true)]
+    public bool NewDispose()
+    {
+        using var source = new CancellationTokenSource();
+        return source.IsCancellationRequested;
+    }
+
+    [Benchmark]
+    public bool CreateLinkedDispose()
+    {
+        using CancellationTokenSource source =
+            CancellationTokenSource.CreateLinkedTokenSource(_upstream.Token);
+        return source.IsCancellationRequested;
+    }
+
+    [Benchmark]
+    public bool RentConsumerLinkedDispose()
+    {
+        CancellationTokenSource source = _pool.Rent();
+        CancellationTokenRegistration registration = _upstream.Token.UnsafeRegister(
+            static state => ((CancellationTokenSource)state!).Cancel(),
+            source);
+        bool isCanceled = source.IsCancellationRequested;
+        registration.Dispose();
+        source.Dispose();
+        return isCanceled;
+    }
+
+    [Benchmark]
+    public bool RentLinkedDispose()
+    {
+        CancellationTokenSource source = _pool.RentLinked(_upstream.Token);
+        bool isCanceled = source.IsCancellationRequested;
+        source.Dispose();
+        return isCanceled;
+    }
+}
+
+[BenchmarkCategory("CancellationTokenSource", "Linked", "Canceled")]
+[MemoryDiagnoser(displayGenColumns: false)]
+public class CancellationTokenSourceLinkedCanceledBenchmarks
+{
+    private readonly CancellationTokenSourcePool _pool = new(maxCapacity: 1);
+
+    [GlobalSetup]
+    public void WarmPool()
+    {
+        CancellationTokenSource source = _pool.Rent();
+        source.Dispose();
+    }
+
+    [GlobalCleanup]
+    public void Cleanup() => _pool.Dispose();
+
+    [Benchmark(Baseline = true)]
+    public bool CreateLinkedCancelDispose()
+    {
+        using var upstream = new CancellationTokenSource();
+        using CancellationTokenSource source =
+            CancellationTokenSource.CreateLinkedTokenSource(upstream.Token);
+        upstream.Cancel();
+        return source.IsCancellationRequested;
+    }
+
+    [Benchmark]
+    public bool RentConsumerLinkedCancelDispose()
+    {
+        using var upstream = new CancellationTokenSource();
+        CancellationTokenSource source = _pool.Rent();
+        CancellationTokenRegistration registration = upstream.Token.UnsafeRegister(
+            static state => ((CancellationTokenSource)state!).Cancel(),
+            source);
+        upstream.Cancel();
+        bool isCanceled = source.IsCancellationRequested;
+        registration.Dispose();
+        source.Dispose();
+        return isCanceled;
+    }
+
+    [Benchmark]
+    public bool RentLinkedCancelDispose()
+    {
+        using var upstream = new CancellationTokenSource();
+        CancellationTokenSource source = _pool.RentLinked(upstream.Token);
+        upstream.Cancel();
+        bool isCanceled = source.IsCancellationRequested;
+        source.Dispose();
+        return isCanceled;
+    }
+}
+
 [BenchmarkCategory("CancellationTokenSource")]
 [MemoryDiagnoser(displayGenColumns: false)]
 public class CancellationTokenSourcePoolContentionBenchmarks

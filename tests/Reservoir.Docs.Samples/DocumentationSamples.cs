@@ -106,6 +106,16 @@ internal static class DocumentationSamples
         await operation(source.Token);
     }
 
+    internal static async Task LinkedCancellationTokenSourceAsync(
+        Func<CancellationToken, Task> operation,
+        CancellationToken callerToken)
+    {
+        using CancellationTokenSource source =
+            CancellationTokenSourcePool.Shared.RentLinked(callerToken);
+        source.CancelAfter(TimeSpan.FromSeconds(30));
+        await operation(source.Token);
+    }
+
     internal static void ScopedCancellationTokenSource(Action<CancellationToken> operation)
     {
         using var lease = CancellationTokenSourcePool.Shared.RentScoped(

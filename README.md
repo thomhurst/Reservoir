@@ -100,7 +100,7 @@ Every measured warm Reservoir path allocated **0 B**. Timings vary by machine; c
 [See all benchmark results](https://thomhurst.github.io/Reservoir/docs/benchmarks) or reproduce them locally:
 
 ```shell
-dotnet run -c Release --project benchmarks/Reservoir.Benchmarks -- --filter "*" --job Short
+dotnet run -c Release -f net10.0 --project benchmarks/Reservoir.Benchmarks -- --filter "*" --job Short --runtimes net8.0 net10.0 --apples
 ```
 
 ## When it fits

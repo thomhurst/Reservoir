@@ -15,6 +15,7 @@ Use the method that matches the source's lifetime:
 | --- | --- | --- |
 | Synchronous scope | `CancellationTokenSourcePool.Shared.RentScoped()` | Fastest pooled method; stack-only lease guarantees return. |
 | Scope crosses `await` | `CancellationTokenSourcePool.Shared.Rent()` | Source can cross the async boundary and returns itself when disposed. |
+| Caller cancellation plus a timeout | `CancellationTokenSourcePool.Shared.RentLinked(callerToken)` | Links one upstream token without allocating a BCL linked source. |
 | Source usually cancels | `new CancellationTokenSource()` | A canceled source cannot be reused, so pooling adds overhead. |
 | No timer or registration, allocation is acceptable | `new CancellationTokenSource()` | Lowest raw latency for a trivial source. |
 | Repeated timers or registrations | Pool | Reuses their internal storage and avoids steady-state allocations. |
@@ -45,6 +46,27 @@ await ProcessAsync(source.Token);
 
 The rented source is a specialized subtype. Calling `Dispose()` offers it back to its originating pool; the pool retains it only when reset succeeds. Dispose each rental exactly once and only after all work using its token has completed.
 
+## Linked async use
+
+Use `RentLinked()` when a source must observe caller cancellation as well as its own timeout:
+
+```csharp
+using CancellationTokenSource source =
+    CancellationTokenSourcePool.Shared.RentLinked(callerToken);
+
+source.CancelAfter(TimeSpan.FromSeconds(30));
+await ProcessAsync(source.Token);
+```
+
+The pooled subtype owns one registration on `callerToken`. Disposing the rental unregisters that
+callback—and waits for an in-flight callback to finish—before the source can return to the pool.
+An upstream token that cannot be canceled follows the normal `Rent()` path.
+
+This provides linked behavior without pooling a BCL source created by
+`CancellationTokenSource.CreateLinkedTokenSource`. As with any canceled pooled source, upstream or
+timeout cancellation causes `TryReset()` to fail, so that rental is permanently disposed rather
+than retained.
+
 ## Synchronous use
 
 Use a scoped lease when the source never crosses an async boundary:
@@ -70,7 +92,7 @@ If the runtime does not expose `TryReset()`, returned sources are permanently di
 
 Pooling therefore works best for timeout or speculative-cancellation sources that usually complete before cancellation. It provides little benefit when cancellation is the normal outcome.
 
-Linked sources created by `CancellationTokenSource.CreateLinkedTokenSource` are ordinary sources. They do not come from Reservoir and must be disposed normally.
+Linked sources created directly by `CancellationTokenSource.CreateLinkedTokenSource` are ordinary sources. They do not come from Reservoir and must be disposed normally.
 
 ## Ownership and concurrency
 
@@ -79,6 +101,9 @@ Before disposing a rental or its lease, ensure there are:
 - no outstanding token users;
 - no concurrent `Cancel` or `CancelAfter` calls;
 - no concurrent registration or disposal operations.
+
+`RentLinked()` synchronizes its owned upstream callback during disposal, so upstream cancellation
+may race disposal. Caller-initiated operations on the rented source still must finish first.
 
 `TryReset()` is not thread-safe with concurrent source use. Disposal transfers ownership to the pool: do not access the source, its token, a registration, or another source alias afterward. These rules apply even when the pool itself is shared safely between threads.
 
