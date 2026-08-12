@@ -101,37 +101,60 @@ public class ObjectPoolBurstBenchmarks
     }
 }
 
+[BenchmarkCategory("Storage", "Contention")]
 [MemoryDiagnoser(displayGenColumns: false)]
-public class ObjectPoolLargeContentionBenchmarks
+[MinColumn]
+[MaxColumn]
+[MedianColumn]
+public class StripedObjectStoreContentionBenchmarks
 {
     private const int OperationsPerInvocation = 327_680;
-    private const int PoolCapacity = 65_536;
 
     private BenchmarkWorkerGroup? _workers;
 
-    [Params(1, 4, 8, 16, 32)]
+    [Params(65, 4_096, 65_536)]
+    public int Capacity { get; set; }
+
+    [ParamsSource(nameof(WorkerCounts))]
     public int WorkerCount { get; set; }
+
+    [ParamsAllValues]
+    public LargeStorePopulation Population { get; set; }
+
+    public IEnumerable<int> WorkerCounts => new[]
+    {
+        1,
+        8,
+        16,
+        17,
+        Environment.ProcessorCount,
+        24,
+        32,
+    }.Distinct();
 
     [GlobalSetup]
     public void Setup()
     {
-        var pool = new ObjectPool<Payload, PayloadPolicy>(PoolCapacity);
-        var items = new Payload[PoolCapacity];
-
-        for (int i = 0; i < items.Length; i++)
+        var store = new StripedObjectStore<Payload>(Capacity);
+        int population = Population switch
         {
-            items[i] = pool.Rent();
+            LargeStorePopulation.OneRetainedItem => 1,
+            LargeStorePopulation.OneItemPerWorker => Math.Min(WorkerCount, Capacity),
+            LargeStorePopulation.FullCapacity => Capacity,
+            _ => throw new ArgumentOutOfRangeException(nameof(Population)),
+        };
+
+        for (int i = 0; i < population; i++)
+        {
+            if (!store.TryPush(new Payload()))
+            {
+                throw new InvalidOperationException("Failed to populate striped store.");
+            }
         }
 
-        foreach (Payload item in items)
-        {
-            pool.Return(item);
-        }
-
-        int operationsPerWorker = OperationsPerInvocation / WorkerCount;
         _workers = new BenchmarkWorkerGroup(
             WorkerCount,
-            () => Run(pool, operationsPerWorker));
+            workerIndex => Run(store, GetOperationCount(workerIndex)));
     }
 
     [GlobalCleanup]
@@ -141,22 +164,36 @@ public class ObjectPoolLargeContentionBenchmarks
     public void RentReturn() => _workers!.Run();
 
     private static void Run(
-        ObjectPool<Payload, PayloadPolicy> pool,
+        StripedObjectStore<Payload> store,
         int operationCount)
     {
         for (int i = 0; i < operationCount; i++)
         {
-            Payload item = pool.Rent();
-            pool.Return(item);
+            Payload? item;
+            while (!store.TryPop(out item))
+            {
+                Thread.SpinWait(1);
+            }
+
+            if (!store.TryPush(item!))
+            {
+                throw new InvalidOperationException("Striped store rejected a rented item.");
+            }
         }
     }
 
-    public sealed class Payload;
-
-    public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
+    private int GetOperationCount(int workerIndex)
     {
-        public Payload Create() => new();
-
-        public bool TryReset(Payload obj) => true;
+        int baseCount = OperationsPerInvocation / WorkerCount;
+        return baseCount + (workerIndex < OperationsPerInvocation % WorkerCount ? 1 : 0);
     }
+
+    public sealed class Payload;
+}
+
+public enum LargeStorePopulation
+{
+    OneRetainedItem,
+    OneItemPerWorker,
+    FullCapacity,
 }
