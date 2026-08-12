@@ -69,6 +69,9 @@ sealed class HashSetPool<T>
         int maxRetainedCapacity,
         int maxCapacity)
     {
+#if NET8_0_OR_GREATER
+        ArgumentOutOfRangeException.ThrowIfNegative(maxRetainedCapacity);
+#else
         if (maxRetainedCapacity < 0)
         {
             throw new ArgumentOutOfRangeException(
@@ -76,6 +79,7 @@ sealed class HashSetPool<T>
                 maxRetainedCapacity,
                 null);
         }
+#endif
         Comparer = comparer ?? EqualityComparer<T>.Default;
         MaximumRetainedCapacity = maxRetainedCapacity;
         _pool = new ObjectPool<HashSet<T>, Policy>(
@@ -112,12 +116,12 @@ sealed class HashSetPool<T>
         public bool TryReset(HashSet<T> obj)
         {
             obj.Clear();
+#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
             if (!ReferenceEquals(obj.Comparer, comparer))
             {
                 return false;
             }
 
-#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
             if (s_ensureCapacity is not null)
             {
                 return s_ensureCapacity(obj, 0) <= maxRetainedCapacity;
@@ -126,7 +130,8 @@ sealed class HashSetPool<T>
             obj.TrimExcess();
             return true;
 #else
-            return obj.EnsureCapacity(0) <= maxRetainedCapacity;
+            return ReferenceEquals(obj.Comparer, comparer)
+                && obj.EnsureCapacity(0) <= maxRetainedCapacity;
 #endif
         }
     }

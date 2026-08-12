@@ -15,6 +15,8 @@ internal
 interface IPooledObjectDestroyPolicy<T> : IPooledObjectPolicy<T>
     where T : class
 {
+#if !NETCOREAPP3_0_OR_GREATER
     /// <summary>Destroys an object that cannot be retained by the pool.</summary>
     void Destroy(T obj);
+#endif
 }

@@ -42,6 +42,9 @@ sealed class QueuePool<T>
     /// <summary>Initializes a pool with custom item and queue capacity limits.</summary>
     public QueuePool(int maxRetainedCapacity, int maxCapacity)
     {
+#if NET8_0_OR_GREATER
+        ArgumentOutOfRangeException.ThrowIfNegative(maxRetainedCapacity);
+#else
         if (maxRetainedCapacity < 0)
         {
             throw new ArgumentOutOfRangeException(
@@ -49,6 +52,7 @@ sealed class QueuePool<T>
                 maxRetainedCapacity,
                 null);
         }
+#endif
         MaximumRetainedCapacity = maxRetainedCapacity;
         _pool = new ObjectPool<Queue<T>, Policy>(new Policy(maxRetainedCapacity), maxCapacity);
     }

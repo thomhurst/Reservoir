@@ -151,6 +151,9 @@ internal sealed class PooledLeaseState<T, TPolicy>
 [DebuggerNonUserCode]
 internal static class PooledLeaseThrowHelper
 {
+#if NET5_0_OR_GREATER
+    [DoesNotReturn]
+#endif
     [MethodImpl(MethodImplOptions.NoInlining)]
     internal static void ThrowDisposed()
         => throw new ObjectDisposedException("PooledLease");

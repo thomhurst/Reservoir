@@ -42,6 +42,9 @@ sealed class StackPool<T>
     /// <summary>Initializes a pool with custom item and stack capacity limits.</summary>
     public StackPool(int maxRetainedCapacity, int maxCapacity)
     {
+#if NET8_0_OR_GREATER
+        ArgumentOutOfRangeException.ThrowIfNegative(maxRetainedCapacity);
+#else
         if (maxRetainedCapacity < 0)
         {
             throw new ArgumentOutOfRangeException(
@@ -49,6 +52,7 @@ sealed class StackPool<T>
                 maxRetainedCapacity,
                 null);
         }
+#endif
         MaximumRetainedCapacity = maxRetainedCapacity;
         _pool = new ObjectPool<Stack<T>, Policy>(new Policy(maxRetainedCapacity), maxCapacity);
     }
