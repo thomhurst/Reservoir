@@ -29,7 +29,7 @@ Collection pools have a separate `maxRetainedCapacity`. It prevents one unusuall
 - `StringBuilderPool` defaults to 4,096.
 - A negative value is rejected; zero means retain only instances with zero backing capacity.
 
-Returned instances are cleared and inspected. Runtimes with capacity inspection discard oversized instances rather than trimming. On older runtimes, hash sets, queues, and stacks are trimmed before retention; dictionaries are discarded.
+Returned instances are inspected before clearing. Runtimes with capacity inspection discard oversized instances without clearing or trimming. On older runtimes without capacity inspection, hash sets, queues, and stacks are cleared and trimmed before retention; dictionaries are discarded without clearing.
 
 ## Lifecycle choices
 

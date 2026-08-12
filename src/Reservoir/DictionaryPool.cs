@@ -97,7 +97,7 @@ sealed class DictionaryPool<TKey, TValue>
     /// <summary>Rents an empty dictionary.</summary>
     public Dictionary<TKey, TValue> Rent() => _pool.Rent();
 
-    /// <summary>Clears and returns a dictionary, discarding it when its capacity is too large.</summary>
+    /// <summary>Returns a dictionary, clearing it when retained and discarding it when incompatible or too large.</summary>
     public void Return(Dictionary<TKey, TValue> dictionary) => _pool.Return(dictionary);
 
     private readonly struct Policy(
@@ -113,20 +113,25 @@ sealed class DictionaryPool<TKey, TValue>
 
         public bool TryReset(Dictionary<TKey, TValue> obj)
         {
-            obj.Clear();
-#if NETSTANDARD2_0
             if (!ReferenceEquals(obj.Comparer, comparer))
             {
                 return false;
             }
 
-            return s_ensureCapacity is not null
-                ? s_ensureCapacity(obj, 0) <= maxRetainedCapacity
-                : false;
+#if NETSTANDARD2_0
+            if (s_ensureCapacity is null
+                || s_ensureCapacity(obj, 0) > maxRetainedCapacity)
+            {
+                return false;
+            }
 #else
-            return ReferenceEquals(obj.Comparer, comparer)
-                && obj.EnsureCapacity(0) <= maxRetainedCapacity;
+            if (obj.EnsureCapacity(0) > maxRetainedCapacity)
+            {
+                return false;
+            }
 #endif
+            obj.Clear();
+            return true;
         }
     }
 }

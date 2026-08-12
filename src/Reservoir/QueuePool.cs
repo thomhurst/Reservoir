@@ -62,7 +62,7 @@ sealed class QueuePool<T>
     /// <summary>Rents an empty queue.</summary>
     public Queue<T> Rent() => _pool.Rent();
 
-    /// <summary>Clears and returns a queue, discarding it when its capacity is too large.</summary>
+    /// <summary>Returns a queue, clearing it when retained and discarding it when too large.</summary>
     public void Return(Queue<T> queue) => _pool.Return(queue);
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<Queue<T>>
@@ -76,17 +76,29 @@ sealed class QueuePool<T>
 
         public bool TryReset(Queue<T> obj)
         {
-            obj.Clear();
 #if NETSTANDARD2_0
             if (s_ensureCapacity is not null)
             {
-                return s_ensureCapacity(obj, 0) <= maxRetainedCapacity;
+                if (s_ensureCapacity(obj, 0) > maxRetainedCapacity)
+                {
+                    return false;
+                }
+
+                obj.Clear();
+                return true;
             }
 
+            obj.Clear();
             obj.TrimExcess();
             return true;
 #else
-            return obj.EnsureCapacity(0) <= maxRetainedCapacity;
+            if (obj.EnsureCapacity(0) > maxRetainedCapacity)
+            {
+                return false;
+            }
+
+            obj.Clear();
+            return true;
 #endif
         }
     }

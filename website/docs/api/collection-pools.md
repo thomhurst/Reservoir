@@ -16,7 +16,7 @@ Specialized pools remove policy boilerplate for common mutable types. Each type 
 | `StackPool<T>` | `StackPool<T>.Shared` | 1,024 elements |
 | `StringBuilderPool` | `StringBuilderPool.Shared` | 4,096 characters |
 
-All rentals arrive empty. When the runtime exposes collection capacity, `Return` clears an instance, then retains it only when its backing capacity is at or below `MaximumRetainedCapacity`. Oversized instances are discarded without trimming.
+All rentals arrive empty. When the runtime exposes collection capacity, `Return` retains and clears an instance only when its backing capacity is at or below `MaximumRetainedCapacity`. Oversized instances are discarded without clearing or trimming.
 
 Some .NET Standard 2.0-era runtimes do not expose collection capacity. On those runtimes, hash sets, queues, and stacks are trimmed after clearing so their backing stores remain bounded. Dictionaries are discarded on return because neither capacity inspection nor trimming is available. Lists and string builders expose capacity and retain normal behavior.
 

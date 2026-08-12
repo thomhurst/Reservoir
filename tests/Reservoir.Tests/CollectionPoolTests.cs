@@ -58,26 +58,31 @@ public class CollectionPoolTests
     public async Task DictionaryPoolDiscardsDictionaryWithDifferentComparer()
     {
         var pool = new DictionaryPool<string, int>(StringComparer.OrdinalIgnoreCase);
-        var incompatible = new Dictionary<string, int>(StringComparer.Ordinal);
+        var incompatible = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["key"] = 42,
+        };
 
         pool.Return(incompatible);
         Dictionary<string, int> rented = pool.Rent();
 
         await Assert.That(rented).IsNotSameReferenceAs(incompatible);
         await Assert.That(rented.Comparer).IsSameReferenceAs(StringComparer.OrdinalIgnoreCase);
+        await Assert.That(incompatible).ContainsKey("key");
     }
 
     [Test]
     public async Task HashSetPoolDiscardsSetWithDifferentComparer()
     {
         var pool = new HashSetPool<string>(StringComparer.OrdinalIgnoreCase);
-        var incompatible = new HashSet<string>(StringComparer.Ordinal);
+        var incompatible = new HashSet<string>(StringComparer.Ordinal) { "value" };
 
         pool.Return(incompatible);
         HashSet<string> rented = pool.Rent();
 
         await Assert.That(rented).IsNotSameReferenceAs(incompatible);
         await Assert.That(rented.Comparer).IsSameReferenceAs(StringComparer.OrdinalIgnoreCase);
+        await Assert.That(incompatible).Contains("value");
     }
 
     [Test]
@@ -127,12 +132,14 @@ public class CollectionPoolTests
     {
         var pool = new StringBuilderPool(maxRetainedCapacity: 16, maxCapacity: 1);
         var incompatible = new StringBuilder(capacity: 1, maxCapacity: 1);
+        incompatible.Append('x');
 
         pool.Return(incompatible);
         StringBuilder rented = pool.Rent();
 
         await Assert.That(rented).IsNotSameReferenceAs(incompatible);
         await Assert.That(rented.MaxCapacity).IsEqualTo(int.MaxValue);
+        await Assert.That(incompatible.ToString()).IsEqualTo("x");
     }
 
     [Test]
@@ -272,6 +279,69 @@ public class CollectionPoolTests
         }
 
         await Assert.That(replacement).IsNotSameReferenceAs(returned);
+    }
+
+    [Test]
+    [Arguments("list")]
+    [Arguments("dictionary")]
+    [Arguments("hash-set")]
+    [Arguments("stack")]
+    [Arguments("queue")]
+    [Arguments("string-builder")]
+    public async Task RejectedOversizedInstancesAreNotCleared(string poolType)
+    {
+        const int maximumRetainedCapacity = 4;
+        const int elementCount = 8;
+        int count;
+
+        switch (poolType)
+        {
+            case "list":
+                var listPool = new ListPool<object>(maximumRetainedCapacity, 1);
+                var list = new List<object>(elementCount);
+                list.AddRange(Enumerable.Repeat(new object(), elementCount));
+                listPool.Return(list);
+                count = list.Count;
+                break;
+            case "dictionary":
+                var dictionaryPool = new DictionaryPool<int, object>(maximumRetainedCapacity, 1);
+                var dictionary = Enumerable.Range(0, elementCount)
+                    .ToDictionary(static value => value, static _ => new object());
+                dictionaryPool.Return(dictionary);
+                count = dictionary.Count;
+                break;
+            case "hash-set":
+                var setPool = new HashSetPool<object>(maximumRetainedCapacity, 1);
+                var set = Enumerable.Range(0, elementCount)
+                    .Select(static _ => new object())
+                    .ToHashSet();
+                setPool.Return(set);
+                count = set.Count;
+                break;
+            case "stack":
+                var stackPool = new StackPool<object>(maximumRetainedCapacity, 1);
+                var stack = new Stack<object>(Enumerable.Repeat(new object(), elementCount));
+                stackPool.Return(stack);
+                count = stack.Count;
+                break;
+            case "queue":
+                var queuePool = new QueuePool<object>(maximumRetainedCapacity, 1);
+                var queue = new Queue<object>(Enumerable.Repeat(new object(), elementCount));
+                queuePool.Return(queue);
+                count = queue.Count;
+                break;
+            case "string-builder":
+                var builderPool = new StringBuilderPool(maximumRetainedCapacity, 1);
+                var builder = new StringBuilder(capacity: elementCount);
+                builder.Append('x', elementCount);
+                builderPool.Return(builder);
+                count = builder.Length;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(poolType));
+        }
+
+        await Assert.That(count).IsEqualTo(elementCount);
     }
 
     [Test]
