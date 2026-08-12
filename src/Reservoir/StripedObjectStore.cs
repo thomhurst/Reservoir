@@ -88,7 +88,9 @@ internal sealed class StripedObjectStore<T>
             return false;
         }
 
-        item = Interlocked.Exchange(ref stripe.Nodes[nodeIndex].Item, null);
+        // Winning the available-head CAS owns this node until free-head publication.
+        item = stripe.Nodes[nodeIndex].Item;
+        stripe.Nodes[nodeIndex].Item = null;
         PublishNode(ref stripe.FreeHead, stripe.Nodes, nodeIndex);
         return item is not null;
     }
