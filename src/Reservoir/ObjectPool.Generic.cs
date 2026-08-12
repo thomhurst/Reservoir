@@ -56,13 +56,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private TPolicy _policy;
     private int _isDisposed;
 
-    private readonly ConditionalWeakTable<T, RentalTracker>? _outstandingRentals;
-#if !NET10_0_OR_GREATER
-    private static readonly RuntimeCompatibility.ConditionalWeakTableRemove<T, RentalTracker>?
-        s_removeOutstandingRental
-            = RuntimeCompatibility.CreateConditionalWeakTableRemove<T, RentalTracker>();
-#endif
-
     /// <summary>Initializes a pool with the default policy value and capacity.</summary>
     public ObjectPool()
         : this(default, DefaultMaximumRetained)
@@ -93,9 +86,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
 #endif
 
-        _outstandingRentals = ObjectPoolDiagnostics.Enabled
-            ? new ConditionalWeakTable<T, RentalTracker>()
-            : null;
         _policy = policy;
         MaximumRetained = maxCapacity;
 #if NET8_0_OR_GREATER
@@ -155,12 +145,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
         if (Volatile.Read(ref _isDisposed) == 0)
         {
-            ConditionalWeakTable<T, RentalTracker>? outstandingRentals = _outstandingRentals;
-            if (outstandingRentals is not null)
-            {
-                TrackRental(outstandingRentals, rented);
-            }
-
             return rented;
         }
 
@@ -271,24 +255,10 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
 #endif
 
-        ConditionalWeakTable<T, RentalTracker>? outstandingRentals = _outstandingRentals;
-        bool wasRented = outstandingRentals is null
-            || TryCompleteRental(outstandingRentals, obj);
-
         if (Volatile.Read(ref _isDisposed) != 0)
         {
             DisposeItem(obj);
-            if (!wasRented)
-            {
-                ThrowNotRented();
-            }
-
             return;
-        }
-
-        if (!wasRented)
-        {
-            ThrowNotRented();
         }
 
         bool canReuse;
@@ -532,75 +502,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
     }
 
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void TrackRental(
-        ConditionalWeakTable<T, RentalTracker> outstandingRentals,
-        T obj)
-    {
-        var tracker = new RentalTracker();
-
-        try
-        {
-            outstandingRentals.Add(obj, tracker);
-        }
-        catch (ArgumentException exception)
-        {
-            tracker.Complete();
-            throw new InvalidOperationException(
-                "The pool policy handed out an object that is already rented.",
-                exception);
-        }
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static bool TryCompleteRental(
-        ConditionalWeakTable<T, RentalTracker> outstandingRentals,
-        T obj)
-    {
-#if !NET10_0_OR_GREATER
-        RentalTracker? tracker;
-        bool removed = s_removeOutstandingRental is not null
-            ? s_removeOutstandingRental(outstandingRentals, obj, out tracker!)
-            : outstandingRentals.TryGetValue(obj, out tracker)
-                && outstandingRentals.Remove(obj);
-#else
-        bool removed = outstandingRentals.Remove(obj, out RentalTracker? tracker);
-#endif
-
-        if (!removed)
-        {
-            return false;
-        }
-
-        tracker!.Complete();
-        return true;
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void ThrowNotRented()
-        => throw new InvalidOperationException(
-            "The object was not rented from this pool or has already been returned.");
-
-    private sealed class RentalTracker
-    {
-        private readonly string _rentSite = new StackTrace(skipFrames: 2, fNeedFileInfo: true)
-            .ToString();
-        private int _isComplete;
-
-        internal void Complete()
-        {
-            Volatile.Write(ref _isComplete, 1);
-            GC.SuppressFinalize(this);
-        }
-
-        ~RentalTracker()
-        {
-            if (Volatile.Read(ref _isComplete) == 0)
-            {
-                ObjectPoolDiagnostics.ReportLeak(typeof(T), _rentSite);
-            }
-        }
-    }
     private struct ObjectWrapper
     {
         internal T? Element;

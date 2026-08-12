@@ -5,7 +5,7 @@ description: Configure capacity and lifecycle behavior.
 
 # Configuration
 
-Reservoir uses constructor arguments and policy implementations for pool behavior. Ownership diagnostics use one process-wide opt-in captured by each new pool.
+Reservoir uses constructor arguments and policy implementations for pool behavior.
 
 ## Retained object count
 
@@ -30,24 +30,6 @@ Collection pools have a separate `maxRetainedCapacity`. It prevents one unusuall
 - A negative value is rejected; zero means retain only instances with zero backing capacity.
 
 Returned instances are cleared and inspected. Runtimes with capacity inspection discard oversized instances rather than trimming. On older runtimes, hash sets, queues, and stacks are trimmed before retention; dictionaries are discarded.
-
-## Ownership diagnostics
-
-Enable diagnostics before constructing pools:
-
-```csharp
-ObjectPoolDiagnostics.Enabled = true;
-```
-
-Each pool captures the setting when constructed. Existing pools are unaffected by later changes. Enabled pools detect wrong-pool and duplicate returns, and report rentals that become unreachable without being returned.
-
-For development-only diagnostics, call this during application startup:
-
-```csharp
-ObjectPoolDiagnostics.EnableForDebugBuilds();
-```
-
-The method has `[Conditional("DEBUG")]`, so the consumer compiler omits the call from builds without `DEBUG`. Disabled pools allocate nothing for tracking but retain a small predictable branch on rent and return. Enabled diagnostics allocate tracking state and capture rent-site stack traces; do not use them for throughput measurements.
 
 ## Lifecycle choices
 

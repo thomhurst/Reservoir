@@ -33,8 +33,6 @@ Fixed storage provides the retention bound. It is not a semaphore: active rental
 
 `Dispose()` marks the pool closed before draining retained slots. A concurrent renter that observes disposal destroys any item it removed and throws. A concurrent return either sees closure immediately or stores then rechecks and participates in clearing. Outstanding rentals are destroyed when eventually returned.
 
-Ownership diagnostics are disabled by default and captured when each pool is constructed. Disabled pools perform a nullable tracking-state check without allocating. Enabled pools use weak keys so diagnostics do not keep leaked objects alive, and capture rent-site stack traces for leak reports.
-
 ## Compared with other pools
 
 | | Reservoir | `Microsoft.Extensions.ObjectPool` | `ArrayPool<T>` |
