@@ -2,7 +2,7 @@
 
 **Stop allocating the same thing twice.**
 
-Reservoir is bounded, thread-safe object pooling for .NET with a **0 B warm rent/return path**. It ships as C# source, so the optimized code compiles into your assembly—no runtime dependency, version conflict, or extra DLL.
+Reservoir is bounded, thread-safe object pooling for .NET with a **0 B warm general-purpose object-pool rent/return path**. It ships as C# source, so the optimized code compiles into your assembly—no runtime dependency, version conflict, or extra DLL.
 
 [![NuGet](https://img.shields.io/nuget/v/Reservoir.svg)](https://www.nuget.org/packages/Reservoir)
 [![CI/CD](https://github.com/thomhurst/Reservoir/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/thomhurst/Reservoir/actions/workflows/ci-cd.yml)
@@ -12,11 +12,11 @@ Reservoir is bounded, thread-safe object pooling for .NET with a **0 B warm rent
 dotnet add package Reservoir
 ```
 
-Requires .NET 10 and C# 12 or later.
+Requires .NET Standard 2.0 and C# 12 or later.
 
 ## Why Reservoir?
 
-- **Zero allocations when warm.** Rent and return reuse fixed slots without allocating nodes.
+- **Zero general-purpose pool allocations when warm.** `ObjectPool<T,TPolicy>` rent and return reuse fixed slots without allocating nodes. Legacy collection fallbacks may trim or replace backing storage.
 - **Bounded retention.** You choose the maximum number of idle objects; the pool cannot grow without limit.
 - **Source-only delivery.** Reservoir stays private to your project and adds no runtime package or assembly.
 - **Ownership guardrails.** Debug builds detect invalid returns and report leaked rentals.
@@ -51,7 +51,7 @@ readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
 }
 ```
 
-`Create()` handles a miss. `TryReset()` prepares an object for reuse or returns `false` to discard it. The scoped lease guarantees return when control leaves the synchronous scope.
+`Create()` handles a miss. `TryReset()` prepares an object for reuse or returns `false` to discard it. Discarded `IDisposable` objects are disposed automatically; implement `IPooledObjectDestroyPolicy<T>` for custom cleanup. The scoped lease guarantees return when control leaves the synchronous scope.
 
 For work that crosses an `await`, use `Rent()` and return the object in `finally`. See the [quick start](https://thomhurst.github.io/Reservoir/docs/quick-start) for both patterns.
 

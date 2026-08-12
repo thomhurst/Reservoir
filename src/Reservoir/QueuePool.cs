@@ -42,7 +42,17 @@ sealed class QueuePool<T>
     /// <summary>Initializes a pool with custom item and queue capacity limits.</summary>
     public QueuePool(int maxRetainedCapacity, int maxCapacity)
     {
+#if NET8_0_OR_GREATER
         ArgumentOutOfRangeException.ThrowIfNegative(maxRetainedCapacity);
+#else
+        if (maxRetainedCapacity < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxRetainedCapacity),
+                maxRetainedCapacity,
+                null);
+        }
+#endif
         MaximumRetainedCapacity = maxRetainedCapacity;
         _pool = new ObjectPool<Queue<T>, Policy>(new Policy(maxRetainedCapacity), maxCapacity);
     }
@@ -61,12 +71,27 @@ sealed class QueuePool<T>
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<Queue<T>>
     {
+#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+        private static readonly Func<Queue<T>, int, int>? s_ensureCapacity
+            = RuntimeCompatibility.CreateEnsureCapacity<Queue<T>>();
+#endif
+
         public Queue<T> Create() => [];
 
         public bool TryReset(Queue<T> obj)
         {
             obj.Clear();
+#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+            if (s_ensureCapacity is not null)
+            {
+                return s_ensureCapacity(obj, 0) <= maxRetainedCapacity;
+            }
+
+            obj.TrimExcess();
+            return true;
+#else
             return obj.EnsureCapacity(0) <= maxRetainedCapacity;
+#endif
         }
     }
 }

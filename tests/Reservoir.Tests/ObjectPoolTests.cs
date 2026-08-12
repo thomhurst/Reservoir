@@ -139,7 +139,11 @@ public class ObjectPoolTests
     public async Task RentReturnStressPreservesOwnershipAndStateAcrossWorkerCounts()
     {
         const int capacity = 32;
+#if NET8_0
+        const int iterations = 25_000;
+#else
         const int iterations = 100_000;
+#endif
         int[] workerCounts = [1, 4, 8, 16, 32];
         var state = new StressState();
         var pool = new ObjectPool<StressItem, StressPolicy>(

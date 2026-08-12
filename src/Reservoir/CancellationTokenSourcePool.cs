@@ -128,8 +128,14 @@ sealed class CancellationTokenSourcePool : IDisposable
         public void Dispose() => _lease.Dispose();
     }
 
-    internal readonly struct Policy : IPooledObjectPolicy<PooledCancellationTokenSource>
+    internal readonly struct Policy : IPooledObjectDestroyPolicy<PooledCancellationTokenSource>
     {
+#if !NET6_0_OR_GREATER
+        private static readonly Func<CancellationTokenSource, bool>? s_tryReset
+            = RuntimeCompatibility.CreateParameterlessBooleanMethod<CancellationTokenSource>(
+                "TryReset");
+#endif
+
         private readonly CancellationTokenSourcePool _owner;
 
         internal Policy(CancellationTokenSourcePool owner)
@@ -146,7 +152,7 @@ sealed class CancellationTokenSourcePool : IDisposable
             // ObjectPool permanently disposes the source whenever this returns false.
             return source.TryReset();
 #else
-            return false;
+            return s_tryReset?.Invoke(source) == true;
 #endif
         }
 

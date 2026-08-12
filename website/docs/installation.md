@@ -6,7 +6,7 @@ description: Add Reservoir as a source-only development dependency.
 
 # Installation
 
-Install Reservoir into a .NET 10 project:
+Install Reservoir into a .NET Standard 2.0-compatible project:
 
 ```shell
 dotnet add package Reservoir
@@ -24,6 +24,8 @@ The package contains C# files under `contentFiles` and a small build-transitive 
 4. No runtime package dependency is added to your `.deps.json`.
 
 Each project that directly uses Reservoir should reference the package. Because each project compiles its own copy, objects from one copy must be returned to the pool that created them.
+
+Reservoir requires C# 12 or later. Set `<LangVersion>12.0</LangVersion>` or newer when the target framework's default language version is older.
 
 ## Make types public
 

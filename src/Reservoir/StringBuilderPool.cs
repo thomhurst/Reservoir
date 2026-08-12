@@ -43,7 +43,17 @@ sealed class StringBuilderPool
     /// <summary>Initializes a pool with custom item and builder capacity limits.</summary>
     public StringBuilderPool(int maxRetainedCapacity, int maxCapacity)
     {
+#if NET8_0_OR_GREATER
         ArgumentOutOfRangeException.ThrowIfNegative(maxRetainedCapacity);
+#else
+        if (maxRetainedCapacity < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxRetainedCapacity),
+                maxRetainedCapacity,
+                null);
+        }
+#endif
         MaximumRetainedCapacity = maxRetainedCapacity;
         _pool = new ObjectPool<StringBuilder, Policy>(new Policy(maxRetainedCapacity), maxCapacity);
     }

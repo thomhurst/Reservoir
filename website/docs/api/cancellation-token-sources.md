@@ -7,6 +7,8 @@ description: Safely reuse uncanceled CancellationTokenSource instances.
 
 `CancellationTokenSourcePool` reuses a source only when `CancellationTokenSource.TryReset()` confirms cancellation never fired. Canceled sources are permanently disposed and discarded. Timers and registrations from an unfired rental are removed before reuse.
 
+`TryReset()` is available on .NET 6 and later. On older runtimes, returned sources are permanently disposed rather than reused.
+
 ```csharp
 CancellationTokenSourcePool pool = CancellationTokenSourcePool.Shared;
 

@@ -7,7 +7,7 @@ description: Bounded, thread-safe object pooling that compiles into your .NET ap
 
 # Keep the performance. Lose the dependency.
 
-Reservoir is a high-performance object-pooling toolkit for .NET. Warm rent and return operations allocate **0 B**, retention is bounded, and every implementation ships as C# source that compiles into your assembly.
+Reservoir is a high-performance object-pooling toolkit for .NET. Warm `ObjectPool<T,TPolicy>` rent and return operations allocate **0 B**, retention is bounded, and every implementation ships as C# source that compiles into your assembly. Legacy collection fallbacks may trim or replace backing storage.
 
 That distribution model changes the trade-off:
 
@@ -20,7 +20,7 @@ Reservoir includes the general-purpose `ObjectPool<T,TPolicy>`, a convenient pol
 
 ## Requirements
 
-- .NET 10.0 or later
+- .NET Standard 2.0 or later
 - C# 12.0 or later
 
 ## Choose a starting point

@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <TargetFramework />
+    <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
     <IsPackable>true</IsPackable>
     <PackageId>Reservoir</PackageId>
     <Title>Reservoir</Title>
@@ -23,13 +25,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Update="**\*.cs"
-             Pack="true"
-             PackagePath="contentFiles\cs\$(TargetFramework)\Reservoir\%(RecursiveDir)"
-             PackageBuildAction="Compile" />
+    <None Include="**\*.cs"
+          Exclude="bin\**;obj\**;$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder)"
+          Pack="true"
+          PackagePath="contentFiles\cs\netstandard2.0\Reservoir\%(RecursiveDir)"
+          BuildAction="Compile" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
     <None Include="..\..\README.md" Pack="true" PackagePath="" />
-    <None Update="buildTransitive\Reservoir.targets"
+    <None Remove="buildTransitive\Reservoir.targets" />
+    <None Include="buildTransitive\Reservoir.targets"
           Pack="true"
           PackagePath="buildTransitive\Reservoir.targets" />
   </ItemGroup>

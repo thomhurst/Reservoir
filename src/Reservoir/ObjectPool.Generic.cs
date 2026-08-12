@@ -41,7 +41,12 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
     private static int s_nextThreadStripe;
 
-    private static readonly bool s_hasCustomDestroy = HasCustomDestroy();
+    private static readonly bool s_hasCustomDestroy
+#if NETCOREAPP3_0_OR_GREATER
+        = HasCustomDestroy();
+#else
+        = typeof(IPooledObjectDestroyPolicy<T>).IsAssignableFrom(typeof(TPolicy));
+#endif
     private static readonly bool s_isStaticallyDisposable
         = typeof(IDisposable).IsAssignableFrom(typeof(T));
 
@@ -54,6 +59,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
 #if DEBUG || RESERVOIR_DIAGNOSTICS
     private readonly ConditionalWeakTable<T, RentalTracker> _outstandingRentals = new();
+#if NETSTANDARD2_0
+    private static readonly RuntimeCompatibility.ConditionalWeakTableRemove<T, RentalTracker>?
+        s_removeOutstandingRental
+            = RuntimeCompatibility.CreateConditionalWeakTableRemove<T, RentalTracker>();
+#endif
 #endif
 
     /// <summary>Initializes a pool with the default policy value and capacity.</summary>
@@ -77,11 +87,22 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     /// <summary>Initializes a pool with the supplied policy and capacity.</summary>
     public ObjectPool(TPolicy policy, int maxCapacity)
     {
+#if NET8_0_OR_GREATER
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCapacity);
+#else
+        if (maxCapacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxCapacity), maxCapacity, null);
+        }
+#endif
 
         _policy = policy;
         MaximumRetained = maxCapacity;
+#if NET8_0_OR_GREATER
         _indexMask = BitOperations.IsPow2((uint)maxCapacity) ? maxCapacity - 1 : -1;
+#else
+        _indexMask = (maxCapacity & (maxCapacity - 1)) == 0 ? maxCapacity - 1 : -1;
+#endif
         _items = new ObjectWrapper[checked(maxCapacity * CacheLineSlotStride)];
     }
 
@@ -203,7 +224,14 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Return(T obj)
     {
+#if NET6_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(obj);
+#else
+        if (obj is null)
+        {
+            throw new ArgumentNullException(nameof(obj));
+        }
+#endif
 
 #if DEBUG || RESERVOIR_DIAGNOSTICS
         bool wasRented = TryCompleteRental(obj);
@@ -355,7 +383,9 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
     }
 
+#if NET5_0_OR_GREATER
     [DoesNotReturn]
+#endif
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static T ThrowDisposed()
         => throw new ObjectDisposedException(typeof(ObjectPool<T, TPolicy>).FullName);
@@ -365,7 +395,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     {
         if (s_hasCustomDestroy)
         {
+#if NETCOREAPP3_0_OR_GREATER
             _policy.Destroy(obj);
+#else
+            ((IPooledObjectDestroyPolicy<T>)(object)_policy).Destroy(obj);
+#endif
             return;
         }
 
@@ -387,6 +421,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
     }
 
+#if NETCOREAPP3_0_OR_GREATER
     private static bool HasCustomDestroy()
     {
         Type policyInterface = typeof(IPooledObjectPolicy<T>);
@@ -402,6 +437,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
         return false;
     }
+#endif
 
     private void DisposeRetained(T? obj, ref Exception? firstException)
     {
@@ -442,12 +478,22 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.NoInlining)]
     private bool TryCompleteRental(T obj)
     {
-        if (!_outstandingRentals.Remove(obj, out RentalTracker? tracker))
+#if NETSTANDARD2_0
+        RentalTracker? tracker;
+        bool removed = s_removeOutstandingRental is not null
+            ? s_removeOutstandingRental(_outstandingRentals, obj, out tracker!)
+            : _outstandingRentals.TryGetValue(obj, out tracker)
+                && _outstandingRentals.Remove(obj);
+#else
+        bool removed = _outstandingRentals.Remove(obj, out RentalTracker? tracker);
+#endif
+
+        if (!removed)
         {
             return false;
         }
 
-        tracker.Complete();
+        tracker!.Complete();
         return true;
     }
 

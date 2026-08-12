@@ -28,7 +28,7 @@ Custom dictionary and hash-set pools also verify the configured comparer before 
 
 ## Reset failure means destruction
 
-When `TryReset` returns `false`, Reservoir destroys the object instead of retaining it. The default destruction path calls `IDisposable.Dispose()` when applicable. A policy can override `Destroy` for another cleanup mechanism.
+When `TryReset` returns `false`, Reservoir destroys the object instead of retaining it. The default destruction path calls `IDisposable.Dispose()` when applicable. For portable custom cleanup, implement `IPooledObjectDestroyPolicy<T>` and its `Destroy` method.
 
 If `TryReset` throws, Reservoir destroys the object and rethrows the reset exception. If a full pool cannot retain a return, the returned object is destroyed.
 

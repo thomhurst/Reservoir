@@ -25,6 +25,7 @@ interface IPooledObjectPolicy<T>
     /// </summary>
     bool TryReset(T obj);
 
+#if NETCOREAPP3_0_OR_GREATER
     /// <summary>Destroys an object that cannot be retained by the pool.</summary>
     void Destroy(T obj)
     {
@@ -33,4 +34,5 @@ interface IPooledObjectPolicy<T>
             disposable.Dispose();
         }
     }
+#endif
 }

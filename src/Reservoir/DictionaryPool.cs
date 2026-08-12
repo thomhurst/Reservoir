@@ -71,7 +71,17 @@ sealed class DictionaryPool<TKey, TValue>
         int maxRetainedCapacity,
         int maxCapacity)
     {
+#if NET8_0_OR_GREATER
         ArgumentOutOfRangeException.ThrowIfNegative(maxRetainedCapacity);
+#else
+        if (maxRetainedCapacity < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxRetainedCapacity),
+                maxRetainedCapacity,
+                null);
+        }
+#endif
         Comparer = comparer ?? EqualityComparer<TKey>.Default;
         MaximumRetainedCapacity = maxRetainedCapacity;
         _pool = new ObjectPool<Dictionary<TKey, TValue>, Policy>(
@@ -98,13 +108,29 @@ sealed class DictionaryPool<TKey, TValue>
         IEqualityComparer<TKey> comparer,
         int maxRetainedCapacity) : IPooledObjectPolicy<Dictionary<TKey, TValue>>
     {
+#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+        private static readonly Func<Dictionary<TKey, TValue>, int, int>? s_ensureCapacity
+            = RuntimeCompatibility.CreateEnsureCapacity<Dictionary<TKey, TValue>>();
+#endif
+
         public Dictionary<TKey, TValue> Create() => new(comparer);
 
         public bool TryReset(Dictionary<TKey, TValue> obj)
         {
             obj.Clear();
+#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+            if (!ReferenceEquals(obj.Comparer, comparer))
+            {
+                return false;
+            }
+
+            return s_ensureCapacity is not null
+                ? s_ensureCapacity(obj, 0) <= maxRetainedCapacity
+                : false;
+#else
             return ReferenceEquals(obj.Comparer, comparer)
                 && obj.EnsureCapacity(0) <= maxRetainedCapacity;
+#endif
         }
     }
 }

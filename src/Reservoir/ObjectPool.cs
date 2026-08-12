@@ -32,7 +32,14 @@ sealed class ObjectPool<T> : IDisposable
     /// <summary>Initializes a pool backed by a policy instance.</summary>
     public ObjectPool(IPooledObjectPolicy<T> policy, int maxCapacity)
     {
+#if NET6_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(policy);
+#else
+        if (policy is null)
+        {
+            throw new ArgumentNullException(nameof(policy));
+        }
+#endif
         _pool = new ObjectPool<T, PolicyAdapter>(new PolicyAdapter(policy), maxCapacity);
     }
 
@@ -45,7 +52,14 @@ sealed class ObjectPool<T> : IDisposable
     /// <summary>Initializes a pool backed by a factory.</summary>
     public ObjectPool(Func<T> factory, int maxCapacity)
     {
+#if NET6_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(factory);
+#else
+        if (factory is null)
+        {
+            throw new ArgumentNullException(nameof(factory));
+        }
+#endif
         _pool = new ObjectPool<T, PolicyAdapter>(new PolicyAdapter(factory), maxCapacity);
     }
 
@@ -83,7 +97,7 @@ sealed class ObjectPool<T> : IDisposable
     /// </summary>
     public void Dispose() => _pool.Dispose();
 
-    internal readonly struct PolicyAdapter : IPooledObjectPolicy<T>
+    internal readonly struct PolicyAdapter : IPooledObjectDestroyPolicy<T>
     {
         private readonly Func<T>? _factory;
         private readonly IPooledObjectPolicy<T>? _policy;
@@ -106,10 +120,17 @@ sealed class ObjectPool<T> : IDisposable
 
         public void Destroy(T obj)
         {
+#if NETCOREAPP3_0_OR_GREATER
             if (_policy is not null)
             {
                 _policy.Destroy(obj);
             }
+#else
+            if (_policy is IPooledObjectDestroyPolicy<T> destroyPolicy)
+            {
+                destroyPolicy.Destroy(obj);
+            }
+#endif
             else if (obj is IDisposable disposable)
             {
                 disposable.Dispose();

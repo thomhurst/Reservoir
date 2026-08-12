@@ -220,7 +220,8 @@ public class ObjectLifecycleTests
         public bool TryReset(DisposableItem obj) => throw exception;
     }
 
-    private readonly struct CustomDestructionPolicy : IPooledObjectPolicy<DisposableItem>
+    private readonly struct CustomDestructionPolicy
+        : IPooledObjectDestroyPolicy<DisposableItem>
     {
         public DisposableItem Create() => new();
 
