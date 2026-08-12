@@ -57,7 +57,18 @@ internal sealed class StripedObjectStore<T>
 
         for (int i = 0; i < _stripes.Length; i++)
         {
-            if (TryPop(_stripes[stripeIndex], out item))
+            Stripe stripe = _stripes[stripeIndex];
+            T? observed = Volatile.Read(ref stripe.FastItem);
+            if (observed is not null
+                && ReferenceEquals(
+                    Interlocked.CompareExchange(ref stripe.FastItem, null, observed),
+                    observed))
+            {
+                item = observed;
+                return true;
+            }
+
+            if (TryPop(stripe, out item))
             {
                 return true;
             }
@@ -79,7 +90,9 @@ internal sealed class StripedObjectStore<T>
 
         for (int i = 0; i < _stripes.Length; i++)
         {
-            if (TryPush(_stripes[stripeIndex], item))
+            Stripe stripe = _stripes[stripeIndex];
+            if (Interlocked.CompareExchange(ref stripe.FastItem, item, null) is null
+                || TryPush(stripe, item))
             {
                 return true;
             }
@@ -214,14 +227,16 @@ internal sealed class StripedObjectStore<T>
         internal readonly Node[] Nodes;
         internal long AvailableHead;
         internal long FreeHead;
+        internal T? FastItem;
 
         internal Stripe(int capacity)
         {
-            Nodes = new Node[capacity];
+            // The directly exchanged item replaces one node in the exact capacity.
+            Nodes = new Node[capacity - 1];
 
-            for (int i = 0; i < capacity; i++)
+            for (int i = 0; i < Nodes.Length; i++)
             {
-                Nodes[i].Next = i + 1 < capacity ? i + 1 : EmptyIndex;
+                Nodes[i].Next = i + 1 < Nodes.Length ? i + 1 : EmptyIndex;
             }
 
             AvailableHead = PackHead(0, EmptyIndex);
