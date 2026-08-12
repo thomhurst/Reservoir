@@ -402,7 +402,6 @@ public class CancellationTokenSourcePoolTests
         replacement.Dispose();
     }
 
-#if !DEBUG && !RESERVOIR_DIAGNOSTICS
     [Test]
     public async Task WarmRentAndDisposeAllocatesNothing()
     {
@@ -443,7 +442,6 @@ public class CancellationTokenSourcePoolTests
 
         await Assert.That(allocated).IsEqualTo(0);
     }
-#endif
 
     [Test]
     public async Task InvalidCapacityThrows()

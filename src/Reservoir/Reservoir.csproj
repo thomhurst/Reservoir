@@ -1,40 +1,29 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework />
-    <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;net8.0;net10.0</TargetFrameworks>
     <IsPackable>true</IsPackable>
     <PackageId>Reservoir</PackageId>
     <Title>Reservoir</Title>
     <Authors>Tom Longhurst</Authors>
     <Company>Tom Longhurst</Company>
     <Copyright>Copyright © Tom Longhurst</Copyright>
-    <Description>High-performance, allocation-conscious object pools distributed as source.</Description>
-    <PackageTags>object-pool;object-pooling;pooling;performance;allocation-free;source-only;dotnet</PackageTags>
+    <Description>High-performance, allocation-conscious object pools for .NET.</Description>
+    <PackageTags>object-pool;object-pooling;pooling;performance;allocation-free;dotnet</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/thomhurst/Reservoir</PackageProjectUrl>
     <RepositoryUrl>https://github.com/thomhurst/Reservoir.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <DevelopmentDependency>true</DevelopmentDependency>
-    <IncludeBuildOutput>false</IncludeBuildOutput>
-    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
-
-    <!-- Keep project-reference consumers working while package consumers default to internal. -->
-    <DefineConstants>$(DefineConstants);RESERVOIR_PUBLIC</DefineConstants>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="**\*.cs"
-          Exclude="bin\**;obj\**;$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder)"
-          Pack="true"
-          PackagePath="contentFiles\cs\netstandard2.0\Reservoir\%(RecursiveDir)"
-          BuildAction="Compile" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
     <None Include="..\..\README.md" Pack="true" PackagePath="" />
-    <None Remove="buildTransitive\Reservoir.targets" />
-    <None Include="buildTransitive\Reservoir.targets"
-          Pack="true"
-          PackagePath="buildTransitive\Reservoir.targets" />
   </ItemGroup>
 </Project>

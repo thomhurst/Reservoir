@@ -53,7 +53,7 @@ function PoolInstrument() {
       <div className={styles.ledger}>
         <div><span>retained</span><strong>14</strong><small>/ 16</small></div>
         <div><span>global locks</span><strong>none</strong></div>
-        <div><span>delivery</span><strong>.cs</strong><small> source</small></div>
+        <div><span>delivery</span><strong>.dll</strong><small> NuGet</small></div>
       </div>
     </div>
   );
@@ -76,10 +76,10 @@ function Hero() {
         <div className={styles.heroCopy}>
           <div className={styles.eyebrow}>
             <span>Reservoir / .NET 10+</span>
-            <span>source-only pooling</span>
+            <span>runtime package</span>
           </div>
           <Heading as="h1">Stop allocating the same thing <em>twice.</em></Heading>
-          <p className={styles.heroLead}>Bounded, thread-safe object pools with a 0 B warm path. Reservoir compiles into your assembly, so the fast code is your code.</p>
+          <p className={styles.heroLead}>Bounded, thread-safe object pools with a 0 B warm path. One small runtime library works across application and package boundaries.</p>
           <InstallCommand />
           <div className={styles.heroActions}>
             <Link className={styles.primaryButton} to="/docs/quick-start">Start pooling <ArrowIcon /></Link>
@@ -160,16 +160,16 @@ function GuaranteesSection() {
       detail: 'maxCapacity',
     },
     {
-      label: 'Compiled in',
-      title: 'A package, not a passenger.',
-      text: 'C# source joins your compilation. Reservoir stays private, adds no runtime DLL, and gives the JIT concrete policy calls to specialize.',
-      detail: 'PrivateAssets="all"',
+      label: 'Library ready',
+      title: 'One package. One identity.',
+      text: 'Public types flow transitively through PackageReference graphs while the JIT specializes concrete struct policies across the assembly boundary.',
+      detail: 'Reservoir.dll',
     },
     {
-      label: 'Guarded in debug',
-      title: 'Fast, with receipts.',
-      text: 'Wrong-pool returns, double returns, and leaked rentals become visible during development, then compile out of the release hot path.',
-      detail: 'RESERVOIR_DIAGNOSTICS',
+      label: 'Scoped ownership',
+      title: 'Return by construction.',
+      text: 'Stack-only leases return rentals when synchronous work leaves scope, including exceptional control flow.',
+      detail: 'PooledLease<T>',
     },
   ];
 
@@ -220,18 +220,18 @@ function BuiltInsSection() {
   );
 }
 
-function SourceSection() {
+function DistributionSection() {
   return (
-    <section className={styles.sourceSection}>
-      <div className={clsx('container', styles.sourceLayout)}>
-        <div className={styles.sourceRoute} aria-label="Reservoir source package compiles into your assembly">
-          <span>NuGet</span><i /><span>C# source</span><i /><strong>your assembly</strong>
+    <section className={styles.distributionSection}>
+      <div className={clsx('container', styles.distributionLayout)}>
+        <div className={styles.distributionRoute} aria-label="Reservoir runtime package joins your application">
+          <span>NuGet</span><i /><span>Reservoir.dll</span><i /><strong>your application</strong>
         </div>
-        <div className={styles.sourceCopy}>
-          <span className={styles.kicker}>Nothing follows at runtime</span>
-          <Heading as="h2">Install the source.<br />Keep the code.</Heading>
-          <p>One development dependency. No binding conflicts, transitive runtime package, or extra DLL in build output.</p>
-          <div className={styles.sourceActions}>
+        <div className={styles.distributionCopy}>
+          <span className={styles.kicker}>Conventional PackageReference</span>
+          <Heading as="h2">Install once.<br />Share the types.</Heading>
+          <p>One runtime dependency, one public type identity, and no source injection into consumer compiler or analyzer settings.</p>
+          <div className={styles.distributionActions}>
             <Link className={styles.darkButton} to="/docs/installation">Installation <ArrowIcon /></Link>
             <Link className={styles.darkTextLink} href="https://github.com/thomhurst/Reservoir">View on GitHub <ArrowIcon /></Link>
           </div>
@@ -243,13 +243,13 @@ function SourceSection() {
 
 export default function Home() {
   return (
-    <Layout title="Bounded object pooling for .NET" description="Reservoir provides bounded, thread-safe, zero-allocation object pooling as C# source for .NET.">
+    <Layout title="Bounded object pooling for .NET" description="Reservoir provides bounded, thread-safe, zero-allocation object pooling for .NET.">
       <main>
         <Hero />
         <ContractSection />
         <GuaranteesSection />
         <BuiltInsSection />
-        <SourceSection />
+        <DistributionSection />
       </main>
     </Layout>
   );

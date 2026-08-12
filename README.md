@@ -2,7 +2,7 @@
 
 **Stop allocating the same thing twice.**
 
-Reservoir is bounded, thread-safe object pooling for .NET with a **0 B warm general-purpose object-pool rent/return path**. It ships as C# source, so the optimized code compiles into your assembly—no runtime dependency, version conflict, or extra DLL.
+Reservoir is bounded, thread-safe object pooling for .NET with a **0 B warm general-purpose object-pool rent/return path**. It ships as a small runtime library with public, library-friendly types and specialized generic policies.
 
 [![NuGet](https://img.shields.io/nuget/v/Reservoir.svg)](https://www.nuget.org/packages/Reservoir)
 [![CI/CD](https://github.com/thomhurst/Reservoir/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/thomhurst/Reservoir/actions/workflows/ci-cd.yml)
@@ -12,15 +12,16 @@ Reservoir is bounded, thread-safe object pooling for .NET with a **0 B warm gene
 dotnet add package Reservoir
 ```
 
-Requires .NET Standard 2.0 and C# 12 or later.
+Requires a .NET Standard 2.0-compatible runtime or later.
 
 ## Why Reservoir?
 
 - **Zero general-purpose pool allocations when warm.** `ObjectPool<T,TPolicy>` rent and return reuse fixed slots without allocating nodes. Legacy collection fallbacks may trim or replace backing storage.
 - **Bounded retention.** You choose the maximum number of idle objects; the pool cannot grow without limit.
 - **Capacity-aware storage.** Cache-line-separated slots keep small pools fast; dense striped storage keeps large async working sets scalable.
-- **Source-only delivery.** Reservoir stays private to your project and adds no runtime package or assembly.
-- **Ownership guardrails.** Debug builds detect invalid returns and report leaked rentals.
+- **Library-friendly delivery.** One public assembly identity flows normally through `PackageReference` dependency graphs.
+- **Scoped ownership.** Stack-only leases return rentals automatically when synchronous work leaves scope.
+- **Opt-in ownership diagnostics.** Detect invalid returns and report leaked rentals during development.
 
 ## Rent. Work. Return.
 
@@ -81,7 +82,9 @@ Collections return empty. Oversized backing stores are discarded instead of reta
 
 > Returning an object transfers ownership to the pool. Do not touch it, return it twice, or return it to another pool.
 
-Another thread may rent the same object immediately. Debug diagnostics make violations visible and report rentals that become unreachable without being returned. Read the complete [ownership rules](https://thomhurst.github.io/Reservoir/docs/ownership-rules).
+Another thread may rent the same object immediately. Read the complete [ownership rules](https://thomhurst.github.io/Reservoir/docs/ownership-rules).
+
+Call `ObjectPoolDiagnostics.EnableForDebugBuilds()` during startup to enable diagnostics only when the consuming project defines `DEBUG`. Enable diagnostics before constructing pools; tracking adds development-time overhead.
 
 ## Measured, not promised
 
@@ -106,9 +109,9 @@ dotnet run -c Release -f net10.0 --project benchmarks/Reservoir.Benchmarks -- --
 
 ## When it fits
 
-Choose Reservoir when you want bounded custom-object reuse, source ownership, struct-policy specialization, scoped leases, or debug ownership diagnostics.
+Choose Reservoir when you want bounded custom-object reuse, struct-policy specialization, scoped leases, or capacity-aware storage.
 
-Use `ArrayPool<T>` for raw arrays. Use `Microsoft.Extensions.ObjectPool` when ecosystem integration matters more than source-only delivery.
+Use `ArrayPool<T>` for raw arrays. Use `Microsoft.Extensions.ObjectPool` when integration with Microsoft Extensions abstractions matters more than Reservoir's specialized policies and leases.
 
 ## Go deeper
 

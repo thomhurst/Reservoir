@@ -12,11 +12,7 @@ namespace Reservoir;
 /// <typeparam name="T">The element type.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 sealed class ListPool<T>
 {
     private readonly ObjectPool<List<T>, Policy> _pool;

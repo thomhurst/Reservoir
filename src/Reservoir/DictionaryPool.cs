@@ -13,11 +13,7 @@ namespace Reservoir;
 /// <typeparam name="TValue">The value type.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 sealed class DictionaryPool<TKey, TValue>
     where TKey : notnull
 {
@@ -108,7 +104,7 @@ sealed class DictionaryPool<TKey, TValue>
         IEqualityComparer<TKey> comparer,
         int maxRetainedCapacity) : IPooledObjectPolicy<Dictionary<TKey, TValue>>
     {
-#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+#if NETSTANDARD2_0
         private static readonly Func<Dictionary<TKey, TValue>, int, int>? s_ensureCapacity
             = RuntimeCompatibility.CreateEnsureCapacity<Dictionary<TKey, TValue>>();
 #endif
@@ -118,7 +114,7 @@ sealed class DictionaryPool<TKey, TValue>
         public bool TryReset(Dictionary<TKey, TValue> obj)
         {
             obj.Clear();
-#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+#if NETSTANDARD2_0
             if (!ReferenceEquals(obj.Comparer, comparer))
             {
                 return false;

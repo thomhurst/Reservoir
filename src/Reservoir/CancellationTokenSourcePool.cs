@@ -21,11 +21,7 @@ namespace Reservoir;
 /// </remarks>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 sealed class CancellationTokenSourcePool : IDisposable
 {
     private readonly ObjectPool<PooledCancellationTokenSource, Policy> _pool;

@@ -11,11 +11,7 @@ namespace Reservoir;
 /// <summary>Provides pools of reusable <see cref="StringBuilder"/> instances.</summary>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 sealed class StringBuilderPool
 {
     private readonly ObjectPool<StringBuilder, Policy> _pool;

@@ -4,11 +4,7 @@
 namespace Reservoir;
 
 /// <summary>Provides a type-safe reset operation for objects designed for pooling.</summary>
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 interface IResettable
 {
     /// <summary>

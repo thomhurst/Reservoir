@@ -15,11 +15,7 @@ namespace Reservoir;
 /// <typeparam name="TPolicy">The policy used to create, reset, and destroy objects.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 ref struct PooledLease<T, TPolicy>
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
@@ -66,11 +62,7 @@ ref struct PooledLease<T, TPolicy>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 ref struct PooledLease<T>
     where T : class
 {

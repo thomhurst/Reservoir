@@ -12,11 +12,7 @@ namespace Reservoir;
 /// <typeparam name="T">The element type.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 sealed class HashSetPool<T>
 {
     private readonly ObjectPool<HashSet<T>, Policy> _pool;
@@ -106,7 +102,7 @@ sealed class HashSetPool<T>
         IEqualityComparer<T> comparer,
         int maxRetainedCapacity) : IPooledObjectPolicy<HashSet<T>>
     {
-#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+#if NETSTANDARD2_0
         private static readonly Func<HashSet<T>, int, int>? s_ensureCapacity
             = RuntimeCompatibility.CreateEnsureCapacity<HashSet<T>>();
 #endif
@@ -116,7 +112,7 @@ sealed class HashSetPool<T>
         public bool TryReset(HashSet<T> obj)
         {
             obj.Clear();
-#if NETSTANDARD2_0 || RESERVOIR_LEGACY_COLLECTION_CAPACITY
+#if NETSTANDARD2_0
             if (!ReferenceEquals(obj.Comparer, comparer))
             {
                 return false;

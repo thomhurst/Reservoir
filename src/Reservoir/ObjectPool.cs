@@ -13,11 +13,7 @@ namespace Reservoir;
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 sealed class ObjectPool<T> : IDisposable
     where T : class
 {

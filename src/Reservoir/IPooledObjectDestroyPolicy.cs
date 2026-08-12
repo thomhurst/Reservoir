@@ -7,11 +7,7 @@ namespace Reservoir;
 /// Adds custom destruction to a pooled-object policy.
 /// </summary>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
-#if RESERVOIR_PUBLIC
 public
-#else
-internal
-#endif
 interface IPooledObjectDestroyPolicy<T> : IPooledObjectPolicy<T>
     where T : class
 {
