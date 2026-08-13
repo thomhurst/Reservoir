@@ -93,6 +93,19 @@ public class ObjectLifecycleTests
     }
 
     [Test]
+    public async Task CustomDestructionCanMutatePolicyState()
+    {
+        var pool = new ObjectPool<DisposableItem, StatefulDestructionPolicy>(maxCapacity: 1);
+        DisposableItem discarded = pool.Rent();
+        DisposableItem retained = pool.Rent();
+
+        pool.Return(discarded);
+        pool.Return(retained);
+
+        await Assert.That(pool.Rent()).IsSameReferenceAs(retained);
+    }
+
+    [Test]
     public async Task PolicyAdapterPreservesCustomDestruction()
     {
         var pool = new ObjectPool<DisposableItem>(
@@ -394,6 +407,17 @@ public class ObjectLifecycleTests
         public bool TryReset(DisposableItem obj) => false;
 
         public void Destroy(DisposableItem obj) => obj.Destroy();
+    }
+
+    private struct StatefulDestructionPolicy : IPooledObjectDestroyPolicy<DisposableItem>
+    {
+        private int _destroyCount;
+
+        public DisposableItem Create() => new();
+
+        public bool TryReset(DisposableItem obj) => _destroyCount > 0;
+
+        public void Destroy(DisposableItem obj) => _destroyCount++;
     }
 
     private readonly struct ObjectPolicy : IPooledObjectPolicy<object>
