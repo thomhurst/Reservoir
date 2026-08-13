@@ -267,19 +267,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             return;
         }
 
-        bool canReuse;
-
-        try
-        {
-            canReuse = _policy.TryReset(obj);
-        }
-        catch
-        {
-            DisposeItem(obj);
-            throw;
-        }
-
-        if (!canReuse)
+        if (!TryResetItem(obj))
         {
             DisposeItem(obj);
             return;
@@ -287,6 +275,20 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
         ReturnWithoutReset(obj);
         ClearIfDisposed();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool TryResetItem(T obj)
+    {
+        try
+        {
+            return _policy.TryReset(obj);
+        }
+        catch
+        {
+            DisposeItem(obj);
+            throw;
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
