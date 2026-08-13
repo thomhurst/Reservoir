@@ -1,20 +1,11 @@
 using System.Text;
 using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Engines;
-using BenchmarkDotNet.Jobs;
 
 namespace Reservoir.Benchmarks;
 
 [MemoryDiagnoser(displayGenColumns: false)]
-[SimpleJob(
-    RunStrategy.Throughput,
-    launchCount: 3,
-    warmupCount: 1,
-    iterationCount: 5,
-    invocationCount: 1)]
 public class OversizedCollectionReturnBenchmarks
 {
-    private const int BatchesPerCase = 10;
     private const int ElementsPerBatch = 262_144;
     private const int MaximumRetainedCapacity = 2_048;
     private readonly object _element = new();
@@ -31,17 +22,15 @@ public class OversizedCollectionReturnBenchmarks
     private Stack<object>[] _stacks = null!;
     private StringBuilder[] _stringBuilders = null!;
 
-    // BenchmarkDotNet resets instance fields between stages. Keep the cursor static so each
-    // invocation consumes a fresh batch instead of returning an already-cleared collection.
-    private static int s_invocation;
-
     [Params(1_024, 65_536)]
     public int ElementCount { get; set; }
 
-    [GlobalSetup(Target = nameof(ReturnList))]
+    // Preparing a fresh batch for each iteration keeps setup outside the measurement and makes
+    // BenchmarkDotNet run the stateful benchmark once per iteration with an unroll factor of one.
+    [IterationSetup(Target = nameof(ReturnList))]
     public void SetupList()
     {
-        _lists = new List<object>[BatchSize * BatchesPerCase];
+        _lists = new List<object>[BatchSize];
 
         for (int i = 0; i < _lists.Length; i++)
         {
@@ -49,10 +38,10 @@ public class OversizedCollectionReturnBenchmarks
         }
     }
 
-    [GlobalSetup(Target = nameof(ReturnDictionary))]
+    [IterationSetup(Target = nameof(ReturnDictionary))]
     public void SetupDictionary()
     {
-        _dictionaries = new Dictionary<int, object>[BatchSize * BatchesPerCase];
+        _dictionaries = new Dictionary<int, object>[BatchSize];
 
         for (int i = 0; i < _dictionaries.Length; i++)
         {
@@ -67,10 +56,10 @@ public class OversizedCollectionReturnBenchmarks
         }
     }
 
-    [GlobalSetup(Target = nameof(ReturnHashSet))]
+    [IterationSetup(Target = nameof(ReturnHashSet))]
     public void SetupHashSet()
     {
-        _hashSets = new HashSet<object>[BatchSize * BatchesPerCase];
+        _hashSets = new HashSet<object>[BatchSize];
 
         for (int i = 0; i < _hashSets.Length; i++)
         {
@@ -85,10 +74,10 @@ public class OversizedCollectionReturnBenchmarks
         }
     }
 
-    [GlobalSetup(Target = nameof(ReturnQueue))]
+    [IterationSetup(Target = nameof(ReturnQueue))]
     public void SetupQueue()
     {
-        _queues = new Queue<object>[BatchSize * BatchesPerCase];
+        _queues = new Queue<object>[BatchSize];
 
         for (int i = 0; i < _queues.Length; i++)
         {
@@ -96,10 +85,10 @@ public class OversizedCollectionReturnBenchmarks
         }
     }
 
-    [GlobalSetup(Target = nameof(ReturnStack))]
+    [IterationSetup(Target = nameof(ReturnStack))]
     public void SetupStack()
     {
-        _stacks = new Stack<object>[BatchSize * BatchesPerCase];
+        _stacks = new Stack<object>[BatchSize];
 
         for (int i = 0; i < _stacks.Length; i++)
         {
@@ -107,10 +96,10 @@ public class OversizedCollectionReturnBenchmarks
         }
     }
 
-    [GlobalSetup(Target = nameof(ReturnStringBuilder))]
+    [IterationSetup(Target = nameof(ReturnStringBuilder))]
     public void SetupStringBuilder()
     {
-        _stringBuilders = new StringBuilder[BatchSize * BatchesPerCase];
+        _stringBuilders = new StringBuilder[BatchSize];
 
         for (int i = 0; i < _stringBuilders.Length; i++)
         {
@@ -122,10 +111,9 @@ public class OversizedCollectionReturnBenchmarks
     [Benchmark]
     public int ReturnList()
     {
-        int end = GetBatchEnd();
         int remainingCount = 0;
 
-        for (int i = end - BatchSize; i < end; i++)
+        for (int i = 0; i < _lists.Length; i++)
         {
             _listPool.Return(_lists[i]);
             remainingCount += _lists[i].Count;
@@ -137,10 +125,9 @@ public class OversizedCollectionReturnBenchmarks
     [Benchmark]
     public int ReturnDictionary()
     {
-        int end = GetBatchEnd();
         int remainingCount = 0;
 
-        for (int i = end - BatchSize; i < end; i++)
+        for (int i = 0; i < _dictionaries.Length; i++)
         {
             _dictionaryPool.Return(_dictionaries[i]);
             remainingCount += _dictionaries[i].Count;
@@ -152,10 +139,9 @@ public class OversizedCollectionReturnBenchmarks
     [Benchmark]
     public int ReturnHashSet()
     {
-        int end = GetBatchEnd();
         int remainingCount = 0;
 
-        for (int i = end - BatchSize; i < end; i++)
+        for (int i = 0; i < _hashSets.Length; i++)
         {
             _hashSetPool.Return(_hashSets[i]);
             remainingCount += _hashSets[i].Count;
@@ -167,10 +153,9 @@ public class OversizedCollectionReturnBenchmarks
     [Benchmark]
     public int ReturnQueue()
     {
-        int end = GetBatchEnd();
         int remainingCount = 0;
 
-        for (int i = end - BatchSize; i < end; i++)
+        for (int i = 0; i < _queues.Length; i++)
         {
             _queuePool.Return(_queues[i]);
             remainingCount += _queues[i].Count;
@@ -182,10 +167,9 @@ public class OversizedCollectionReturnBenchmarks
     [Benchmark]
     public int ReturnStack()
     {
-        int end = GetBatchEnd();
         int remainingCount = 0;
 
-        for (int i = end - BatchSize; i < end; i++)
+        for (int i = 0; i < _stacks.Length; i++)
         {
             _stackPool.Return(_stacks[i]);
             remainingCount += _stacks[i].Count;
@@ -197,10 +181,9 @@ public class OversizedCollectionReturnBenchmarks
     [Benchmark]
     public int ReturnStringBuilder()
     {
-        int end = GetBatchEnd();
         int remainingCount = 0;
 
-        for (int i = end - BatchSize; i < end; i++)
+        for (int i = 0; i < _stringBuilders.Length; i++)
         {
             _stringBuilderPool.Return(_stringBuilders[i]);
             remainingCount += _stringBuilders[i].Length;
@@ -210,6 +193,4 @@ public class OversizedCollectionReturnBenchmarks
     }
 
     private int BatchSize => ElementsPerBatch / ElementCount;
-
-    private int GetBatchEnd() => ++s_invocation * BatchSize;
 }
