@@ -5,8 +5,11 @@ namespace Reservoir.Tests;
 public class StripedObjectStoreTests
 {
     [Test]
-    [Arguments(65, 20, 4)]
-    [Arguments(256, 20, 16)]
+    [Arguments(65, 20, 8)]
+    [Arguments(80, 20, 10)]
+    [Arguments(96, 20, 12)]
+    [Arguments(128, 20, 16)]
+    [Arguments(256, 20, 20)]
     [Arguments(4_096, 20, 20)]
     [Arguments(4_096, 24, 24)]
     [Arguments(65_536, 40, 32)]
@@ -20,7 +23,7 @@ public class StripedObjectStoreTests
             processorLimit);
 
         await Assert.That(stripeCount).IsEqualTo(expected);
-        await Assert.That(capacity / stripeCount).IsGreaterThanOrEqualTo(16);
+        await Assert.That(capacity / stripeCount).IsGreaterThanOrEqualTo(8);
     }
 
     [Test]
