@@ -10,9 +10,9 @@ on:
         required: false
         default: '*'
       job:
-        description: 'BenchmarkDotNet job preset (medium matches the scheduled run)'
+        description: 'BenchmarkDotNet job preset (the full suite requires short)'
         required: false
-        default: medium
+        default: short
         type: choice
         options:
           - short
@@ -42,6 +42,16 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
+
+      - name: Validate benchmark selection
+        shell: pwsh
+        env:
+          BENCH_FILTER: ${{ inputs.filter || '*' }}
+          BENCH_JOB: ${{ inputs.job || 'short' }}
+        run: |
+          if ($env:BENCH_FILTER -eq '*' -and $env:BENCH_JOB -ne 'short') {
+            throw "The full benchmark suite requires the short job. Use a narrower filter for $env:BENCH_JOB."
+          }
 
       - name: Restore
         run: dotnet restore benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj
@@ -83,7 +93,7 @@ jobs:
         shell: pwsh
         env:
           BENCH_FILTER: ${{ inputs.filter || '*' }}
-          BENCH_JOB: ${{ inputs.job || 'medium' }}
+          BENCH_JOB: ${{ inputs.job || 'short' }}
         run: |
           & dotnet run `
             --project benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj `
@@ -140,7 +150,7 @@ jobs:
       (github.event_name == 'schedule' ||
        (github.event_name == 'workflow_dispatch' &&
         inputs.filter == '*' &&
-        inputs.job != 'short'))
+        inputs.job == 'short'))
     runs-on: ubuntu-latest
 
     permissions:
