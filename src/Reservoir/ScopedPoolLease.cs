@@ -8,27 +8,18 @@ using System.Runtime.CompilerServices;
 
 namespace Reservoir;
 
-internal interface IScopedPool<T>
-    where T : class
-{
-    void ReturnScoped(T value);
-}
-
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-internal ref struct ScopedPoolLease<T, TPool>
+internal ref struct ScopedPoolLease<T>
     where T : class
-    where TPool : class, IScopedPool<T>
 {
     private readonly ScopedPoolLeaseState? _state;
-    private readonly TPool? _pool;
     private readonly T? _value;
     private readonly long _token;
 
-    internal ScopedPoolLease(TPool pool, T value)
+    internal ScopedPoolLease(T value)
     {
         _state = ScopedPoolLeaseStateCache<T>.Acquire(out _token);
-        _pool = pool;
         _value = value;
     }
 
@@ -49,13 +40,17 @@ internal ref struct ScopedPoolLease<T, TPool>
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void Dispose()
+    internal bool TryRelease(out T value)
     {
         ScopedPoolLeaseState? state = _state;
         if (state is not null && state.TryRelease(_token))
         {
-            _pool!.ReturnScoped(_value!);
+            value = _value!;
+            return true;
         }
+
+        value = null!;
+        return false;
     }
 }
 
