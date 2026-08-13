@@ -77,6 +77,11 @@ var policyPool = new ObjectPool<Buffer>(new RuntimeBufferPolicy(), maxCapacity: 
 
 The factory overload retains every returned object after no-op reset. It still disposes discarded `IDisposable` instances. The interface-policy overload delegates creation and reset. It also delegates destruction when the policy implements `IPooledObjectDestroyPolicy<T>`.
 
+Use this overload for class policies selected at runtime. Passing a struct policy to
+`ObjectPool<T>` boxes it once and keeps `Create`, `TryReset`, and `Destroy` behind interface
+dispatch. When the struct policy type is known at compile time, use `ObjectPool<T,TPolicy>` to
+retain constrained calls, generic specialization, and inlining opportunities.
+
 ## Rent and return
 
 - `Rent()` retrieves a retained object or creates one.
