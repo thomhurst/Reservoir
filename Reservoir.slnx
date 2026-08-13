@@ -12,6 +12,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Reservoir.Docs.Samples/Reservoir.Docs.Samples.csproj" />
+    <Project Path="tests/Reservoir.NativeAot.Tests/Reservoir.NativeAot.Tests.csproj" />
     <Project Path="tests/Reservoir.Tests/Reservoir.Tests.csproj" />
   </Folder>
 </Solution>
