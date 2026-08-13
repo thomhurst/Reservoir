@@ -11,6 +11,11 @@ namespace Reservoir;
 /// A thread-safe object pool for callers that prefer a policy instance or factory, with bounded
 /// shared retention and a per-pool thread-local tier for scoped rentals.
 /// </summary>
+/// <remarks>
+/// This type stores policies through <see cref="IPooledObjectPolicy{T}"/>. Passing a struct policy
+/// boxes it once and keeps policy calls type-erased. Performance-sensitive callers with a
+/// compile-time-known struct policy should use <see cref="ObjectPool{T,TPolicy}"/> instead.
+/// </remarks>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
@@ -21,12 +26,18 @@ sealed class ObjectPool<T> : IDisposable
     private readonly ObjectPool<T, PolicyAdapter> _pool;
 
     /// <summary>Initializes a pool backed by a policy instance and default capacity.</summary>
+    /// <remarks>
+    /// A struct policy is boxed. Use <see cref="ObjectPool{T,TPolicy}"/> to specialize it.
+    /// </remarks>
     public ObjectPool(IPooledObjectPolicy<T> policy)
         : this(policy, ObjectPool<T, PolicyAdapter>.DefaultMaximumRetained)
     {
     }
 
     /// <summary>Initializes a pool backed by a policy instance.</summary>
+    /// <remarks>
+    /// A struct policy is boxed. Use <see cref="ObjectPool{T,TPolicy}"/> to specialize it.
+    /// </remarks>
     public ObjectPool(IPooledObjectPolicy<T> policy, int maxCapacity)
     {
 #if NET6_0_OR_GREATER
