@@ -80,6 +80,12 @@ The factory overload retains every returned object after no-op reset. It still d
 - `Return(T)` resets then retains or destroys the object.
 - `RentScoped()` creates a stack-only `PooledLease` for synchronous scopes.
 - `RentScoped(out T)` also exposes the value as a local.
+- `RentScopedUnchecked()` creates a lower-overhead `UncheckedPooledLease` without copy safety.
+- `RentScopedUnchecked(out T)` also exposes the unchecked lease's value as a local.
+
+Prefer `RentScoped()` unless measurement shows its ownership checks matter. An unchecked lease must
+not be copied, and `Dispose` must be called exactly once across all copies. Violating that contract
+can return the same object more than once.
 
 Default maximum retention is `Math.Max(32, 2 * Environment.ProcessorCount)`. Pass a positive `maxCapacity` to every constructor to override it.
 

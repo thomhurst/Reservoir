@@ -13,7 +13,8 @@ Use the method that matches the source's lifetime:
 
 | Scenario | Recommended method | Why |
 | --- | --- | --- |
-| Synchronous scope | `CancellationTokenSourcePool.Shared.RentScoped()` | Fastest pooled method; stack-only lease guarantees return. |
+| Synchronous scope | `CancellationTokenSourcePool.Shared.RentScoped()` | Fast checked pooled method; stack-only lease guarantees return. |
+| Measured hot synchronous scope | `CancellationTokenSourcePool.Shared.RentScopedUnchecked()` | Removes copy-safety tracking; requires exactly-once disposal. |
 | Scope crosses `await` | `CancellationTokenSourcePool.Shared.Rent()` | Source can cross the async boundary and returns itself when disposed. |
 | Caller cancellation plus a timeout | `CancellationTokenSourcePool.Shared.RentLinked(callerToken)` | Links one upstream token without allocating a BCL linked source. |
 | Source usually cancels | `new CancellationTokenSource()` | A canceled source cannot be reused, so pooling adds overhead. |
@@ -80,6 +81,20 @@ RunSynchronousWork(source.Token);
 ```
 
 The lease owns the source. Do not also dispose `source`. `RentScoped()` returns a stack-only `Lease`, so it also prevents the rental from escaping to the heap.
+
+For a measured hot path, `RentScopedUnchecked()` returns a stack-only `UncheckedLease` without
+ownership tracking:
+
+```csharp
+using var lease = CancellationTokenSourcePool.Shared.RentScopedUnchecked(
+    out CancellationTokenSource source);
+
+RunSynchronousWork(source.Token);
+```
+
+Do not copy an unchecked lease. Call `Dispose` exactly once across all copies; a second disposal can
+return the same source more than once. Use checked `RentScoped()` unless benchmark evidence justifies
+this stricter contract.
 
 ## What can be reused
 

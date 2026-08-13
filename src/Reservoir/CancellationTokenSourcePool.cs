@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace Reservoir;
@@ -83,6 +84,23 @@ sealed class CancellationTokenSourcePool : IDisposable
             out PooledCancellationTokenSource pooledSource);
         source = pooledSource;
         return new Lease(lease);
+    }
+
+    /// <summary>
+    /// Rents a source owned by an unchecked stack-only lease that must be disposed exactly once.
+    /// </summary>
+    public UncheckedLease RentScopedUnchecked()
+        => new(_pool.RentScopedUnchecked());
+
+    /// <summary>
+    /// Rents a source owned by an unchecked stack-only lease, and exposes the source directly.
+    /// </summary>
+    public UncheckedLease RentScopedUnchecked(out CancellationTokenSource source)
+    {
+        UncheckedPooledLease<PooledCancellationTokenSource, Policy> lease =
+            _pool.RentScopedUnchecked(out PooledCancellationTokenSource pooledSource);
+        source = pooledSource;
+        return new UncheckedLease(lease);
     }
 
     /// <summary>
@@ -172,6 +190,31 @@ sealed class CancellationTokenSourcePool : IDisposable
             => _lease.Value;
 
         /// <summary>Returns the source. Repeated calls and stale copies are ignored.</summary>
+        public void Dispose() => _lease.Dispose();
+    }
+
+    /// <summary>Owns a rented source without copy-safety checks.</summary>
+    /// <remarks>
+    /// This lease must not be copied. Call <see cref="Dispose"/> exactly once across all copies.
+    /// Violating that contract can return the same source more than once. Use <see cref="Lease"/>
+    /// when copy safety or repeated-dispose safety is required.
+    /// </remarks>
+    [DebuggerNonUserCode]
+    public readonly ref struct UncheckedLease
+    {
+        private readonly UncheckedPooledLease<PooledCancellationTokenSource, Policy> _lease;
+
+        internal UncheckedLease(
+            UncheckedPooledLease<PooledCancellationTokenSource, Policy> lease)
+        {
+            _lease = lease;
+        }
+
+        /// <summary>Gets the rented source.</summary>
+        public CancellationTokenSource Value => _lease.Value;
+
+        /// <summary>Returns the source. Must be called exactly once across all copies.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Dispose() => _lease.Dispose();
     }
 

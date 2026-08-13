@@ -298,6 +298,25 @@ public class CancellationTokenSourcePoolTests
     }
 
     [Test]
+    public async Task UncheckedScopedLeaseReturnsSource()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource expected;
+        bool valuesMatch;
+
+        {
+            using CancellationTokenSourcePool.UncheckedLease lease =
+                pool.RentScopedUnchecked(out expected);
+            valuesMatch = ReferenceEquals(lease.Value, expected);
+        }
+
+        CancellationTokenSource actual = pool.Rent();
+        await Assert.That(valuesMatch).IsTrue();
+        await Assert.That(actual).IsSameReferenceAs(expected);
+        actual.Dispose();
+    }
+
+    [Test]
     public async Task StaleScopedLeaseCopyCannotReturnLaterRental()
     {
         var pool = new CancellationTokenSourcePool(maxCapacity: 2);
