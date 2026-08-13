@@ -2,7 +2,9 @@
 
 **Stop allocating the same thing twice.**
 
-Reservoir is bounded, thread-safe object pooling for .NET with a **0 B warm general-purpose object-pool rent/return path**. It ships as a small runtime library with public, library-friendly types and specialized generic policies.
+Reservoir is thread-safe object pooling for .NET with **0 B warm paths** and bounded shared
+retention. It ships as a small runtime library with public, library-friendly types and specialized
+generic policies.
 
 [![NuGet](https://img.shields.io/nuget/v/Reservoir.svg)](https://www.nuget.org/packages/Reservoir)
 [![CI/CD](https://github.com/thomhurst/Reservoir/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/thomhurst/Reservoir/actions/workflows/ci-cd.yml)
@@ -17,7 +19,8 @@ Requires a .NET Standard 2.0-compatible runtime or later.
 ## Why Reservoir?
 
 - **Zero general-purpose pool allocations when warm.** `ObjectPool<T,TPolicy>` rent and return reuse fixed slots without allocating nodes. Legacy collection fallbacks may trim or replace backing storage.
-- **Bounded retention.** You choose the maximum number of idle objects; the pool cannot grow without limit.
+- **Bounded shared retention.** You choose the shared tier's maximum idle-object count. Scoped
+  rentals additionally retain one object per participating thread.
 - **Capacity-aware storage.** Cache-line-separated slots keep small pools fast; dense striped storage keeps large async working sets scalable.
 - **Library-friendly delivery.** One public assembly identity flows normally through `PackageReference` dependency graphs.
 - **Scoped ownership.** Stack-only leases return rentals automatically when synchronous work leaves scope.
@@ -52,7 +55,13 @@ readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
 }
 ```
 
-`Create()` handles a miss. `TryReset()` prepares an object for reuse or returns `false` to discard it. Discarded `IDisposable` objects are disposed automatically; implement `IPooledObjectDestroyPolicy<T>` for custom cleanup. The scoped lease guarantees return when control leaves the synchronous scope.
+`Create()` handles a miss. `TryReset()` prepares an object for reuse or returns `false` to discard it. Discarded `IDisposable` objects are disposed automatically; implement `IPooledObjectDestroyPolicy<T>` for custom cleanup. The scoped lease guarantees return when control leaves the synchronous scope. It uses a per-pool thread-local fast path and retains one object per participating thread in addition to the bounded shared tier.
+
+For performance-critical synchronous code, prefer `RentScoped(out T)` on .NET 10; its thread-local
+path is faster and avoids the ownership validation needed by repeated `lease.Value` access. On
+.NET 8, manual `Rent()` and `Return()` remain faster. Manual rental is also required when work
+crosses an `await` or total idle retention must stay within `MaximumRetained`. Measure on target
+hardware when nanoseconds matter.
 
 For work that crosses an `await`, use `Rent()` and return the object in `finally`. See the [quick start](https://thomhurst.github.io/Reservoir/docs/quick-start) for both patterns.
 
@@ -141,7 +150,8 @@ dotnet run -c Release -f net10.0 --project benchmarks/Reservoir.Benchmarks -- --
 
 ## When it fits
 
-Choose Reservoir when you want bounded custom-object reuse, struct-policy specialization, scoped leases, or capacity-aware storage.
+Choose Reservoir when you want bounded shared custom-object reuse, struct-policy specialization,
+scoped leases, or capacity-aware storage.
 
 Use `ArrayPool<T>` for raw arrays. Use `Microsoft.Extensions.ObjectPool` when integration with Microsoft Extensions abstractions matters more than Reservoir's specialized policies and leases.
 

@@ -46,8 +46,15 @@ The payload owns a 256-byte buffer. Lower ratio is better; `new` is the baseline
 | `List<int>`, 128 items | 196.35 ns | 184.15 ns | 568 B | 0 B |
 | `List<int>`, 2,048 items | 3,036.25 ns | 2,750.70 ns | 8,248 B | 0 B |
 
-The single-thread TLS `StringBuilder` cache measured 10.35 ns and 0 B; it gives up cross-thread reuse and bounded shared capacity. Scoped leases measured 16.06 ns versus 9.41 ns for manual rent/return, with 0 B allocated on both paths.
+The single-thread TLS `StringBuilder` cache measured 10.35 ns and 0 B; it gives up cross-thread
+reuse and bounded shared capacity.
 <!-- BENCHMARK_RESULTS_END -->
+
+## Choosing a rental API
+
+For synchronous hot paths on .NET 10, prefer `RentScoped(out T)`. On .NET 8, manual `Rent()` and
+`Return()` remain faster. Both warm paths allocate 0 B. Always use manual rental when ownership
+crosses an `await`, and measure representative workloads on target hardware.
 
 ## Reproduce
 

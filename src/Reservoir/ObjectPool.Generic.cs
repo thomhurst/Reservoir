@@ -13,14 +13,15 @@ using System.Threading;
 namespace Reservoir;
 
 /// <summary>
-/// A bounded, thread-safe object pool specialized for a struct policy.
+/// A thread-safe object pool specialized for a struct policy, with bounded shared retention and a
+/// per-pool thread-local tier for scoped rentals.
 /// </summary>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
 /// <typeparam name="TPolicy">The policy used to create, reset, and destroy objects.</typeparam>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class ObjectPool<T, TPolicy> : IDisposable
+sealed class ObjectPool<T, TPolicy> : IDisposable, IScopedPool<T>
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
@@ -29,9 +30,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     // Bound the cache-line store to 4 KiB and a 64-slot worst-case scan.
     private const int MaximumCacheLineSlotCapacity = 64;
     private const uint StripeHashMultiplier = 2_654_435_769u;
-
-    [ThreadStatic]
-    private static PooledLeaseState<T, TPolicy>? _threadLeaseState;
 
     // Cache only scalar affinity; retained objects remain enumerable in the shared array.
     [ThreadStatic]
@@ -53,6 +51,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private readonly ObjectWrapper[] _items;
     private readonly int _indexMask;
     private readonly StripedObjectStore<T>? _largeStore;
+    private TrackedInstanceThreadLocalFrontTier<T> _scopedTier;
     private TPolicy _policy;
     private int _isDisposed;
 
@@ -104,10 +103,10 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
     }
 
-    /// <summary>Gets the default maximum number of retained objects.</summary>
+    /// <summary>Gets the default maximum number of objects retained by the shared tier.</summary>
     public static int DefaultMaximumRetained => Math.Max(32, 2 * Environment.ProcessorCount);
 
-    /// <summary>Gets the maximum number of objects retained by this pool.</summary>
+    /// <summary>Gets the maximum number of objects retained by the bounded shared tier.</summary>
     public int MaximumRetained { get; }
 
     /// <summary>Rents an object, creating one when no retained object is available.</summary>
@@ -158,64 +157,71 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
                 : CreateItem());
     }
 
-    /// <summary>Rents an object owned by a stack-only lease that returns it on disposal.</summary>
+    /// <summary>
+    /// Rents an object owned by a stack-only lease using a per-pool thread-local fast path.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public PooledLease<T, TPolicy> RentScoped()
     {
-        T value = Rent();
-        return CreateLease(value);
+        T value = RentScopedValue();
+        return new PooledLease<T, TPolicy>(this, value);
     }
 
     /// <summary>
-    /// Rents an object owned by a stack-only lease and also exposes the object directly.
+    /// Rents an object owned by a stack-only lease using a per-pool thread-local fast path and also
+    /// exposes the object directly.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public PooledLease<T, TPolicy> RentScoped(out T value)
     {
-        value = Rent();
-        return CreateLease(value);
+        value = RentScopedValue();
+        return new PooledLease<T, TPolicy>(this, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private PooledLease<T, TPolicy> CreateLease(T value)
+    internal T RentScopedValue()
     {
-        PooledLeaseState<T, TPolicy>? state = _threadLeaseState;
-
-        if (state is not null && state.TryAcquire(out long token))
+        ThrowIfDisposed();
+        T value = _scopedTier.Rent(this);
+        if (Volatile.Read(ref _isDisposed) == 0)
         {
-            return new PooledLease<T, TPolicy>(state, this, value, token);
+            return value;
         }
 
-        return RentScopedSlow(value, state);
+        DisposeItem(value);
+        return ThrowDisposed();
     }
 
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private PooledLease<T, TPolicy> RentScopedSlow(
-        T value,
-        PooledLeaseState<T, TPolicy>? state)
+    void IScopedPool<T>.ReturnScoped(T value)
     {
-        if (state is null)
+        if (Volatile.Read(ref _isDisposed) != 0)
         {
-            state = new PooledLeaseState<T, TPolicy>();
-            _threadLeaseState = state;
-        }
-        else
-        {
-            while (state.Next is not null)
-            {
-                state = state.Next;
-                if (state.TryAcquire(out long token))
-                {
-                    return new PooledLease<T, TPolicy>(state, this, value, token);
-                }
-            }
-
-            state.Next = new PooledLeaseState<T, TPolicy>();
-            state = state.Next;
+            DisposeItem(value);
+            return;
         }
 
-        _ = state.TryAcquire(out long firstToken);
-        return new PooledLease<T, TPolicy>(state, this, value, firstToken);
+        if (!TryResetItem(value))
+        {
+            DisposeItem(value);
+            return;
+        }
+
+        if (Volatile.Read(ref _isDisposed) != 0)
+        {
+            DisposeItem(value);
+            return;
+        }
+
+        if (!_scopedTier.TryReturn(value))
+        {
+            ReturnWithoutResetWithLifecycle(value);
+            return;
+        }
+
+        if (Volatile.Read(ref _isDisposed) != 0 && _scopedTier.TryRemove(value))
+        {
+            DisposeItem(value);
+        }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -333,12 +339,20 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     internal void Destroy(T obj) => DisposeItem(obj);
 
     /// <summary>
-    /// Removes all retained objects and disposes those that implement <see cref="IDisposable"/>.
-    /// The pool remains usable.
+    /// Removes all thread-local and shared retained objects and disposes those that implement
+    /// <see cref="IDisposable"/>. The pool remains usable.
     /// </summary>
     public void Clear()
     {
         Exception? firstException = null;
+        try
+        {
+            _scopedTier.Clear(this);
+        }
+        catch (Exception exception)
+        {
+            firstException = exception;
+        }
 
         StripedObjectStore<T>? largeStore = _largeStore;
         if (largeStore is not null)

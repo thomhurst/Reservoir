@@ -3,7 +3,7 @@ namespace Reservoir.Tests;
 public class PooledLeaseTests
 {
     [Test]
-    public async Task DisposeReturnsValueToGenericPool()
+    public async Task DisposeReturnsValueToGenericScopedPool()
     {
         var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 1);
         PooledItem expected;
@@ -13,12 +13,20 @@ public class PooledLeaseTests
             expected = lease.Value;
         }
 
-        await Assert.That(pool.Rent()).IsSameReferenceAs(expected);
-        await Assert.That(expected.ResetCount).IsEqualTo(1);
+        PooledItem actual;
+        int resetCount;
+        {
+            using PooledLease<PooledItem, CountingPolicy> lease = pool.RentScoped();
+            actual = lease.Value;
+            resetCount = expected.ResetCount;
+        }
+
+        await Assert.That(actual).IsSameReferenceAs(expected);
+        await Assert.That(resetCount).IsEqualTo(1);
     }
 
     [Test]
-    public async Task DisposeReturnsValueToConveniencePool()
+    public async Task DisposeReturnsValueToConvenienceScopedPool()
     {
         var pool = new ObjectPool<PooledItem>(() => new PooledItem(), maxCapacity: 1);
         PooledItem expected;
@@ -28,7 +36,13 @@ public class PooledLeaseTests
             expected = lease.Value;
         }
 
-        await Assert.That(pool.Rent()).IsSameReferenceAs(expected);
+        PooledItem actual;
+        {
+            using PooledLease<PooledItem> lease = pool.RentScoped();
+            actual = lease.Value;
+        }
+
+        await Assert.That(actual).IsSameReferenceAs(expected);
     }
 
     [Test]
@@ -44,7 +58,13 @@ public class PooledLeaseTests
         }
 
         await Assert.That(valuesMatch).IsTrue();
-        await Assert.That(pool.Rent()).IsSameReferenceAs(value);
+        PooledItem actual;
+        {
+            using PooledLease<PooledItem, CountingPolicy> lease = pool.RentScoped();
+            actual = lease.Value;
+        }
+
+        await Assert.That(actual).IsSameReferenceAs(value);
     }
 
     [Test]
@@ -52,9 +72,17 @@ public class PooledLeaseTests
     {
         var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 1);
         PooledItem value = RentAndDisposeTwice(pool);
+        PooledItem actual;
+        int resetCount;
 
-        await Assert.That(value.ResetCount).IsEqualTo(1);
-        await Assert.That(pool.Rent()).IsSameReferenceAs(value);
+        {
+            using PooledLease<PooledItem, CountingPolicy> lease = pool.RentScoped();
+            actual = lease.Value;
+            resetCount = value.ResetCount;
+        }
+
+        await Assert.That(resetCount).IsEqualTo(1);
+        await Assert.That(actual).IsSameReferenceAs(value);
     }
 
     [Test]
@@ -66,13 +94,18 @@ public class PooledLeaseTests
         PooledItem value = lease.Value;
 
         lease.Dispose();
-        PooledItem firstRental = pool.Rent();
+        PooledLease<PooledItem, CountingPolicy> firstRentalLease = pool.RentScoped();
+        PooledItem firstRental = firstRentalLease.Value;
         copy.Dispose();
         PooledItem secondRental = pool.Rent();
+        int resetCount = value.ResetCount;
+
+        firstRentalLease.Dispose();
+        pool.Return(secondRental);
 
         await Assert.That(firstRental).IsSameReferenceAs(value);
         await Assert.That(secondRental).IsNotSameReferenceAs(value);
-        await Assert.That(value.ResetCount).IsEqualTo(1);
+        await Assert.That(resetCount).IsEqualTo(1);
     }
 
     [Test]
@@ -84,9 +117,13 @@ public class PooledLeaseTests
         PooledItem value = lease.Value;
 
         lease.Dispose();
-        PooledItem firstRental = pool.Rent();
+        PooledLease<PooledItem> firstRentalLease = pool.RentScoped();
+        PooledItem firstRental = firstRentalLease.Value;
         copy.Dispose();
         PooledItem secondRental = pool.Rent();
+
+        firstRentalLease.Dispose();
+        pool.Return(secondRental);
 
         await Assert.That(firstRental).IsSameReferenceAs(value);
         await Assert.That(secondRental).IsNotSameReferenceAs(value);
@@ -147,10 +184,75 @@ public class PooledLeaseTests
         secondLease.Dispose();
         firstLease.Dispose();
 
-        PooledItem firstRental = pool.Rent();
-        PooledItem secondRental = pool.Rent();
+        PooledLease<PooledItem, CountingPolicy> firstRentalLease = pool.RentScoped();
+        PooledLease<PooledItem, CountingPolicy> secondRentalLease = pool.RentScoped();
+        PooledItem firstRental = firstRentalLease.Value;
+        PooledItem secondRental = secondRentalLease.Value;
+        firstRentalLease.Dispose();
+        secondRentalLease.Dispose();
+
         await Assert.That(new[] { firstRental, secondRental }).Contains(first);
         await Assert.That(new[] { firstRental, secondRental }).Contains(second);
+    }
+
+    [Test]
+    public async Task ScopedPoolsKeepThreadLocalItemsIsolated()
+    {
+        var firstPool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 1);
+        var secondPool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 1);
+        PooledItem first;
+        PooledItem second;
+
+        {
+            using PooledLease<PooledItem, CountingPolicy> lease = firstPool.RentScoped();
+            first = lease.Value;
+        }
+
+        {
+            using PooledLease<PooledItem, CountingPolicy> lease = secondPool.RentScoped();
+            second = lease.Value;
+        }
+
+        PooledItem firstRental;
+        PooledItem secondRental;
+
+        {
+            using PooledLease<PooledItem, CountingPolicy> lease = firstPool.RentScoped();
+            firstRental = lease.Value;
+        }
+
+        {
+            using PooledLease<PooledItem, CountingPolicy> lease = secondPool.RentScoped();
+            secondRental = lease.Value;
+        }
+
+        await Assert.That(firstRental).IsSameReferenceAs(first);
+        await Assert.That(secondRental).IsSameReferenceAs(second);
+        await Assert.That(first).IsNotSameReferenceAs(second);
+    }
+
+    [Test]
+    public async Task WarmScopedPoolAllocatesNothing()
+    {
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 1);
+
+        {
+            using PooledLease<PooledItem, CountingPolicy> lease = pool.RentScoped();
+            _ = lease.Value.ResetCount;
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        int resetCount = 0;
+
+        for (int i = 0; i < 1_000; i++)
+        {
+            using PooledLease<PooledItem, CountingPolicy> lease = pool.RentScoped();
+            resetCount = lease.Value.ResetCount;
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        await Assert.That(resetCount).IsEqualTo(1_000);
+        await Assert.That(allocated).IsEqualTo(0);
     }
 
     private static PooledItem RentAndDisposeTwice(

@@ -61,6 +61,10 @@ using var lease = pool.RentScoped(out Buffer buffer);
 buffer.Write(payload);
 ```
 
+On .NET 10, prefer the `out` overload for performance-critical synchronous paths. It avoids
+repeated `lease.Value` ownership validation while keeping automatic return. On .NET 8, manual
+`Rent`/`Return` remains faster.
+
 `PooledLease` is a `ref struct`; it cannot be captured, boxed, stored on the heap, or carried across an `await`. Use manual `Rent`/`Return` with `try`/`finally` for asynchronous ownership.
 
 ## Shared collection pool

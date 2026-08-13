@@ -8,7 +8,8 @@ using System.Diagnostics.CodeAnalysis;
 namespace Reservoir;
 
 /// <summary>
-/// A bounded, thread-safe object pool for callers that prefer a policy instance or factory.
+/// A thread-safe object pool for callers that prefer a policy instance or factory, with bounded
+/// shared retention and a per-pool thread-local tier for scoped rentals.
 /// </summary>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
 [ExcludeFromCodeCoverage]
@@ -59,31 +60,40 @@ sealed class ObjectPool<T> : IDisposable
         _pool = new ObjectPool<T, PolicyAdapter>(new PolicyAdapter(factory), maxCapacity);
     }
 
-    /// <summary>Gets the default maximum number of retained objects.</summary>
+    /// <summary>Gets the default maximum number of objects retained by the shared tier.</summary>
     public static int DefaultMaximumRetained => ObjectPool<T, PolicyAdapter>.DefaultMaximumRetained;
 
-    /// <summary>Gets the maximum number of objects retained by this pool.</summary>
+    /// <summary>Gets the maximum number of objects retained by the bounded shared tier.</summary>
     public int MaximumRetained => _pool.MaximumRetained;
 
     /// <summary>Rents an object, creating one when no retained object is available.</summary>
     public T Rent() => _pool.Rent();
 
-    /// <summary>Rents an object owned by a stack-only lease that returns it on disposal.</summary>
+    /// <summary>
+    /// Rents an object owned by a stack-only lease using a per-pool thread-local fast path.
+    /// </summary>
     public PooledLease<T> RentScoped()
-        => new(_pool.RentScoped());
+    {
+        T value = _pool.RentScopedValue();
+        return new PooledLease<T>(_pool, value);
+    }
 
     /// <summary>
-    /// Rents an object owned by a stack-only lease and also exposes the object directly.
+    /// Rents an object owned by a stack-only lease using a per-pool thread-local fast path and also
+    /// exposes the object directly.
     /// </summary>
     public PooledLease<T> RentScoped(out T value)
-        => new(_pool.RentScoped(out value));
+    {
+        value = _pool.RentScopedValue();
+        return new PooledLease<T>(_pool, value);
+    }
 
     /// <summary>Resets and returns an object. Objects exceeding capacity are discarded.</summary>
     public void Return(T obj) => _pool.Return(obj);
 
     /// <summary>
-    /// Removes all retained objects and disposes those that implement <see cref="IDisposable"/>.
-    /// The pool remains usable.
+    /// Removes all thread-local and shared retained objects and disposes those that implement
+    /// <see cref="IDisposable"/>. The pool remains usable.
     /// </summary>
     public void Clear() => _pool.Clear();
 

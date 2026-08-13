@@ -7,14 +7,19 @@ description: Bounded, thread-safe object pooling for .NET applications and libra
 
 # Keep the performance. Share the types.
 
-Reservoir is a high-performance object-pooling toolkit for .NET. Warm `ObjectPool<T,TPolicy>` rent and return operations allocate **0 B**, retention is bounded, and the conventional runtime package works cleanly across application and library boundaries. Legacy collection fallbacks may trim or replace backing storage.
+Reservoir is a high-performance object-pooling toolkit for .NET. Warm `ObjectPool<T,TPolicy>`
+operations allocate **0 B**, shared retention is bounded, and the conventional runtime package
+works cleanly across application and library boundaries. Scoped fast paths can additionally retain
+one object per participating thread. Legacy collection fallbacks may trim or replace backing
+storage.
 
 The package provides:
 
 - **One public type identity.** Libraries can expose Reservoir types without embedding distinct copies.
 - **Normal dependency flow.** NuGet resolves Reservoir transitively through `PackageReference` graphs.
 - **Cross-assembly optimization.** The JIT can inline hot methods and specialize concrete struct policies.
-- **No unbounded cache.** Every pool has an explicit maximum retained-object count.
+- **Explicit shared-tier bounds.** Every pool has a maximum shared retained-object count. Scoped
+  fast paths may additionally retain one object per participating thread.
 
 Reservoir includes the general-purpose `ObjectPool<T,TPolicy>`, a convenient policy/factory overload, collection and `StringBuilder` pools, scoped leases, and a `CancellationTokenSource` pool.
 

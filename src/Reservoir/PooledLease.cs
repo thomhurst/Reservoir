@@ -20,49 +20,18 @@ ref struct PooledLease<T, TPolicy>
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
-    private readonly PooledLeaseState<T, TPolicy>? _state;
-    private readonly ObjectPool<T, TPolicy> _pool;
-    private readonly T _value;
-    private readonly long _token;
+    private ScopedPoolLease<T, ObjectPool<T, TPolicy>> _lease;
 
-    internal PooledLease(
-        PooledLeaseState<T, TPolicy> state,
-        ObjectPool<T, TPolicy> pool,
-        T value,
-        long token)
+    internal PooledLease(ObjectPool<T, TPolicy> pool, T value)
     {
-        _state = state;
-        _pool = pool;
-        _value = value;
-        _token = token;
+        _lease = new ScopedPoolLease<T, ObjectPool<T, TPolicy>>(pool, value);
     }
 
     /// <summary>Gets the rented object while this lease owns it.</summary>
-    public readonly T Value
-    {
-        get
-        {
-            PooledLeaseState<T, TPolicy>? state = _state;
-            if (state is null)
-            {
-                PooledLeaseThrowHelper.ThrowDisposed();
-            }
-
-            state!.ValidateOwnership(_token);
-            return _value;
-        }
-    }
+    public readonly T Value => _lease.Value;
 
     /// <summary>Returns the rented object. Repeated calls on this lease are ignored.</summary>
-    public void Dispose()
-    {
-        PooledLeaseState<T, TPolicy>? state = _state;
-
-        if (state is not null && state.TryRelease(_token))
-        {
-            _pool.Return(_value);
-        }
-    }
+    public void Dispose() => _lease.Dispose();
 }
 
 /// <summary>
@@ -75,11 +44,15 @@ public
 ref struct PooledLease<T>
     where T : class
 {
-    private PooledLease<T, ObjectPool<T>.PolicyAdapter> _lease;
+    private ScopedPoolLease<T, ObjectPool<T, ObjectPool<T>.PolicyAdapter>> _lease;
 
-    internal PooledLease(PooledLease<T, ObjectPool<T>.PolicyAdapter> lease)
+    internal PooledLease(
+        ObjectPool<T, ObjectPool<T>.PolicyAdapter> pool,
+        T value)
     {
-        _lease = lease;
+        _lease = new ScopedPoolLease<
+            T,
+            ObjectPool<T, ObjectPool<T>.PolicyAdapter>>(pool, value);
     }
 
     /// <summary>Gets the rented object while this lease owns it.</summary>
@@ -87,53 +60,6 @@ ref struct PooledLease<T>
 
     /// <summary>Returns the rented object. Repeated calls on this lease are ignored.</summary>
     public void Dispose() => _lease.Dispose();
-}
-
-[ExcludeFromCodeCoverage]
-[DebuggerNonUserCode]
-internal sealed class PooledLeaseState<T, TPolicy>
-    where T : class
-    where TPolicy : struct, IPooledObjectPolicy<T>
-{
-    // Thread-local slots use even versions when idle and odd versions to identify
-    // active leases, so stale copies cannot release a later lease using the slot.
-    private long _version;
-    internal PooledLeaseState<T, TPolicy>? Next { get; set; }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryAcquire(out long token)
-    {
-        if ((_version & 1) != 0)
-        {
-            token = 0;
-            return false;
-        }
-
-        token = _version + 1;
-        _version = token;
-        return true;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void ValidateOwnership(long token)
-    {
-        if (_version != token)
-        {
-            PooledLeaseThrowHelper.ThrowDisposed();
-        }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryRelease(long token)
-    {
-        if (_version != token)
-        {
-            return false;
-        }
-
-        _version = token + 1;
-        return true;
-    }
 }
 
 [ExcludeFromCodeCoverage]
