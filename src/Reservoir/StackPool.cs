@@ -13,7 +13,7 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class StackPool<T> : IScopedPool<Stack<T>>
+sealed class StackPool<T>
 {
     private readonly ObjectPool<Stack<T>, Policy> _pool;
     private InstanceThreadLocalFrontTier<Stack<T>> _scopedTier;
@@ -106,7 +106,7 @@ sealed class StackPool<T> : IScopedPool<Stack<T>>
         return false;
     }
 
-    void IScopedPool<Stack<T>>.ReturnScoped(Stack<T> stack)
+    private void ReturnScoped(Stack<T> stack)
     {
         if (!TryReset(stack))
         {
@@ -170,18 +170,26 @@ sealed class StackPool<T> : IScopedPool<Stack<T>>
     /// <summary>Owns a thread-local stack rental and returns it when disposed.</summary>
     public ref struct Lease
     {
-        private ScopedPoolLease<Stack<T>, StackPool<T>> _lease;
+        private readonly StackPool<T>? _pool;
+        private ScopedPoolLease<Stack<T>> _lease;
 
         internal Lease(StackPool<T> pool, Stack<T> stack)
         {
-            _lease = new ScopedPoolLease<Stack<T>, StackPool<T>>(pool, stack);
+            _pool = pool;
+            _lease = new ScopedPoolLease<Stack<T>>(stack);
         }
 
         /// <summary>Gets the rented stack while this lease owns it.</summary>
         public readonly Stack<T> Value => _lease.Value;
 
         /// <summary>Returns the stack. Repeated calls and stale copies are ignored.</summary>
-        public void Dispose() => _lease.Dispose();
+        public void Dispose()
+        {
+            if (_lease.TryRelease(out Stack<T> stack))
+            {
+                _pool!.ReturnScoped(stack);
+            }
+        }
     }
 
     /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>

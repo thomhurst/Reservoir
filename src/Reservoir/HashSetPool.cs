@@ -13,7 +13,7 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class HashSetPool<T> : IScopedPool<HashSet<T>>
+sealed class HashSetPool<T>
 {
     private readonly ObjectPool<HashSet<T>, Policy> _pool;
     private InstanceThreadLocalFrontTier<HashSet<T>> _scopedTier;
@@ -139,7 +139,7 @@ sealed class HashSetPool<T> : IScopedPool<HashSet<T>>
         return false;
     }
 
-    void IScopedPool<HashSet<T>>.ReturnScoped(HashSet<T> set)
+    private void ReturnScoped(HashSet<T> set)
     {
         if (!TryReset(set))
         {
@@ -214,18 +214,26 @@ sealed class HashSetPool<T> : IScopedPool<HashSet<T>>
     /// <summary>Owns a thread-local hash-set rental and returns it when disposed.</summary>
     public ref struct Lease
     {
-        private ScopedPoolLease<HashSet<T>, HashSetPool<T>> _lease;
+        private readonly HashSetPool<T>? _pool;
+        private ScopedPoolLease<HashSet<T>> _lease;
 
         internal Lease(HashSetPool<T> pool, HashSet<T> set)
         {
-            _lease = new ScopedPoolLease<HashSet<T>, HashSetPool<T>>(pool, set);
+            _pool = pool;
+            _lease = new ScopedPoolLease<HashSet<T>>(set);
         }
 
         /// <summary>Gets the rented hash set while this lease owns it.</summary>
         public readonly HashSet<T> Value => _lease.Value;
 
         /// <summary>Returns the hash set. Repeated calls and stale copies are ignored.</summary>
-        public void Dispose() => _lease.Dispose();
+        public void Dispose()
+        {
+            if (_lease.TryRelease(out HashSet<T> set))
+            {
+                _pool!.ReturnScoped(set);
+            }
+        }
     }
 
     /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>

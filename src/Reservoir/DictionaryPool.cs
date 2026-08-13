@@ -14,7 +14,7 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class DictionaryPool<TKey, TValue> : IScopedPool<Dictionary<TKey, TValue>>
+sealed class DictionaryPool<TKey, TValue>
     where TKey : notnull
 {
     private readonly ObjectPool<Dictionary<TKey, TValue>, Policy> _pool;
@@ -141,8 +141,7 @@ sealed class DictionaryPool<TKey, TValue> : IScopedPool<Dictionary<TKey, TValue>
         return false;
     }
 
-    void IScopedPool<Dictionary<TKey, TValue>>.ReturnScoped(
-        Dictionary<TKey, TValue> dictionary)
+    private void ReturnScoped(Dictionary<TKey, TValue> dictionary)
     {
         if (!TryReset(dictionary))
         {
@@ -201,24 +200,28 @@ sealed class DictionaryPool<TKey, TValue> : IScopedPool<Dictionary<TKey, TValue>
     /// <summary>Owns a thread-local dictionary rental and returns it when disposed.</summary>
     public ref struct Lease
     {
-        private ScopedPoolLease<
-            Dictionary<TKey, TValue>,
-            DictionaryPool<TKey, TValue>> _lease;
+        private readonly DictionaryPool<TKey, TValue>? _pool;
+        private ScopedPoolLease<Dictionary<TKey, TValue>> _lease;
 
         internal Lease(
             DictionaryPool<TKey, TValue> pool,
             Dictionary<TKey, TValue> dictionary)
         {
-            _lease = new ScopedPoolLease<
-                Dictionary<TKey, TValue>,
-                DictionaryPool<TKey, TValue>>(pool, dictionary);
+            _pool = pool;
+            _lease = new ScopedPoolLease<Dictionary<TKey, TValue>>(dictionary);
         }
 
         /// <summary>Gets the rented dictionary while this lease owns it.</summary>
         public readonly Dictionary<TKey, TValue> Value => _lease.Value;
 
         /// <summary>Returns the dictionary. Repeated calls and stale copies are ignored.</summary>
-        public void Dispose() => _lease.Dispose();
+        public void Dispose()
+        {
+            if (_lease.TryRelease(out Dictionary<TKey, TValue> dictionary))
+            {
+                _pool!.ReturnScoped(dictionary);
+            }
+        }
     }
 
     /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>

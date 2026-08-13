@@ -13,7 +13,7 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class ListPool<T> : IScopedPool<List<T>>
+sealed class ListPool<T>
 {
     private readonly ObjectPool<List<T>, Policy> _pool;
     private InstanceThreadLocalFrontTier<List<T>> _scopedTier;
@@ -106,7 +106,7 @@ sealed class ListPool<T> : IScopedPool<List<T>>
         return false;
     }
 
-    void IScopedPool<List<T>>.ReturnScoped(List<T> list)
+    private void ReturnScoped(List<T> list)
     {
         if (!TryReset(list))
         {
@@ -148,18 +148,26 @@ sealed class ListPool<T> : IScopedPool<List<T>>
     /// <summary>Owns a thread-local list rental and returns it when disposed.</summary>
     public ref struct Lease
     {
-        private ScopedPoolLease<List<T>, ListPool<T>> _lease;
+        private readonly ListPool<T>? _pool;
+        private ScopedPoolLease<List<T>> _lease;
 
         internal Lease(ListPool<T> pool, List<T> list)
         {
-            _lease = new ScopedPoolLease<List<T>, ListPool<T>>(pool, list);
+            _pool = pool;
+            _lease = new ScopedPoolLease<List<T>>(list);
         }
 
         /// <summary>Gets the rented list while this lease owns it.</summary>
         public readonly List<T> Value => _lease.Value;
 
         /// <summary>Returns the list. Repeated calls and stale copies are ignored.</summary>
-        public void Dispose() => _lease.Dispose();
+        public void Dispose()
+        {
+            if (_lease.TryRelease(out List<T> list))
+            {
+                _pool!.ReturnScoped(list);
+            }
+        }
     }
 
     /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>

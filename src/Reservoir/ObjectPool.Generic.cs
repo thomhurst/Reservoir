@@ -23,7 +23,7 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class ObjectPool<T, TPolicy> : IDisposable, IScopedPool<T>
+sealed class ObjectPool<T, TPolicy> : IDisposable
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
@@ -193,7 +193,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable, IScopedPool<T>
         return ThrowDisposed();
     }
 
-    void IScopedPool<T>.ReturnScoped(T value)
+    internal void ReturnScoped(T value)
     {
         if (Volatile.Read(ref _isDisposed) != 0)
         {

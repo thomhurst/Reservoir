@@ -20,18 +20,26 @@ ref struct PooledLease<T, TPolicy>
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
-    private ScopedPoolLease<T, ObjectPool<T, TPolicy>> _lease;
+    private readonly ObjectPool<T, TPolicy>? _pool;
+    private ScopedPoolLease<T> _lease;
 
     internal PooledLease(ObjectPool<T, TPolicy> pool, T value)
     {
-        _lease = new ScopedPoolLease<T, ObjectPool<T, TPolicy>>(pool, value);
+        _pool = pool;
+        _lease = new ScopedPoolLease<T>(value);
     }
 
     /// <summary>Gets the rented object while this lease owns it.</summary>
     public readonly T Value => _lease.Value;
 
     /// <summary>Returns the rented object. Repeated calls on this lease are ignored.</summary>
-    public void Dispose() => _lease.Dispose();
+    public void Dispose()
+    {
+        if (_lease.TryRelease(out T value))
+        {
+            _pool!.ReturnScoped(value);
+        }
+    }
 }
 
 /// <summary>
@@ -44,22 +52,28 @@ public
 ref struct PooledLease<T>
     where T : class
 {
-    private ScopedPoolLease<T, ObjectPool<T, ObjectPool<T>.PolicyAdapter>> _lease;
+    private readonly ObjectPool<T, ObjectPool<T>.PolicyAdapter>? _pool;
+    private ScopedPoolLease<T> _lease;
 
     internal PooledLease(
         ObjectPool<T, ObjectPool<T>.PolicyAdapter> pool,
         T value)
     {
-        _lease = new ScopedPoolLease<
-            T,
-            ObjectPool<T, ObjectPool<T>.PolicyAdapter>>(pool, value);
+        _pool = pool;
+        _lease = new ScopedPoolLease<T>(value);
     }
 
     /// <summary>Gets the rented object while this lease owns it.</summary>
     public readonly T Value => _lease.Value;
 
     /// <summary>Returns the rented object. Repeated calls on this lease are ignored.</summary>
-    public void Dispose() => _lease.Dispose();
+    public void Dispose()
+    {
+        if (_lease.TryRelease(out T value))
+        {
+            _pool!.ReturnScoped(value);
+        }
+    }
 }
 
 [ExcludeFromCodeCoverage]

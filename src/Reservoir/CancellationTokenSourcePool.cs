@@ -26,8 +26,7 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class CancellationTokenSourcePool : IDisposable,
-    IScopedPool<CancellationTokenSourcePool.PooledCancellationTokenSource>
+sealed class CancellationTokenSourcePool : IDisposable
 {
     private readonly ObjectPool<PooledCancellationTokenSource, Policy> _pool;
     private TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource> _scopedTier;
@@ -168,8 +167,7 @@ sealed class CancellationTokenSourcePool : IDisposable,
         return ThrowDisposed();
     }
 
-    void IScopedPool<PooledCancellationTokenSource>.ReturnScoped(
-        PooledCancellationTokenSource source)
+    private void ReturnScoped(PooledCancellationTokenSource source)
     {
         if (Volatile.Read(ref _isDisposed) != 0)
         {
@@ -290,17 +288,15 @@ sealed class CancellationTokenSourcePool : IDisposable,
     [DebuggerNonUserCode]
     public ref struct Lease
     {
-        private ScopedPoolLease<
-            PooledCancellationTokenSource,
-            CancellationTokenSourcePool> _lease;
+        private readonly CancellationTokenSourcePool? _pool;
+        private ScopedPoolLease<PooledCancellationTokenSource> _lease;
 
         internal Lease(
             CancellationTokenSourcePool pool,
             PooledCancellationTokenSource source)
         {
-            _lease = new ScopedPoolLease<
-                PooledCancellationTokenSource,
-                CancellationTokenSourcePool>(pool, source);
+            _pool = pool;
+            _lease = new ScopedPoolLease<PooledCancellationTokenSource>(source);
         }
 
         /// <summary>Gets the rented source while this lease owns it.</summary>
@@ -308,7 +304,13 @@ sealed class CancellationTokenSourcePool : IDisposable,
             => _lease.Value;
 
         /// <summary>Returns the source. Repeated calls and stale copies are ignored.</summary>
-        public void Dispose() => _lease.Dispose();
+        public void Dispose()
+        {
+            if (_lease.TryRelease(out PooledCancellationTokenSource source))
+            {
+                _pool!.ReturnScoped(source);
+            }
+        }
     }
 
     internal readonly struct Policy : IPooledObjectDestroyPolicy<PooledCancellationTokenSource>

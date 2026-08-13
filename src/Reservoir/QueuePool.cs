@@ -13,7 +13,7 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class QueuePool<T> : IScopedPool<Queue<T>>
+sealed class QueuePool<T>
 {
     private readonly ObjectPool<Queue<T>, Policy> _pool;
     private InstanceThreadLocalFrontTier<Queue<T>> _scopedTier;
@@ -106,7 +106,7 @@ sealed class QueuePool<T> : IScopedPool<Queue<T>>
         return false;
     }
 
-    void IScopedPool<Queue<T>>.ReturnScoped(Queue<T> queue)
+    private void ReturnScoped(Queue<T> queue)
     {
         if (!TryReset(queue))
         {
@@ -170,18 +170,26 @@ sealed class QueuePool<T> : IScopedPool<Queue<T>>
     /// <summary>Owns a thread-local queue rental and returns it when disposed.</summary>
     public ref struct Lease
     {
-        private ScopedPoolLease<Queue<T>, QueuePool<T>> _lease;
+        private readonly QueuePool<T>? _pool;
+        private ScopedPoolLease<Queue<T>> _lease;
 
         internal Lease(QueuePool<T> pool, Queue<T> queue)
         {
-            _lease = new ScopedPoolLease<Queue<T>, QueuePool<T>>(pool, queue);
+            _pool = pool;
+            _lease = new ScopedPoolLease<Queue<T>>(queue);
         }
 
         /// <summary>Gets the rented queue while this lease owns it.</summary>
         public readonly Queue<T> Value => _lease.Value;
 
         /// <summary>Returns the queue. Repeated calls and stale copies are ignored.</summary>
-        public void Dispose() => _lease.Dispose();
+        public void Dispose()
+        {
+            if (_lease.TryRelease(out Queue<T> queue))
+            {
+                _pool!.ReturnScoped(queue);
+            }
+        }
     }
 
     /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>
