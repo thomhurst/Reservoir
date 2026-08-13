@@ -5,7 +5,8 @@ description: Configure ObjectPool, write policies, use IResettable, and control 
 
 # Object pools
 
-`ObjectPool<T,TPolicy>` is the primary API. It is bounded, thread-safe, and specialized for a struct policy.
+`ObjectPool<T,TPolicy>` is the primary API. It is thread-safe, specializes for a struct policy,
+and bounds its shared retention tier.
 
 ```csharp
 var pool = new ObjectPool<Buffer, BufferPolicy>(
@@ -13,7 +14,9 @@ var pool = new ObjectPool<Buffer, BufferPolicy>(
     maxCapacity: 128);
 ```
 
-`maxCapacity` is the maximum number of idle objects retained, not a limit on simultaneous rentals. A miss always calls `Create()`, so demand can exceed the retained count.
+`maxCapacity` is the maximum number of idle objects retained by the bounded shared tier, not a
+limit on simultaneous rentals. Scoped rentals additionally retain one object per participating
+thread. A miss always calls `Create()`, so demand can exceed the retained count.
 
 ## Write a policy
 
@@ -81,11 +84,23 @@ The factory overload retains every returned object after no-op reset. It still d
 - `RentScoped()` creates a stack-only `PooledLease` for synchronous scopes.
 - `RentScoped(out T)` also exposes the value as a local.
 
-Default maximum retention is `Math.Max(32, 2 * Environment.ProcessorCount)`. Pass a positive `maxCapacity` to every constructor to override it.
+`RentScoped` uses a per-pool thread-local fast path, then falls back to the bounded shared tier for
+nested rentals. Its thread-local items are additional retention and can remain attached to idle
+threads until `Clear()` or `Dispose()` drains them.
+
+For performance-critical synchronous code on .NET 10, prefer `RentScoped(out T)`. Its thread-local
+path is faster and the `out` overload avoids repeated lease ownership validation. On .NET 8,
+manual `Rent()` and `Return()` remain faster. Manual rental is also required when ownership crosses
+an `await` or all idle retention must remain bounded by `MaximumRetained`. Nanosecond results vary,
+so benchmark representative workloads on target hardware.
+
+Default shared-tier retention is `Math.Max(32, 2 * Environment.ProcessorCount)`. Pass a positive
+`maxCapacity` to every constructor to override it.
 
 ## Clear and dispose
 
-`Clear()` atomically drains retained slots and destroys their objects. The pool stays usable.
+`Clear()` drains thread-local and shared retained slots and destroys their objects. The pool stays
+usable.
 
 `Dispose()` drains retained objects and permanently closes the pool. Later `Rent()` calls throw `ObjectDisposedException`; objects returned after disposal are destroyed immediately. Outstanding renters remain their owners until they return.
 

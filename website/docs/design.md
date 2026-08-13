@@ -39,8 +39,11 @@ Fixed storage provides the retention bound. It is not a semaphore: active rental
 | --- | --- | --- | --- |
 | Pooled value | Any reference type | Any reference type | Arrays only |
 | Distribution | Runtime assembly dependency | Runtime assembly dependency | .NET runtime |
-| Retention | Explicit bounded object count | Bounded retained object count | Implementation-managed buckets |
+| Retention | Bounded shared tier; scoped TLS adds one per thread | Bounded retained object count | Implementation-managed buckets |
 | Reset policy | Struct or interface policy; may reject | Policy return decision | Caller clears optionally |
 | Scoped lease | Stack-only `PooledLease` | Not built in | Not built in |
 
-Choose `ArrayPool<T>` for raw arrays and established bucketed array reuse. Choose `Microsoft.Extensions.ObjectPool` for Microsoft Extensions integration. Choose Reservoir when struct-policy specialization, bounded custom-object retention, capacity-aware storage, and scoped leases match the application.
+Choose `ArrayPool<T>` for raw arrays and established bucketed array reuse. Choose
+`Microsoft.Extensions.ObjectPool` for Microsoft Extensions integration. Choose Reservoir when
+struct-policy specialization, bounded shared custom-object retention, capacity-aware storage, and
+scoped leases match the application.

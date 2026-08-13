@@ -172,6 +172,7 @@ $stringBuilderReservoir = Get-BenchmarkRow $stringBuilderRows 'Reservoir'
 $stringBuilderTls = Get-BenchmarkRow $stringBuilderRows 'ThreadStaticCache'
 $manualRent = Get-BenchmarkRow $objectPoolRows 'RentReturn'
 $scopedRent = Get-BenchmarkRow $objectPoolRows 'ScopedRentReturn'
+$scopedOutRent = Get-BenchmarkRow $objectPoolRows 'ScopedOutRentReturn'
 $capacityResults = @(32, 256, 4096, 65536 | ForEach-Object {
     [pscustomobject]@{
         Capacity = $_
@@ -347,8 +348,9 @@ foreach ($result in $listResults) {
 
 $docsContent += @(
     ''
-    ('The single-thread TLS `StringBuilder` cache measured {0} and 0 B; it gives up cross-thread reuse and bounded shared capacity. Scoped leases measured {1} versus {2} for manual rent/return, with 0 B allocated on both paths.' -f @(
+    ('The single-thread TLS `StringBuilder` cache measured {0} and 0 B; it gives up cross-thread reuse and bounded shared capacity. `ObjectPool.RentScoped(out T)` measured {1}, `RentScoped()` measured {2}, and manual rent/return measured {3}, with 0 B allocated on every path.' -f @(
         (Format-Duration $stringBuilderTls.Mean),
+        (Format-Duration $scopedOutRent.Mean),
         (Format-Duration $scopedRent.Mean),
         (Format-Duration $manualRent.Mean)
     ))

@@ -57,6 +57,30 @@ public class ObjectLifecycleTests
     }
 
     [Test]
+    public async Task ScopedResetExceptionDisposesItemAndPropagates()
+    {
+        var expected = new InvalidOperationException("Reset failed.");
+        var pool = new ObjectPool<DisposableItem, ThrowingPolicy>(
+            new ThrowingPolicy(expected),
+            maxCapacity: 1);
+        PooledLease<DisposableItem, ThrowingPolicy> lease = pool.RentScoped();
+        DisposableItem item = lease.Value;
+        Exception? caught = null;
+
+        try
+        {
+            lease.Dispose();
+        }
+        catch (Exception exception)
+        {
+            caught = exception;
+        }
+
+        await Assert.That(caught).IsSameReferenceAs(expected);
+        await Assert.That(item.DisposeCount).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task PolicyCanOverrideDiscardDestruction()
     {
         var pool = new ObjectPool<DisposableItem, CustomDestructionPolicy>(maxCapacity: 1);
@@ -162,6 +186,53 @@ public class ObjectLifecycleTests
     }
 
     [Test]
+    public async Task ClearDisposesScopedThreadLocalItemAndLeavesPoolUsable()
+    {
+        var pool = new ObjectPool<DisposableItem, DisposablePolicy>(maxCapacity: 1);
+        DisposableItem retained;
+
+        {
+            using PooledLease<DisposableItem, DisposablePolicy> lease = pool.RentScoped();
+            retained = lease.Value;
+        }
+
+        pool.Clear();
+
+        await Assert.That(retained.DisposeCount).IsEqualTo(1);
+        await Assert.That(pool.Rent()).IsNotSameReferenceAs(retained);
+    }
+
+    [Test]
+    public async Task ClearDisposesScopedItemsFromEveryParticipatingThread()
+    {
+        const int threadCount = 4;
+        var pool = new ObjectPool<DisposableItem, DisposablePolicy>(maxCapacity: 1);
+        var retained = new DisposableItem[threadCount];
+        var threads = new Thread[threadCount];
+
+        for (int i = 0; i < threads.Length; i++)
+        {
+            int index = i;
+            threads[i] = new Thread(() =>
+            {
+                using PooledLease<DisposableItem, DisposablePolicy> lease = pool.RentScoped();
+                retained[index] = lease.Value;
+            });
+            threads[i].Start();
+        }
+
+        foreach (Thread thread in threads)
+        {
+            thread.Join();
+        }
+
+        pool.Clear();
+
+        await Assert.That(retained.All(item => item.DisposeCount == 1)).IsTrue();
+        await Assert.That(retained.Distinct()).Count().IsEqualTo(threadCount);
+    }
+
+    [Test]
     public async Task LargePoolClearDisposesEveryRetainedItem()
     {
         const int capacity = 65;
@@ -201,6 +272,23 @@ public class ObjectLifecycleTests
     }
 
     [Test]
+    public async Task DisposeDrainsScopedThreadLocalItem()
+    {
+        var pool = new ObjectPool<DisposableItem, DisposablePolicy>(maxCapacity: 1);
+        DisposableItem retained;
+
+        {
+            using PooledLease<DisposableItem, DisposablePolicy> lease = pool.RentScoped();
+            retained = lease.Value;
+        }
+
+        pool.Dispose();
+
+        await Assert.That(retained.DisposeCount).IsEqualTo(1);
+        await Assert.That(() => pool.RentScoped()).Throws<ObjectDisposedException>();
+    }
+
+    [Test]
     public async Task ReturnRacingWithDisposeDoesNotLeaveItemRetained()
     {
         var state = new BlockingPolicyState();
@@ -222,6 +310,36 @@ public class ObjectLifecycleTests
         await Assert.That(resetObserved).IsTrue();
         await Assert.That(state.ContinueResetObserved).IsTrue();
         await Assert.That(item.DisposeCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task ScopedReturnRacingWithDisposeDoesNotLeaveItemRetained()
+    {
+        var state = new BlockingPolicyState();
+        var pool = new ObjectPool<DisposableItem, BlockingPolicy>(
+            new BlockingPolicy(state),
+            maxCapacity: 1);
+        Task<DisposableItem> returnTask = Task.Run(() => RentScopedAndDispose(pool));
+        bool resetObserved = state.ResetStarted.Wait(TestTimeout);
+
+        if (resetObserved)
+        {
+            pool.Dispose();
+        }
+
+        state.ContinueReset.Set();
+        DisposableItem item = await returnTask.WaitAsync(TestTimeout);
+
+        await Assert.That(resetObserved).IsTrue();
+        await Assert.That(state.ContinueResetObserved).IsTrue();
+        await Assert.That(item.DisposeCount).IsEqualTo(1);
+    }
+
+    private static DisposableItem RentScopedAndDispose(
+        ObjectPool<DisposableItem, BlockingPolicy> pool)
+    {
+        using PooledLease<DisposableItem, BlockingPolicy> lease = pool.RentScoped();
+        return lease.Value;
     }
 
     private sealed class ResettableItem : IResettable, IDisposable
