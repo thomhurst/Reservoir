@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
@@ -37,16 +36,14 @@ sealed class ObjectPool<T, TPolicy> : IDisposable, IScopedPool<T>
 
     private static int s_nextThreadStripe;
 
+#if !NETCOREAPP3_0_OR_GREATER
     private static readonly bool s_hasCustomDestroy
-#if NETCOREAPP3_0_OR_GREATER
-        = HasCustomDestroy();
-#else
         = typeof(IPooledObjectDestroyPolicy<T>).IsAssignableFrom(typeof(TPolicy));
-#endif
     private static readonly bool s_isStaticallyDisposable
         = typeof(IDisposable).IsAssignableFrom(typeof(T));
 
     private static readonly bool s_mayHaveDisposableImplementations = !typeof(T).IsSealed;
+#endif
 
     private readonly ObjectWrapper[] _items;
     private readonly int _indexMask;
@@ -481,19 +478,20 @@ sealed class ObjectPool<T, TPolicy> : IDisposable, IScopedPool<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void DisposeItem(T obj)
     {
+#if NETCOREAPP3_0_OR_GREATER
+        _policy.Destroy(obj);
+#else
         if (s_hasCustomDestroy)
         {
-#if NETCOREAPP3_0_OR_GREATER
-            _policy.Destroy(obj);
-#else
             ((IPooledObjectDestroyPolicy<T>)(object)_policy).Destroy(obj);
-#endif
             return;
         }
 
         DefaultDestroy(obj);
+#endif
     }
 
+#if !NETCOREAPP3_0_OR_GREATER
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void DefaultDestroy(T obj)
     {
@@ -507,23 +505,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable, IScopedPool<T>
         {
             disposable.Dispose();
         }
-    }
-
-#if NETCOREAPP3_0_OR_GREATER
-    private static bool HasCustomDestroy()
-    {
-        Type policyInterface = typeof(IPooledObjectPolicy<T>);
-        InterfaceMapping mapping = typeof(TPolicy).GetInterfaceMap(policyInterface);
-
-        for (int i = 0; i < mapping.InterfaceMethods.Length; i++)
-        {
-            if (mapping.InterfaceMethods[i].Name == nameof(IPooledObjectPolicy<T>.Destroy))
-            {
-                return mapping.TargetMethods[i].DeclaringType != policyInterface;
-            }
-        }
-
-        return false;
     }
 #endif
 

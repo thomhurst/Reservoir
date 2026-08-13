@@ -45,9 +45,31 @@ jobs:
       - name: Test
         run: dotnet test tests/Reservoir.Tests/Reservoir.Tests.csproj --configuration Release --no-build
 
+  native-aot:
+    name: NativeAOT Smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish
+        run: >-
+          dotnet publish tests/Reservoir.NativeAot.Tests/Reservoir.NativeAot.Tests.csproj
+          --configuration Release
+          --output artifacts/native-aot
+
+      - name: Run
+        run: ./artifacts/native-aot/Reservoir.NativeAot.Tests
+
   package:
     name: Pack
-    needs: test
+    needs: [test, native-aot]
     runs-on: ubuntu-latest
 
     steps:
