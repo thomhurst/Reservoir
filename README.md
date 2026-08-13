@@ -77,6 +77,25 @@ finally
 
 Collections return empty. Oversized backing stores are discarded instead of retained. Each pool exposes a shared instance and constructors for custom limits.
 
+For synchronous, thread-affine hot paths, each specialized collection pool also exposes an
+opt-in `ThreadLocalShared` facade:
+
+```csharp
+List<int> values = ListPool<int>.ThreadLocalShared.Rent();
+try
+{
+    Consume(values);
+}
+finally
+{
+    ListPool<int>.ThreadLocalShared.Return(values);
+}
+```
+
+It retains one item per participating thread, then falls back to the bounded `Shared` pool.
+This improves same-thread reuse but can retain items on idle threads and is not globally bounded
+by `Shared.MaximumRetained`.
+
 ## The ownership rule
 
 > Returning an object transfers ownership to the pool. Do not touch it, return it twice, or return it to another pool.

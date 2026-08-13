@@ -23,6 +23,12 @@ sealed class HashSetPool<T>
     /// <summary>Gets the shared pool using the default element comparer.</summary>
     public static HashSetPool<T> Shared { get; } = new();
 
+    /// <summary>
+    /// Gets an opt-in default-comparer pool that retains one set per participating thread
+    /// before using <see cref="Shared"/> as a bounded fallback.
+    /// </summary>
+    public static ThreadLocalPool ThreadLocalShared { get; } = new();
+
     /// <summary>Initializes a pool with default limits and element comparer.</summary>
     public HashSetPool()
         : this(null)
@@ -93,10 +99,39 @@ sealed class HashSetPool<T>
     public int MaximumRetainedCapacity { get; }
 
     /// <summary>Rents an empty hash set.</summary>
-    public HashSet<T> Rent() => _pool.Rent();
+    public HashSet<T> Rent() => _pool.RentWithoutLifecycle();
 
     /// <summary>Returns a hash set, clearing it when retained and discarding it when incompatible or too large.</summary>
-    public void Return(HashSet<T> set) => _pool.Return(set);
+    public void Return(HashSet<T> set)
+    {
+        ThrowIfNull(set);
+
+        if (!TryReset(set))
+        {
+            return;
+        }
+
+        _pool.ReturnWithoutReset(set);
+    }
+
+    private bool TryReset(HashSet<T> set)
+    {
+        if (Policy.Reset(set, Comparer, MaximumRetainedCapacity))
+        {
+            return true;
+        }
+
+        _pool.Destroy(set);
+        return false;
+    }
+
+    private static void ThrowIfNull(HashSet<T>? set)
+    {
+        if (set is null)
+        {
+            throw new ArgumentNullException("obj");
+        }
+    }
 
     private readonly struct Policy(
         IEqualityComparer<T> comparer,
@@ -109,30 +144,33 @@ sealed class HashSetPool<T>
 
         public HashSet<T> Create() => new(comparer);
 
-        public bool TryReset(HashSet<T> obj)
+        internal static bool Reset(
+            HashSet<T> obj,
+            IEqualityComparer<T> expectedComparer,
+            int maximumRetainedCapacity)
         {
-            if (!ReferenceEquals(obj.Comparer, comparer))
+            if (!ReferenceEquals(obj.Comparer, expectedComparer))
             {
                 return false;
             }
 
 #if NETSTANDARD2_0
-            if (s_ensureCapacity is not null)
+            if (s_ensureCapacity is null)
             {
-                if (s_ensureCapacity(obj, 0) > maxRetainedCapacity)
-                {
-                    return false;
-                }
-
                 obj.Clear();
+                obj.TrimExcess();
                 return true;
             }
 
+            if (s_ensureCapacity(obj, 0) > maximumRetainedCapacity)
+            {
+                return false;
+            }
+
             obj.Clear();
-            obj.TrimExcess();
             return true;
 #else
-            if (obj.EnsureCapacity(0) > maxRetainedCapacity)
+            if (obj.EnsureCapacity(0) > maximumRetainedCapacity)
             {
                 return false;
             }
@@ -140,6 +178,36 @@ sealed class HashSetPool<T>
             obj.Clear();
             return true;
 #endif
+        }
+
+        public bool TryReset(HashSet<T> obj)
+            => Reset(obj, comparer, maxRetainedCapacity);
+    }
+
+    /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>
+    public sealed class ThreadLocalPool
+    {
+        internal ThreadLocalPool()
+        {
+        }
+
+        /// <summary>Rents an empty set from the current thread or shared fallback.</summary>
+        public HashSet<T> Rent()
+            => ThreadLocalFrontTier<HashSet<T>, Policy>.Rent(Shared._pool);
+
+        /// <summary>Returns a set to the current thread or shared fallback.</summary>
+        public void Return(HashSet<T> set)
+        {
+            ThrowIfNull(set);
+            if (!Shared.TryReset(set))
+            {
+                return;
+            }
+
+            if (!ThreadLocalFrontTier<HashSet<T>, Policy>.TryReturn(set))
+            {
+                Shared._pool.ReturnWithoutReset(set);
+            }
         }
     }
 }

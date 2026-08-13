@@ -26,6 +26,9 @@ A `PooledLease` is stack-only and protects lexical synchronous scopes. Copies of
 
 Custom dictionary and hash-set pools also verify the configured comparer before retention. Do not mutate comparer identity through unsupported means.
 
+`ThreadLocalShared` follows the same ownership rules. It stores an item on the thread that calls
+`Return`, which may differ from the thread that rented it after an async continuation.
+
 ## Reset failure means destruction
 
 When `TryReset` returns `false`, Reservoir destroys the object instead of retaining it. The default destruction path calls `IDisposable.Dispose()` when applicable. For portable custom cleanup, implement `IPooledObjectDestroyPolicy<T>` and its `Destroy` method.

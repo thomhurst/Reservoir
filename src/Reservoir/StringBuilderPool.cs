@@ -22,6 +22,12 @@ sealed class StringBuilderPool
     /// <summary>Gets the shared pool.</summary>
     public static StringBuilderPool Shared { get; } = new();
 
+    /// <summary>
+    /// Gets an opt-in pool that retains one builder per participating thread before using
+    /// <see cref="Shared"/> as a bounded fallback.
+    /// </summary>
+    public static ThreadLocalPool ThreadLocalShared { get; } = new();
+
     /// <summary>Initializes a pool with default limits.</summary>
     public StringBuilderPool()
         : this(
@@ -61,25 +67,83 @@ sealed class StringBuilderPool
     public int MaximumRetainedCapacity { get; }
 
     /// <summary>Rents an empty string builder.</summary>
-    public StringBuilder Rent() => _pool.Rent();
+    public StringBuilder Rent() => _pool.RentWithoutLifecycle();
 
     /// <summary>Returns a builder, clearing it when retained and discarding it when incompatible or too large.</summary>
-    public void Return(StringBuilder builder) => _pool.Return(builder);
+    public void Return(StringBuilder builder)
+    {
+        ThrowIfNull(builder);
+
+        if (!TryReset(builder))
+        {
+            return;
+        }
+
+        _pool.ReturnWithoutReset(builder);
+    }
+
+    private bool TryReset(StringBuilder builder)
+    {
+        if (Policy.Reset(builder, MaximumRetainedCapacity))
+        {
+            return true;
+        }
+
+        _pool.Destroy(builder);
+        return false;
+    }
+
+    private static void ThrowIfNull(StringBuilder? builder)
+    {
+        if (builder is null)
+        {
+            throw new ArgumentNullException("obj");
+        }
+    }
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<StringBuilder>
     {
         public StringBuilder Create() => new();
 
-        public bool TryReset(StringBuilder obj)
+        internal static bool Reset(StringBuilder obj, int maximumRetainedCapacity)
         {
             if (obj.MaxCapacity != int.MaxValue
-                || obj.Capacity > maxRetainedCapacity)
+                || obj.Capacity > maximumRetainedCapacity)
             {
                 return false;
             }
 
             obj.Clear();
             return true;
+        }
+
+        public bool TryReset(StringBuilder obj) => Reset(obj, maxRetainedCapacity);
+    }
+
+    /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>
+    public sealed class ThreadLocalPool
+    {
+        internal ThreadLocalPool()
+        {
+        }
+
+        /// <summary>Rents an empty builder from the current thread or shared fallback.</summary>
+        public StringBuilder Rent()
+            => ThreadLocalFrontTier<StringBuilder, Policy>.Rent(Shared._pool);
+
+        /// <summary>Returns a builder to the current thread or shared fallback.</summary>
+        public void Return(StringBuilder builder)
+        {
+            ThrowIfNull(builder);
+            if (!Shared.TryReset(builder))
+            {
+                return;
+            }
+
+            if (!ThreadLocalFrontTier<StringBuilder, Policy>.TryReturn(builder))
+            {
+                Shared._pool.ReturnWithoutReset(builder);
+            }
         }
     }
 }

@@ -23,6 +23,12 @@ sealed class QueuePool<T>
     /// <summary>Gets the shared pool.</summary>
     public static QueuePool<T> Shared { get; } = new();
 
+    /// <summary>
+    /// Gets an opt-in pool that retains one queue per participating thread before using
+    /// <see cref="Shared"/> as a bounded fallback.
+    /// </summary>
+    public static ThreadLocalPool ThreadLocalShared { get; } = new();
+
     /// <summary>Initializes a pool with default limits.</summary>
     public QueuePool()
         : this(DefaultMaximumRetainedCapacity, ObjectPool<Queue<T>, Policy>.DefaultMaximumRetained)
@@ -60,10 +66,39 @@ sealed class QueuePool<T>
     public int MaximumRetainedCapacity { get; }
 
     /// <summary>Rents an empty queue.</summary>
-    public Queue<T> Rent() => _pool.Rent();
+    public Queue<T> Rent() => _pool.RentWithoutLifecycle();
 
     /// <summary>Returns a queue, clearing it when retained and discarding it when too large.</summary>
-    public void Return(Queue<T> queue) => _pool.Return(queue);
+    public void Return(Queue<T> queue)
+    {
+        ThrowIfNull(queue);
+
+        if (!TryReset(queue))
+        {
+            return;
+        }
+
+        _pool.ReturnWithoutReset(queue);
+    }
+
+    private bool TryReset(Queue<T> queue)
+    {
+        if (Policy.Reset(queue, MaximumRetainedCapacity))
+        {
+            return true;
+        }
+
+        _pool.Destroy(queue);
+        return false;
+    }
+
+    private static void ThrowIfNull(Queue<T>? queue)
+    {
+        if (queue is null)
+        {
+            throw new ArgumentNullException("obj");
+        }
+    }
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<Queue<T>>
     {
@@ -74,25 +109,25 @@ sealed class QueuePool<T>
 
         public Queue<T> Create() => [];
 
-        public bool TryReset(Queue<T> obj)
+        internal static bool Reset(Queue<T> obj, int maximumRetainedCapacity)
         {
 #if NETSTANDARD2_0
-            if (s_ensureCapacity is not null)
+            if (s_ensureCapacity is null)
             {
-                if (s_ensureCapacity(obj, 0) > maxRetainedCapacity)
-                {
-                    return false;
-                }
-
                 obj.Clear();
+                obj.TrimExcess();
                 return true;
             }
 
+            if (s_ensureCapacity(obj, 0) > maximumRetainedCapacity)
+            {
+                return false;
+            }
+
             obj.Clear();
-            obj.TrimExcess();
             return true;
 #else
-            if (obj.EnsureCapacity(0) > maxRetainedCapacity)
+            if (obj.EnsureCapacity(0) > maximumRetainedCapacity)
             {
                 return false;
             }
@@ -100,6 +135,35 @@ sealed class QueuePool<T>
             obj.Clear();
             return true;
 #endif
+        }
+
+        public bool TryReset(Queue<T> obj) => Reset(obj, maxRetainedCapacity);
+    }
+
+    /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>
+    public sealed class ThreadLocalPool
+    {
+        internal ThreadLocalPool()
+        {
+        }
+
+        /// <summary>Rents an empty queue from the current thread or shared fallback.</summary>
+        public Queue<T> Rent()
+            => ThreadLocalFrontTier<Queue<T>, Policy>.Rent(Shared._pool);
+
+        /// <summary>Returns a queue to the current thread or shared fallback.</summary>
+        public void Return(Queue<T> queue)
+        {
+            ThrowIfNull(queue);
+            if (!Shared.TryReset(queue))
+            {
+                return;
+            }
+
+            if (!ThreadLocalFrontTier<Queue<T>, Policy>.TryReturn(queue))
+            {
+                Shared._pool.ReturnWithoutReset(queue);
+            }
         }
     }
 }

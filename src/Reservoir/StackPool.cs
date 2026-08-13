@@ -23,6 +23,12 @@ sealed class StackPool<T>
     /// <summary>Gets the shared pool.</summary>
     public static StackPool<T> Shared { get; } = new();
 
+    /// <summary>
+    /// Gets an opt-in pool that retains one stack per participating thread before using
+    /// <see cref="Shared"/> as a bounded fallback.
+    /// </summary>
+    public static ThreadLocalPool ThreadLocalShared { get; } = new();
+
     /// <summary>Initializes a pool with default limits.</summary>
     public StackPool()
         : this(DefaultMaximumRetainedCapacity, ObjectPool<Stack<T>, Policy>.DefaultMaximumRetained)
@@ -60,10 +66,39 @@ sealed class StackPool<T>
     public int MaximumRetainedCapacity { get; }
 
     /// <summary>Rents an empty stack.</summary>
-    public Stack<T> Rent() => _pool.Rent();
+    public Stack<T> Rent() => _pool.RentWithoutLifecycle();
 
     /// <summary>Returns a stack, clearing it when retained and discarding it when too large.</summary>
-    public void Return(Stack<T> stack) => _pool.Return(stack);
+    public void Return(Stack<T> stack)
+    {
+        ThrowIfNull(stack);
+
+        if (!TryReset(stack))
+        {
+            return;
+        }
+
+        _pool.ReturnWithoutReset(stack);
+    }
+
+    private bool TryReset(Stack<T> stack)
+    {
+        if (Policy.Reset(stack, MaximumRetainedCapacity))
+        {
+            return true;
+        }
+
+        _pool.Destroy(stack);
+        return false;
+    }
+
+    private static void ThrowIfNull(Stack<T>? stack)
+    {
+        if (stack is null)
+        {
+            throw new ArgumentNullException("obj");
+        }
+    }
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<Stack<T>>
     {
@@ -74,25 +109,25 @@ sealed class StackPool<T>
 
         public Stack<T> Create() => [];
 
-        public bool TryReset(Stack<T> obj)
+        internal static bool Reset(Stack<T> obj, int maximumRetainedCapacity)
         {
 #if NETSTANDARD2_0
-            if (s_ensureCapacity is not null)
+            if (s_ensureCapacity is null)
             {
-                if (s_ensureCapacity(obj, 0) > maxRetainedCapacity)
-                {
-                    return false;
-                }
-
                 obj.Clear();
+                obj.TrimExcess();
                 return true;
             }
 
+            if (s_ensureCapacity(obj, 0) > maximumRetainedCapacity)
+            {
+                return false;
+            }
+
             obj.Clear();
-            obj.TrimExcess();
             return true;
 #else
-            if (obj.EnsureCapacity(0) > maxRetainedCapacity)
+            if (obj.EnsureCapacity(0) > maximumRetainedCapacity)
             {
                 return false;
             }
@@ -100,6 +135,35 @@ sealed class StackPool<T>
             obj.Clear();
             return true;
 #endif
+        }
+
+        public bool TryReset(Stack<T> obj) => Reset(obj, maxRetainedCapacity);
+    }
+
+    /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>
+    public sealed class ThreadLocalPool
+    {
+        internal ThreadLocalPool()
+        {
+        }
+
+        /// <summary>Rents an empty stack from the current thread or shared fallback.</summary>
+        public Stack<T> Rent()
+            => ThreadLocalFrontTier<Stack<T>, Policy>.Rent(Shared._pool);
+
+        /// <summary>Returns a stack to the current thread or shared fallback.</summary>
+        public void Return(Stack<T> stack)
+        {
+            ThrowIfNull(stack);
+            if (!Shared.TryReset(stack))
+            {
+                return;
+            }
+
+            if (!ThreadLocalFrontTier<Stack<T>, Policy>.TryReturn(stack))
+            {
+                Shared._pool.ReturnWithoutReset(stack);
+            }
         }
     }
 }

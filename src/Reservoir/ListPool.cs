@@ -23,6 +23,12 @@ sealed class ListPool<T>
     /// <summary>Gets the shared pool.</summary>
     public static ListPool<T> Shared { get; } = new();
 
+    /// <summary>
+    /// Gets an opt-in pool that retains one list per participating thread before using
+    /// <see cref="Shared"/> as a bounded fallback.
+    /// </summary>
+    public static ThreadLocalPool ThreadLocalShared { get; } = new();
+
     /// <summary>Initializes a pool with default limits.</summary>
     public ListPool()
         : this(DefaultMaximumRetainedCapacity, ObjectPool<List<T>, Policy>.DefaultMaximumRetained)
@@ -60,24 +66,82 @@ sealed class ListPool<T>
     public int MaximumRetainedCapacity { get; }
 
     /// <summary>Rents an empty list.</summary>
-    public List<T> Rent() => _pool.Rent();
+    public List<T> Rent() => _pool.RentWithoutLifecycle();
 
     /// <summary>Returns a list, clearing it when retained and discarding it when too large.</summary>
-    public void Return(List<T> list) => _pool.Return(list);
+    public void Return(List<T> list)
+    {
+        ThrowIfNull(list);
+
+        if (!TryReset(list))
+        {
+            return;
+        }
+
+        _pool.ReturnWithoutReset(list);
+    }
+
+    private bool TryReset(List<T> list)
+    {
+        if (Policy.Reset(list, MaximumRetainedCapacity))
+        {
+            return true;
+        }
+
+        _pool.Destroy(list);
+        return false;
+    }
+
+    private static void ThrowIfNull(List<T>? list)
+    {
+        if (list is null)
+        {
+            throw new ArgumentNullException("obj");
+        }
+    }
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<List<T>>
     {
         public List<T> Create() => [];
 
-        public bool TryReset(List<T> obj)
+        internal static bool Reset(List<T> obj, int maximumRetainedCapacity)
         {
-            if (obj.Capacity > maxRetainedCapacity)
+            if (obj.Capacity > maximumRetainedCapacity)
             {
                 return false;
             }
 
             obj.Clear();
             return true;
+        }
+
+        public bool TryReset(List<T> obj) => Reset(obj, maxRetainedCapacity);
+    }
+
+    /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>
+    public sealed class ThreadLocalPool
+    {
+        internal ThreadLocalPool()
+        {
+        }
+
+        /// <summary>Rents an empty list from the current thread or shared fallback.</summary>
+        public List<T> Rent()
+            => ThreadLocalFrontTier<List<T>, Policy>.Rent(Shared._pool);
+
+        /// <summary>Returns a list to the current thread or shared fallback.</summary>
+        public void Return(List<T> list)
+        {
+            ThrowIfNull(list);
+            if (!Shared.TryReset(list))
+            {
+                return;
+            }
+
+            if (!ThreadLocalFrontTier<List<T>, Policy>.TryReturn(list))
+            {
+                Shared._pool.ReturnWithoutReset(list);
+            }
         }
     }
 }

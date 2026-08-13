@@ -75,3 +75,29 @@ A builder is retained only when `Capacity <= MaximumRetainedCapacity` and `MaxCa
 `maxCapacity` controls how many empty instances stay cached. `maxRetainedCapacity` controls the largest backing store worth caching. Tune the first for peak simultaneous renters and the second for the common collection size, not an exceptional spike.
 
 Specialized collection pools do not own external resources and do not expose `Clear` or `Dispose`. Use a custom `ObjectPool<T,TPolicy>` when lifecycle control is required.
+
+## Thread-local shared pools
+
+Every specialized pool also exposes an opt-in `ThreadLocalShared` facade for synchronous,
+thread-affine hot paths:
+
+```csharp
+List<int> list = ListPool<int>.ThreadLocalShared.Rent();
+try
+{
+    list.Add(42);
+}
+finally
+{
+    ListPool<int>.ThreadLocalShared.Return(list);
+}
+```
+
+The facade retains one item per participating thread. If that thread's slot is occupied, return
+falls back to the bounded `Shared` pool. The thread-local tier is therefore additional retention:
+it is not counted by `Shared.MaximumRetained`, and items can remain attached to idle threads.
+
+Rent and return may occur on different threads safely, but the returned item becomes local to the
+returning thread. Async continuations can migrate between threads, so use `ThreadLocalShared` only
+when this retention tradeoff fits the workload. Dictionary and hash-set facades use the default
+comparer; create a dedicated pool when a custom comparer is required.
