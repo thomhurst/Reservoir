@@ -116,6 +116,20 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     {
         ThrowIfDisposed();
 
+        T rented = RentWithoutLifecycle();
+
+        if (Volatile.Read(ref _isDisposed) == 0)
+        {
+            return rented;
+        }
+
+        DisposeItem(rented);
+        return ThrowDisposed();
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal T RentWithoutLifecycle()
+    {
         StripedObjectStore<T>? largeStore = _largeStore;
         int startIndex = 0;
         T? item;
@@ -138,18 +152,10 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             _ = largeStore.TryPop(out item);
         }
 
-        T rented = item
+        return item
             ?? (largeStore is null
                 ? RentSlow(startIndex)
                 : CreateItem());
-
-        if (Volatile.Read(ref _isDisposed) == 0)
-        {
-            return rented;
-        }
-
-        DisposeItem(rented);
-        return ThrowDisposed();
     }
 
     /// <summary>Rents an object owned by a stack-only lease that returns it on disposal.</summary>
@@ -279,6 +285,13 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             return;
         }
 
+        ReturnWithoutReset(obj);
+        ClearIfDisposed();
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void ReturnWithoutReset(T obj)
+    {
         StripedObjectStore<T>? largeStore = _largeStore;
         if (largeStore is not null)
         {
@@ -287,7 +300,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
                 DisposeItem(obj);
             }
 
-            ClearIfDisposed();
             return;
         }
 
@@ -296,13 +308,14 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         T? displaced = Interlocked.Exchange(ref startSlot, obj);
         if (displaced is null)
         {
-            ClearIfDisposed();
             return;
         }
 
         ReturnSlow(obj, displaced, startIndex);
-        ClearIfDisposed();
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void Destroy(T obj) => DisposeItem(obj);
 
     /// <summary>
     /// Removes all retained objects and disposes those that implement <see cref="IDisposable"/>.

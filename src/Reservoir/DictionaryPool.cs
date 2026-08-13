@@ -25,6 +25,12 @@ sealed class DictionaryPool<TKey, TValue>
     /// <summary>Gets the shared pool using the default key comparer.</summary>
     public static DictionaryPool<TKey, TValue> Shared { get; } = new();
 
+    /// <summary>
+    /// Gets an opt-in default-comparer pool that retains one dictionary per participating
+    /// thread before using <see cref="Shared"/> as a bounded fallback.
+    /// </summary>
+    public static ThreadLocalPool ThreadLocalShared { get; } = new();
+
     /// <summary>Initializes a pool with default limits and key comparer.</summary>
     public DictionaryPool()
         : this(null)
@@ -95,10 +101,39 @@ sealed class DictionaryPool<TKey, TValue>
     public int MaximumRetainedCapacity { get; }
 
     /// <summary>Rents an empty dictionary.</summary>
-    public Dictionary<TKey, TValue> Rent() => _pool.Rent();
+    public Dictionary<TKey, TValue> Rent() => _pool.RentWithoutLifecycle();
 
     /// <summary>Returns a dictionary, clearing it when retained and discarding it when incompatible or too large.</summary>
-    public void Return(Dictionary<TKey, TValue> dictionary) => _pool.Return(dictionary);
+    public void Return(Dictionary<TKey, TValue> dictionary)
+    {
+        ThrowIfNull(dictionary);
+
+        if (!TryReset(dictionary))
+        {
+            return;
+        }
+
+        _pool.ReturnWithoutReset(dictionary);
+    }
+
+    private bool TryReset(Dictionary<TKey, TValue> dictionary)
+    {
+        if (Policy.Reset(dictionary, Comparer, MaximumRetainedCapacity))
+        {
+            return true;
+        }
+
+        _pool.Destroy(dictionary);
+        return false;
+    }
+
+    private static void ThrowIfNull(Dictionary<TKey, TValue>? dictionary)
+    {
+        if (dictionary is null)
+        {
+            throw new ArgumentNullException("obj");
+        }
+    }
 
     private readonly struct Policy(
         IEqualityComparer<TKey> comparer,
@@ -111,27 +146,54 @@ sealed class DictionaryPool<TKey, TValue>
 
         public Dictionary<TKey, TValue> Create() => new(comparer);
 
-        public bool TryReset(Dictionary<TKey, TValue> obj)
+        internal static bool Reset(
+            Dictionary<TKey, TValue> obj,
+            IEqualityComparer<TKey> expectedComparer,
+            int maximumRetainedCapacity)
         {
-            if (!ReferenceEquals(obj.Comparer, comparer))
+#if NETSTANDARD2_0
+            int capacity = s_ensureCapacity?.Invoke(obj, 0) ?? int.MaxValue;
+#else
+            int capacity = obj.EnsureCapacity(0);
+#endif
+            if (!ReferenceEquals(obj.Comparer, expectedComparer)
+                || capacity > maximumRetainedCapacity)
             {
                 return false;
             }
 
-#if NETSTANDARD2_0
-            if (s_ensureCapacity is null
-                || s_ensureCapacity(obj, 0) > maxRetainedCapacity)
-            {
-                return false;
-            }
-#else
-            if (obj.EnsureCapacity(0) > maxRetainedCapacity)
-            {
-                return false;
-            }
-#endif
             obj.Clear();
             return true;
+        }
+
+        public bool TryReset(Dictionary<TKey, TValue> obj)
+            => Reset(obj, comparer, maxRetainedCapacity);
+    }
+
+    /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>
+    public sealed class ThreadLocalPool
+    {
+        internal ThreadLocalPool()
+        {
+        }
+
+        /// <summary>Rents an empty dictionary from the current thread or shared fallback.</summary>
+        public Dictionary<TKey, TValue> Rent()
+            => ThreadLocalFrontTier<Dictionary<TKey, TValue>, Policy>.Rent(Shared._pool);
+
+        /// <summary>Returns a dictionary to the current thread or shared fallback.</summary>
+        public void Return(Dictionary<TKey, TValue> dictionary)
+        {
+            ThrowIfNull(dictionary);
+            if (!Shared.TryReset(dictionary))
+            {
+                return;
+            }
+
+            if (!ThreadLocalFrontTier<Dictionary<TKey, TValue>, Policy>.TryReturn(dictionary))
+            {
+                Shared._pool.ReturnWithoutReset(dictionary);
+            }
         }
     }
 }
