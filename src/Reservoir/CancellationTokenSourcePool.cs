@@ -4,6 +4,8 @@
 using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 
 namespace Reservoir;
@@ -18,13 +20,18 @@ namespace Reservoir;
 /// <c>CancellationTokenSource.TryReset()</c> is not thread-safe with concurrent use. Linked rentals
 /// register an upstream token with a pooled source; they do not pool sources created by
 /// <see cref="CancellationTokenSource.CreateLinkedTokenSource(CancellationToken)"/>.
+/// Scoped rentals retain one reset source per participating thread in addition to the bounded
+/// shared store. Dispose dedicated pools to release that thread-local retention.
 /// </remarks>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class CancellationTokenSourcePool : IDisposable
+sealed class CancellationTokenSourcePool : IDisposable,
+    IScopedPool<CancellationTokenSourcePool.PooledCancellationTokenSource>
 {
     private readonly ObjectPool<PooledCancellationTokenSource, Policy> _pool;
+    private TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource> _scopedTier;
+    private int _isDisposed;
 
     /// <summary>Gets the shared pool.</summary>
     public static CancellationTokenSourcePool Shared { get; } = new();
@@ -70,25 +77,30 @@ sealed class CancellationTokenSourcePool : IDisposable
         return source;
     }
 
-    /// <summary>Rents a source owned by a stack-only lease that returns it on disposal.</summary>
+    /// <summary>
+    /// Rents a source owned by a stack-only lease using a per-pool thread-local fast path.
+    /// </summary>
     public Lease RentScoped()
-        => new(_pool.RentScoped());
+    {
+        PooledCancellationTokenSource source = RentScopedValue();
+        return new Lease(this, source);
+    }
 
     /// <summary>
     /// Rents a source owned by a stack-only lease and also exposes the source directly.
     /// </summary>
     public Lease RentScoped(out CancellationTokenSource source)
     {
-        PooledLease<PooledCancellationTokenSource, Policy> lease = _pool.RentScoped(
-            out PooledCancellationTokenSource pooledSource);
+        PooledCancellationTokenSource pooledSource = RentScopedValue();
         source = pooledSource;
-        return new Lease(lease);
+        return new Lease(this, pooledSource);
     }
 
     /// <summary>
     /// Disposes all retained sources while leaving the pool usable.
     /// </summary>
-    public void Clear() => _pool.Clear();
+    public void Clear()
+        => ClearRetained(disposePool: false);
 
     /// <summary>
     /// Disposes all retained sources and permanently closes the pool.
@@ -98,12 +110,130 @@ sealed class CancellationTokenSourcePool : IDisposable
     {
         if (ReferenceEquals(this, Shared))
         {
-            _pool.Clear();
+            Clear();
             return;
         }
 
-        _pool.Dispose();
+        if (Interlocked.Exchange(ref _isDisposed, 1) == 0)
+        {
+            ClearRetained(disposePool: true);
+        }
     }
+
+    private void ClearRetained(bool disposePool)
+    {
+        Exception? firstException = null;
+        try
+        {
+            _scopedTier.Clear(_pool);
+        }
+        catch (Exception exception)
+        {
+            firstException = exception;
+        }
+
+        try
+        {
+            if (disposePool)
+            {
+                _pool.Dispose();
+            }
+            else
+            {
+                _pool.Clear();
+            }
+        }
+        catch (Exception exception)
+        {
+            firstException ??= exception;
+        }
+
+        if (firstException is not null)
+        {
+            ExceptionDispatchInfo.Capture(firstException).Throw();
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private PooledCancellationTokenSource RentScopedValue()
+    {
+        ThrowIfDisposed();
+        PooledCancellationTokenSource source = _scopedTier.Rent(_pool);
+        if (Volatile.Read(ref _isDisposed) == 0)
+        {
+            return source;
+        }
+
+        _pool.Destroy(source);
+        return ThrowDisposed();
+    }
+
+    void IScopedPool<PooledCancellationTokenSource>.ReturnScoped(
+        PooledCancellationTokenSource source)
+    {
+        if (Volatile.Read(ref _isDisposed) != 0)
+        {
+            _pool.Destroy(source);
+            return;
+        }
+
+        if (!TryReset(source))
+        {
+            return;
+        }
+
+        if (Volatile.Read(ref _isDisposed) != 0)
+        {
+            _pool.Destroy(source);
+            return;
+        }
+
+        if (!_scopedTier.TryReturn(source))
+        {
+            _pool.ReturnWithoutResetWithLifecycle(source);
+            return;
+        }
+
+        if (Volatile.Read(ref _isDisposed) != 0 && _scopedTier.TryRemove(source))
+        {
+            _pool.Destroy(source);
+        }
+    }
+
+    private bool TryReset(PooledCancellationTokenSource source)
+    {
+        try
+        {
+            if (new Policy(this).TryReset(source))
+            {
+                return true;
+            }
+        }
+        catch
+        {
+            _pool.Destroy(source);
+            throw;
+        }
+
+        _pool.Destroy(source);
+        return false;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void ThrowIfDisposed()
+    {
+        if (Volatile.Read(ref _isDisposed) != 0)
+        {
+            ThrowDisposed();
+        }
+    }
+
+#if NET5_0_OR_GREATER
+    [DoesNotReturn]
+#endif
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static PooledCancellationTokenSource ThrowDisposed()
+        => throw new ObjectDisposedException(typeof(CancellationTokenSourcePool).FullName);
 
     private void Return(PooledCancellationTokenSource source) => _pool.Return(source);
 
@@ -160,11 +290,17 @@ sealed class CancellationTokenSourcePool : IDisposable
     [DebuggerNonUserCode]
     public ref struct Lease
     {
-        private PooledLease<PooledCancellationTokenSource, Policy> _lease;
+        private ScopedPoolLease<
+            PooledCancellationTokenSource,
+            CancellationTokenSourcePool> _lease;
 
-        internal Lease(PooledLease<PooledCancellationTokenSource, Policy> lease)
+        internal Lease(
+            CancellationTokenSourcePool pool,
+            PooledCancellationTokenSource source)
         {
-            _lease = lease;
+            _lease = new ScopedPoolLease<
+                PooledCancellationTokenSource,
+                CancellationTokenSourcePool>(pool, source);
         }
 
         /// <summary>Gets the rented source while this lease owns it.</summary>

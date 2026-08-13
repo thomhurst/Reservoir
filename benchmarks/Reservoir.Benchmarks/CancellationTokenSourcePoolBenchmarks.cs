@@ -42,6 +42,14 @@ public class CancellationTokenSourcePoolBenchmarks
         using CancellationTokenSourcePool.Lease lease = _pool.RentScoped();
         return lease.Value.IsCancellationRequested;
     }
+
+    [Benchmark]
+    public bool ScopedOutRentDispose()
+    {
+        using CancellationTokenSourcePool.Lease lease
+            = _pool.RentScoped(out CancellationTokenSource source);
+        return source.IsCancellationRequested;
+    }
 }
 
 [BenchmarkCategory("CancellationTokenSource")]

@@ -12,9 +12,10 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class StringBuilderPool
+sealed class StringBuilderPool : IScopedPool<StringBuilder>
 {
     private readonly ObjectPool<StringBuilder, Policy> _pool;
+    private InstanceThreadLocalFrontTier<StringBuilder> _scopedTier;
 
     /// <summary>Gets the default largest builder capacity retained by a pool.</summary>
     public const int DefaultMaximumRetainedCapacity = 4096;
@@ -69,6 +70,19 @@ sealed class StringBuilderPool
     /// <summary>Rents an empty string builder.</summary>
     public StringBuilder Rent() => _pool.RentWithoutLifecycle();
 
+    /// <summary>Rents an empty builder owned by a stack-only thread-local lease.</summary>
+    public Lease RentScoped()
+        => new(this, _scopedTier.Rent(_pool));
+
+    /// <summary>
+    /// Rents an empty builder owned by a stack-only thread-local lease and exposes it directly.
+    /// </summary>
+    public Lease RentScoped(out StringBuilder builder)
+    {
+        builder = _scopedTier.Rent(_pool);
+        return new Lease(this, builder);
+    }
+
     /// <summary>Returns a builder, clearing it when retained and discarding it when incompatible or too large.</summary>
     public void Return(StringBuilder builder)
     {
@@ -91,6 +105,19 @@ sealed class StringBuilderPool
 
         _pool.Destroy(builder);
         return false;
+    }
+
+    void IScopedPool<StringBuilder>.ReturnScoped(StringBuilder builder)
+    {
+        if (!TryReset(builder))
+        {
+            return;
+        }
+
+        if (!_scopedTier.TryReturn(builder))
+        {
+            _pool.ReturnWithoutReset(builder);
+        }
     }
 
     private static void ThrowIfNull(StringBuilder? builder)
@@ -118,6 +145,23 @@ sealed class StringBuilderPool
         }
 
         public bool TryReset(StringBuilder obj) => Reset(obj, maxRetainedCapacity);
+    }
+
+    /// <summary>Owns a thread-local builder rental and returns it when disposed.</summary>
+    public ref struct Lease
+    {
+        private ScopedPoolLease<StringBuilder, StringBuilderPool> _lease;
+
+        internal Lease(StringBuilderPool pool, StringBuilder builder)
+        {
+            _lease = new ScopedPoolLease<StringBuilder, StringBuilderPool>(pool, builder);
+        }
+
+        /// <summary>Gets the rented builder while this lease owns it.</summary>
+        public readonly StringBuilder Value => _lease.Value;
+
+        /// <summary>Returns the builder. Repeated calls and stale copies are ignored.</summary>
+        public void Dispose() => _lease.Dispose();
     }
 
     /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>

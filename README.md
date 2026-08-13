@@ -77,6 +77,22 @@ finally
 
 Collections return empty. Oversized backing stores are discarded instead of retained. Each pool exposes a shared instance and constructors for custom limits.
 
+For synchronous scopes, `RentScoped` uses a per-pool thread-local fast path and returns the
+collection automatically:
+
+```csharp
+using ListPool<int>.Lease lease = ListPool<int>.Shared.RentScoped(out List<int> values);
+values.Add(42);
+Consume(values);
+```
+
+The lease is stack-only and cannot cross an `await`. Manual `Rent` and `Return` keep using the
+bounded shared pool for asynchronous ownership.
+
+`CancellationTokenSourcePool.RentScoped` uses the same per-pool thread-local strategy while
+preserving source reset and disposal semantics. Use `Rent()` or `RentLinked()` when ownership
+crosses an async boundary.
+
 For synchronous, thread-affine hot paths, each specialized collection pool also exposes an
 opt-in `ThreadLocalShared` facade:
 
