@@ -38,21 +38,6 @@ public class ObjectPoolBenchmarks
         return payload;
     }
 
-    [Benchmark]
-    public Payload UncheckedScopedRentReturn()
-    {
-        using UncheckedPooledLease<Payload, PayloadPolicy> lease = _pool.RentScopedUnchecked();
-        return lease.Value;
-    }
-
-    [Benchmark]
-    public Payload UncheckedScopedOutRentReturn()
-    {
-        using UncheckedPooledLease<Payload, PayloadPolicy> lease =
-            _pool.RentScopedUnchecked(out Payload payload);
-        return payload;
-    }
-
     public sealed class Payload;
 
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
@@ -61,58 +46,4 @@ public class ObjectPoolBenchmarks
 
         public bool TryReset(Payload obj) => true;
     }
-}
-
-[MemoryDiagnoser(displayGenColumns: false)]
-public class ConvenienceObjectPoolBenchmarks
-{
-    private readonly ObjectPool<Payload> _pool = new(static () => new(), maxCapacity: 32);
-
-    [GlobalSetup]
-    public void WarmPool()
-    {
-        Payload payload = _pool.Rent();
-        _pool.Return(payload);
-
-        using PooledLease<Payload> lease = _pool.RentScoped();
-    }
-
-    [Benchmark(Baseline = true)]
-    public Payload RentReturn()
-    {
-        Payload payload = _pool.Rent();
-        _pool.Return(payload);
-        return payload;
-    }
-
-    [Benchmark]
-    public Payload ScopedRentReturn()
-    {
-        using PooledLease<Payload> lease = _pool.RentScoped();
-        return lease.Value;
-    }
-
-    [Benchmark]
-    public Payload ScopedOutRentReturn()
-    {
-        using PooledLease<Payload> lease = _pool.RentScoped(out Payload payload);
-        return payload;
-    }
-
-    [Benchmark]
-    public Payload UncheckedScopedRentReturn()
-    {
-        using UncheckedPooledLease<Payload> lease = _pool.RentScopedUnchecked();
-        return lease.Value;
-    }
-
-    [Benchmark]
-    public Payload UncheckedScopedOutRentReturn()
-    {
-        using UncheckedPooledLease<Payload> lease =
-            _pool.RentScopedUnchecked(out Payload payload);
-        return payload;
-    }
-
-    public sealed class Payload;
 }

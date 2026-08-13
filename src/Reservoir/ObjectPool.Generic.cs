@@ -176,26 +176,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         return CreateLease(value);
     }
 
-    /// <summary>
-    /// Rents an object owned by an unchecked stack-only lease that must be disposed exactly once.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public UncheckedPooledLease<T, TPolicy> RentScopedUnchecked()
-    {
-        T value = Rent();
-        return new UncheckedPooledLease<T, TPolicy>(this, value);
-    }
-
-    /// <summary>
-    /// Rents an object owned by an unchecked stack-only lease, and exposes the object directly.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public UncheckedPooledLease<T, TPolicy> RentScopedUnchecked(out T value)
-    {
-        value = Rent();
-        return new UncheckedPooledLease<T, TPolicy>(this, value);
-    }
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private PooledLease<T, TPolicy> CreateLease(T value)
     {

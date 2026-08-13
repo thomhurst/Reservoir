@@ -48,38 +48,6 @@ public class PooledLeaseTests
     }
 
     [Test]
-    public async Task UncheckedLeaseReturnsValueToGenericPool()
-    {
-        var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 1);
-        PooledItem value;
-        bool valuesMatch;
-
-        {
-            using UncheckedPooledLease<PooledItem, CountingPolicy> lease =
-                pool.RentScopedUnchecked(out value);
-            valuesMatch = ReferenceEquals(value, lease.Value);
-        }
-
-        await Assert.That(valuesMatch).IsTrue();
-        await Assert.That(pool.Rent()).IsSameReferenceAs(value);
-        await Assert.That(value.ResetCount).IsEqualTo(1);
-    }
-
-    [Test]
-    public async Task UncheckedLeaseReturnsValueToConveniencePool()
-    {
-        var pool = new ObjectPool<PooledItem>(() => new PooledItem(), maxCapacity: 1);
-        PooledItem expected;
-
-        {
-            using UncheckedPooledLease<PooledItem> lease = pool.RentScopedUnchecked();
-            expected = lease.Value;
-        }
-
-        await Assert.That(pool.Rent()).IsSameReferenceAs(expected);
-    }
-
-    [Test]
     public async Task RepeatedDisposeReturnsValueOnce()
     {
         var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 1);

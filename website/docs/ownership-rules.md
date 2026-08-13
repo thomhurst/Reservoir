@@ -20,10 +20,6 @@ Do not concurrently use an object while returning it. If work crosses an `await`
 
 A `PooledLease` is stack-only and protects lexical synchronous scopes. Copies of a lease are safe to dispose, but a stale copy cannot release a later rental that reused the lease state.
 
-`UncheckedPooledLease` removes that copy-safety tracking for lower overhead. Do not copy it, and
-call `Dispose` exactly once. Disposing the same unchecked lease or any copy more than once can
-return one object to the pool multiple times.
-
 ## Collections arrive empty
 
 `ListPool`, `DictionaryPool`, `HashSetPool`, `QueuePool`, `StackPool`, and `StringBuilderPool` clear an item before retaining it. Every successful rental therefore starts empty.

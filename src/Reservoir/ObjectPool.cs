@@ -78,18 +78,6 @@ sealed class ObjectPool<T> : IDisposable
     public PooledLease<T> RentScoped(out T value)
         => new(_pool.RentScoped(out value));
 
-    /// <summary>
-    /// Rents an object owned by an unchecked stack-only lease that must be disposed exactly once.
-    /// </summary>
-    public UncheckedPooledLease<T> RentScopedUnchecked()
-        => new(_pool.RentScopedUnchecked());
-
-    /// <summary>
-    /// Rents an object owned by an unchecked stack-only lease, and exposes the object directly.
-    /// </summary>
-    public UncheckedPooledLease<T> RentScopedUnchecked(out T value)
-        => new(_pool.RentScopedUnchecked(out value));
-
     /// <summary>Resets and returns an object. Objects exceeding capacity are discarded.</summary>
     public void Return(T obj) => _pool.Return(obj);
 
