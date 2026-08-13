@@ -84,6 +84,13 @@ internal static class DocumentationSamples
         builderPool.Return(builderPool.Rent());
     }
 
+    internal static int ScopedCollections()
+    {
+        using ListPool<int>.Lease lease = ListPool<int>.Shared.RentScoped(out List<int> values);
+        values.Add(42);
+        return values[0];
+    }
+
     internal static string BuildString(int requestId)
     {
         StringBuilder builder = StringBuilderPool.Shared.Rent();

@@ -76,6 +76,22 @@ A builder is retained only when `Capacity <= MaximumRetainedCapacity` and `MaxCa
 
 Specialized collection pools do not own external resources and do not expose `Clear` or `Dispose`. Use a custom `ObjectPool<T,TPolicy>` when lifecycle control is required.
 
+## Scoped thread-local rentals
+
+Every specialized pool exposes `RentScoped` for synchronous scopes:
+
+```csharp
+using ListPool<int>.Lease lease = ListPool<int>.Shared.RentScoped(out List<int> list);
+list.Add(42);
+```
+
+The stack-only lease returns the collection automatically. It cannot cross an `await`, so the pool
+can keep one item per participating thread and use its bounded shared store as a fallback for
+nested rentals. The thread-local slot belongs to the pool instance, preserving dedicated limits
+and dictionary or hash-set comparers.
+
+Use manual `Rent` and `Return` when ownership crosses an async boundary.
+
 ## Thread-local shared pools
 
 Every specialized pool also exposes an opt-in `ThreadLocalShared` facade for synchronous,

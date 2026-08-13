@@ -13,9 +13,10 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class HashSetPool<T>
+sealed class HashSetPool<T> : IScopedPool<HashSet<T>>
 {
     private readonly ObjectPool<HashSet<T>, Policy> _pool;
+    private InstanceThreadLocalFrontTier<HashSet<T>> _scopedTier;
 
     /// <summary>Gets the default largest hash-set capacity retained by a pool.</summary>
     public const int DefaultMaximumRetainedCapacity = 1024;
@@ -101,6 +102,19 @@ sealed class HashSetPool<T>
     /// <summary>Rents an empty hash set.</summary>
     public HashSet<T> Rent() => _pool.RentWithoutLifecycle();
 
+    /// <summary>Rents an empty hash set owned by a stack-only thread-local lease.</summary>
+    public Lease RentScoped()
+        => new(this, _scopedTier.Rent(_pool));
+
+    /// <summary>
+    /// Rents an empty hash set owned by a stack-only thread-local lease and exposes it directly.
+    /// </summary>
+    public Lease RentScoped(out HashSet<T> set)
+    {
+        set = _scopedTier.Rent(_pool);
+        return new Lease(this, set);
+    }
+
     /// <summary>Returns a hash set, clearing it when retained and discarding it when incompatible or too large.</summary>
     public void Return(HashSet<T> set)
     {
@@ -123,6 +137,19 @@ sealed class HashSetPool<T>
 
         _pool.Destroy(set);
         return false;
+    }
+
+    void IScopedPool<HashSet<T>>.ReturnScoped(HashSet<T> set)
+    {
+        if (!TryReset(set))
+        {
+            return;
+        }
+
+        if (!_scopedTier.TryReturn(set))
+        {
+            _pool.ReturnWithoutReset(set);
+        }
     }
 
     private static void ThrowIfNull(HashSet<T>? set)
@@ -182,6 +209,23 @@ sealed class HashSetPool<T>
 
         public bool TryReset(HashSet<T> obj)
             => Reset(obj, comparer, maxRetainedCapacity);
+    }
+
+    /// <summary>Owns a thread-local hash-set rental and returns it when disposed.</summary>
+    public ref struct Lease
+    {
+        private ScopedPoolLease<HashSet<T>, HashSetPool<T>> _lease;
+
+        internal Lease(HashSetPool<T> pool, HashSet<T> set)
+        {
+            _lease = new ScopedPoolLease<HashSet<T>, HashSetPool<T>>(pool, set);
+        }
+
+        /// <summary>Gets the rented hash set while this lease owns it.</summary>
+        public readonly HashSet<T> Value => _lease.Value;
+
+        /// <summary>Returns the hash set. Repeated calls and stale copies are ignored.</summary>
+        public void Dispose() => _lease.Dispose();
     }
 
     /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>

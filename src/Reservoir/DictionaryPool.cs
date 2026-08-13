@@ -14,10 +14,11 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class DictionaryPool<TKey, TValue>
+sealed class DictionaryPool<TKey, TValue> : IScopedPool<Dictionary<TKey, TValue>>
     where TKey : notnull
 {
     private readonly ObjectPool<Dictionary<TKey, TValue>, Policy> _pool;
+    private InstanceThreadLocalFrontTier<Dictionary<TKey, TValue>> _scopedTier;
 
     /// <summary>Gets the default largest dictionary capacity retained by a pool.</summary>
     public const int DefaultMaximumRetainedCapacity = 1024;
@@ -103,6 +104,19 @@ sealed class DictionaryPool<TKey, TValue>
     /// <summary>Rents an empty dictionary.</summary>
     public Dictionary<TKey, TValue> Rent() => _pool.RentWithoutLifecycle();
 
+    /// <summary>Rents an empty dictionary owned by a stack-only thread-local lease.</summary>
+    public Lease RentScoped()
+        => new(this, _scopedTier.Rent(_pool));
+
+    /// <summary>
+    /// Rents an empty dictionary owned by a stack-only thread-local lease and exposes it directly.
+    /// </summary>
+    public Lease RentScoped(out Dictionary<TKey, TValue> dictionary)
+    {
+        dictionary = _scopedTier.Rent(_pool);
+        return new Lease(this, dictionary);
+    }
+
     /// <summary>Returns a dictionary, clearing it when retained and discarding it when incompatible or too large.</summary>
     public void Return(Dictionary<TKey, TValue> dictionary)
     {
@@ -125,6 +139,20 @@ sealed class DictionaryPool<TKey, TValue>
 
         _pool.Destroy(dictionary);
         return false;
+    }
+
+    void IScopedPool<Dictionary<TKey, TValue>>.ReturnScoped(
+        Dictionary<TKey, TValue> dictionary)
+    {
+        if (!TryReset(dictionary))
+        {
+            return;
+        }
+
+        if (!_scopedTier.TryReturn(dictionary))
+        {
+            _pool.ReturnWithoutReset(dictionary);
+        }
     }
 
     private static void ThrowIfNull(Dictionary<TKey, TValue>? dictionary)
@@ -168,6 +196,29 @@ sealed class DictionaryPool<TKey, TValue>
 
         public bool TryReset(Dictionary<TKey, TValue> obj)
             => Reset(obj, comparer, maxRetainedCapacity);
+    }
+
+    /// <summary>Owns a thread-local dictionary rental and returns it when disposed.</summary>
+    public ref struct Lease
+    {
+        private ScopedPoolLease<
+            Dictionary<TKey, TValue>,
+            DictionaryPool<TKey, TValue>> _lease;
+
+        internal Lease(
+            DictionaryPool<TKey, TValue> pool,
+            Dictionary<TKey, TValue> dictionary)
+        {
+            _lease = new ScopedPoolLease<
+                Dictionary<TKey, TValue>,
+                DictionaryPool<TKey, TValue>>(pool, dictionary);
+        }
+
+        /// <summary>Gets the rented dictionary while this lease owns it.</summary>
+        public readonly Dictionary<TKey, TValue> Value => _lease.Value;
+
+        /// <summary>Returns the dictionary. Repeated calls and stale copies are ignored.</summary>
+        public void Dispose() => _lease.Dispose();
     }
 
     /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>

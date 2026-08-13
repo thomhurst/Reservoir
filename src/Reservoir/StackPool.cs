@@ -13,9 +13,10 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class StackPool<T>
+sealed class StackPool<T> : IScopedPool<Stack<T>>
 {
     private readonly ObjectPool<Stack<T>, Policy> _pool;
+    private InstanceThreadLocalFrontTier<Stack<T>> _scopedTier;
 
     /// <summary>Gets the default largest stack capacity retained by a pool.</summary>
     public const int DefaultMaximumRetainedCapacity = 1024;
@@ -68,6 +69,19 @@ sealed class StackPool<T>
     /// <summary>Rents an empty stack.</summary>
     public Stack<T> Rent() => _pool.RentWithoutLifecycle();
 
+    /// <summary>Rents an empty stack owned by a stack-only thread-local lease.</summary>
+    public Lease RentScoped()
+        => new(this, _scopedTier.Rent(_pool));
+
+    /// <summary>
+    /// Rents an empty stack owned by a stack-only thread-local lease and exposes it directly.
+    /// </summary>
+    public Lease RentScoped(out Stack<T> stack)
+    {
+        stack = _scopedTier.Rent(_pool);
+        return new Lease(this, stack);
+    }
+
     /// <summary>Returns a stack, clearing it when retained and discarding it when too large.</summary>
     public void Return(Stack<T> stack)
     {
@@ -90,6 +104,19 @@ sealed class StackPool<T>
 
         _pool.Destroy(stack);
         return false;
+    }
+
+    void IScopedPool<Stack<T>>.ReturnScoped(Stack<T> stack)
+    {
+        if (!TryReset(stack))
+        {
+            return;
+        }
+
+        if (!_scopedTier.TryReturn(stack))
+        {
+            _pool.ReturnWithoutReset(stack);
+        }
     }
 
     private static void ThrowIfNull(Stack<T>? stack)
@@ -138,6 +165,23 @@ sealed class StackPool<T>
         }
 
         public bool TryReset(Stack<T> obj) => Reset(obj, maxRetainedCapacity);
+    }
+
+    /// <summary>Owns a thread-local stack rental and returns it when disposed.</summary>
+    public ref struct Lease
+    {
+        private ScopedPoolLease<Stack<T>, StackPool<T>> _lease;
+
+        internal Lease(StackPool<T> pool, Stack<T> stack)
+        {
+            _lease = new ScopedPoolLease<Stack<T>, StackPool<T>>(pool, stack);
+        }
+
+        /// <summary>Gets the rented stack while this lease owns it.</summary>
+        public readonly Stack<T> Value => _lease.Value;
+
+        /// <summary>Returns the stack. Repeated calls and stale copies are ignored.</summary>
+        public void Dispose() => _lease.Dispose();
     }
 
     /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>

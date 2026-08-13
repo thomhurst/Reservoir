@@ -20,6 +20,10 @@ Do not concurrently use an object while returning it. If work crosses an `await`
 
 A `PooledLease` is stack-only and protects lexical synchronous scopes. Copies of a lease are safe to dispose, but a stale copy cannot release a later rental that reused the lease state.
 
+Specialized collection `Lease` values provide the same stale-copy protection and return through a
+per-pool thread-local tier. They cannot cross an `await`; use manual `Rent` and `Return` for async
+ownership.
+
 ## Collections arrive empty
 
 `ListPool`, `DictionaryPool`, `HashSetPool`, `QueuePool`, `StackPool`, and `StringBuilderPool` clear an item before retaining it. Every successful rental therefore starts empty.

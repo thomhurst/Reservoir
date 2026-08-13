@@ -13,9 +13,10 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class ListPool<T>
+sealed class ListPool<T> : IScopedPool<List<T>>
 {
     private readonly ObjectPool<List<T>, Policy> _pool;
+    private InstanceThreadLocalFrontTier<List<T>> _scopedTier;
 
     /// <summary>Gets the default largest list capacity retained by a pool.</summary>
     public const int DefaultMaximumRetainedCapacity = 1024;
@@ -68,6 +69,19 @@ sealed class ListPool<T>
     /// <summary>Rents an empty list.</summary>
     public List<T> Rent() => _pool.RentWithoutLifecycle();
 
+    /// <summary>Rents an empty list owned by a stack-only thread-local lease.</summary>
+    public Lease RentScoped()
+        => new(this, _scopedTier.Rent(_pool));
+
+    /// <summary>
+    /// Rents an empty list owned by a stack-only thread-local lease and exposes it directly.
+    /// </summary>
+    public Lease RentScoped(out List<T> list)
+    {
+        list = _scopedTier.Rent(_pool);
+        return new Lease(this, list);
+    }
+
     /// <summary>Returns a list, clearing it when retained and discarding it when too large.</summary>
     public void Return(List<T> list)
     {
@@ -90,6 +104,19 @@ sealed class ListPool<T>
 
         _pool.Destroy(list);
         return false;
+    }
+
+    void IScopedPool<List<T>>.ReturnScoped(List<T> list)
+    {
+        if (!TryReset(list))
+        {
+            return;
+        }
+
+        if (!_scopedTier.TryReturn(list))
+        {
+            _pool.ReturnWithoutReset(list);
+        }
     }
 
     private static void ThrowIfNull(List<T>? list)
@@ -116,6 +143,23 @@ sealed class ListPool<T>
         }
 
         public bool TryReset(List<T> obj) => Reset(obj, maxRetainedCapacity);
+    }
+
+    /// <summary>Owns a thread-local list rental and returns it when disposed.</summary>
+    public ref struct Lease
+    {
+        private ScopedPoolLease<List<T>, ListPool<T>> _lease;
+
+        internal Lease(ListPool<T> pool, List<T> list)
+        {
+            _lease = new ScopedPoolLease<List<T>, ListPool<T>>(pool, list);
+        }
+
+        /// <summary>Gets the rented list while this lease owns it.</summary>
+        public readonly List<T> Value => _lease.Value;
+
+        /// <summary>Returns the list. Repeated calls and stale copies are ignored.</summary>
+        public void Dispose() => _lease.Dispose();
     }
 
     /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>

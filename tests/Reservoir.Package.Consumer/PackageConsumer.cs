@@ -12,6 +12,13 @@ internal static class PackageConsumer
         return pool.Rent();
     }
 
+    internal static int ScopedCollection()
+    {
+        using ListPool<int>.Lease lease = ListPool<int>.Shared.RentScoped(out List<int> values);
+        values.Add(42);
+        return values[0];
+    }
+
     private sealed class PooledItem
     {
     }
