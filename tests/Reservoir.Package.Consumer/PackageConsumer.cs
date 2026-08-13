@@ -19,6 +19,13 @@ internal static class PackageConsumer
         return values[0];
     }
 
+    internal static CancellationToken ScopedCancellationTokenSource()
+    {
+        using CancellationTokenSourcePool.Lease lease
+            = CancellationTokenSourcePool.Shared.RentScoped(out CancellationTokenSource source);
+        return source.Token;
+    }
+
     private sealed class PooledItem
     {
     }

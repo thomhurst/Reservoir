@@ -317,6 +317,19 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void ReturnWithoutResetWithLifecycle(T obj)
+    {
+        if (Volatile.Read(ref _isDisposed) != 0)
+        {
+            DisposeItem(obj);
+            return;
+        }
+
+        ReturnWithoutReset(obj);
+        ClearIfDisposed();
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void Destroy(T obj) => DisposeItem(obj);
 
     /// <summary>

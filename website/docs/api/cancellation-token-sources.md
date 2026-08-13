@@ -27,12 +27,16 @@ Representative BenchmarkDotNet `ShortRun` results on .NET 10.0.11 and an Intel C
 | Workload | `new` | Pool | `new` allocation | Pool allocation |
 | --- | ---: | ---: | ---: | ---: |
 | Create/dispose | 2.85 ns | 16.53 ns | 48 B | 0 B |
-| Create/dispose with scoped lease | 2.85 ns | 13.41 ns | 48 B | 0 B |
+| Create/dispose with scoped lease | 2.61 ns | 7.23 ns | 48 B | 0 B |
 | Schedule unfired timer | 50.54 ns | 47.19 ns | 144 B | 0 B |
 | Register callback | 27.53 ns | 28.74 ns | 192 B | 0 B |
 | Cancel/dispose | 19.76 ns | 26.93 ns | 48 B | 56 B |
 
 Nanosecond timings vary by machine and runtime. Compare rows by workload: pooling optimizes allocation pressure and reusable timer/registration state, not every isolated operation. Under contention, relative latency also varies with worker count; benchmark your production-shaped workload when latency is critical. See [Benchmarks](../benchmarks.md) to reproduce the suite.
+
+In a same-run comparison, the thread-local scoped path reduced the scoped operation from 12.80 ns
+to 7.23 ns on .NET 10 (0.56 ratio), and from 18.57 ns to 14.83 ns on .NET 8 (0.80 ratio).
+All four cases allocated 0 B.
 
 ## Async use
 
@@ -79,7 +83,10 @@ source.CancelAfter(TimeSpan.FromSeconds(5));
 RunSynchronousWork(source.Token);
 ```
 
-The lease owns the source. Do not also dispose `source`. `RentScoped()` returns a stack-only `Lease`, so it also prevents the rental from escaping to the heap.
+The lease owns the source. Do not also dispose `source`. `RentScoped()` returns a stack-only
+`Lease`, so it also prevents the rental from escaping to the heap. Scoped rentals retain one
+reset source per participating thread on the pool instance, then use the bounded shared store for
+nested rentals. `Clear()` and `Dispose()` permanently dispose sources retained in both tiers.
 
 ## What can be reused
 
@@ -115,6 +122,10 @@ Use `CancellationTokenSourcePool.Shared` for most applications. Create a dedicat
 using var pool = new CancellationTokenSourcePool(maxCapacity: 32);
 ```
 
-`maxCapacity` limits idle retained sources, not simultaneous rentals. `Clear()` permanently disposes retained sources while leaving the pool usable. `Dispose()` drains and closes a dedicated pool; outstanding rentals are permanently disposed when returned.
+`maxCapacity` limits the bounded shared tier, not simultaneous rentals. Scoped use can additionally
+retain one source per participating thread. `Clear()` permanently disposes retained sources while
+leaving the pool usable. `Dispose()` drains and closes a dedicated pool; outstanding rentals are
+permanently disposed when returned. Dispose dedicated pools when finished so their thread-local
+retention is released.
 
 Calling `CancellationTokenSourcePool.Shared.Dispose()` only clears retained sources. It deliberately does not close the process-wide shared pool.

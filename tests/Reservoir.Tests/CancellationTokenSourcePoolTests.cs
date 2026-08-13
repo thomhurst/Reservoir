@@ -245,6 +245,29 @@ public class CancellationTokenSourcePoolTests
     }
 
     [Test]
+    public async Task ConcurrentScopedStressPreservesOwnershipAndFreshState()
+    {
+        const int workerCount = 8;
+        const int iterations = 5_000;
+        using var pool = new CancellationTokenSourcePool(maxCapacity: workerCount);
+        var state = new StressState();
+        using var start = new Barrier(workerCount + 1);
+        Task[] workers = Enumerable.Range(0, workerCount)
+            .Select(_ => Task.Factory.StartNew(
+                () => StressScopedPool(pool, state, start, iterations),
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default))
+            .ToArray();
+
+        start.SignalAndWait();
+        await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30));
+
+        await Assert.That(state.Failures).IsEmpty();
+        await Assert.That(state.ActiveSources).IsEmpty();
+    }
+
+    [Test]
     public async Task PreviousRentalCallbacksAreUnregistered()
     {
         var pool = new CancellationTokenSourcePool(maxCapacity: 1);
@@ -291,10 +314,14 @@ public class CancellationTokenSourcePoolTests
             valuesMatch = ReferenceEquals(lease.Value, expected);
         }
 
-        CancellationTokenSource actual = pool.Rent();
+        bool sourceWasReused;
+        {
+            using CancellationTokenSourcePool.Lease lease = pool.RentScoped();
+            sourceWasReused = ReferenceEquals(lease.Value, expected);
+        }
+
         await Assert.That(valuesMatch).IsTrue();
-        await Assert.That(actual).IsSameReferenceAs(expected);
-        actual.Dispose();
+        await Assert.That(sourceWasReused).IsTrue();
     }
 
     [Test]
@@ -317,6 +344,97 @@ public class CancellationTokenSourcePoolTests
 
         await Assert.That(reusedFirstSource).IsTrue();
         await Assert.That(sourcesAreDistinct).IsTrue();
+    }
+
+    [Test]
+    public async Task ClearDisposesScopedThreadLocalSourceAndLeavesPoolUsable()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource retained;
+
+        {
+            using CancellationTokenSourcePool.Lease lease = pool.RentScoped(out retained);
+            _ = retained.Token.WaitHandle;
+        }
+
+        pool.Clear();
+        CancellationTokenSource replacement = pool.Rent();
+
+        await Assert.That(() => retained.Cancel()).Throws<ObjectDisposedException>();
+        await Assert.That(replacement).IsNotSameReferenceAs(retained);
+
+        replacement.Dispose();
+    }
+
+    [Test]
+    public async Task DisposeReleasesScopedThreadLocalSourceAndClosesPool()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSource retained;
+
+        {
+            using CancellationTokenSourcePool.Lease lease = pool.RentScoped(out retained);
+            _ = retained.Token.WaitHandle;
+        }
+
+        pool.Dispose();
+
+        await Assert.That(() => retained.Cancel()).Throws<ObjectDisposedException>();
+        await Assert.That(() => pool.RentScoped()).Throws<ObjectDisposedException>();
+    }
+
+    [Test]
+    public async Task ScopedRentalDisposedAfterPoolIsClosedIsPermanentlyDisposed()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        CancellationTokenSourcePool.Lease lease = pool.RentScoped();
+        CancellationTokenSource outstanding = lease.Value;
+
+        pool.Dispose();
+        lease.Dispose();
+
+        await Assert.That(() => outstanding.Cancel()).Throws<ObjectDisposedException>();
+    }
+
+    [Test]
+    public async Task ConcurrentScopedReturnAfterDisposePermanentlyDisposesSource()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        using var rented = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        CancellationTokenSource? outstanding = null;
+        Exception? failure = null;
+        var worker = new Thread(() =>
+        {
+            try
+            {
+                using CancellationTokenSourcePool.Lease lease = pool.RentScoped(out outstanding);
+                rented.Set();
+                release.Wait();
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+                rented.Set();
+            }
+        });
+
+        worker.Start();
+        if (!rented.Wait(TimeSpan.FromSeconds(5)))
+        {
+            release.Set();
+            worker.Join();
+            throw new TimeoutException("The scoped rental worker did not start.");
+        }
+
+        pool.Dispose();
+        release.Set();
+        bool joined = worker.Join(TimeSpan.FromSeconds(5));
+
+        await Assert.That(joined).IsTrue();
+        await Assert.That(failure).IsNull();
+        await Assert.That(outstanding).IsNotNull();
+        await Assert.That(() => outstanding!.Cancel()).Throws<ObjectDisposedException>();
     }
 
     [Test]
@@ -386,8 +504,13 @@ public class CancellationTokenSourcePoolTests
         using var upstream = new CancellationTokenSource();
         CancellationTokenSource outstanding = pool.RentLinked(upstream.Token);
         CancellationTokenSource retained = pool.Rent();
+        CancellationTokenSource scopedRetained;
         _ = retained.Token.WaitHandle;
         retained.Dispose();
+        {
+            using CancellationTokenSourcePool.Lease lease = pool.RentScoped(out scopedRetained);
+            _ = scopedRetained.Token.WaitHandle;
+        }
 
         pool.Dispose();
         outstanding.Dispose();
@@ -395,6 +518,7 @@ public class CancellationTokenSourcePoolTests
         upstream.Cancel();
 
         await Assert.That(() => retained.Cancel()).Throws<ObjectDisposedException>();
+        await Assert.That(() => scopedRetained.Cancel()).Throws<ObjectDisposedException>();
         await Assert.That(replacement).IsNotSameReferenceAs(retained);
         await Assert.That(replacement).IsSameReferenceAs(outstanding);
         await Assert.That(replacement.IsCancellationRequested).IsFalse();
@@ -440,6 +564,31 @@ public class CancellationTokenSourcePoolTests
 
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
+        await Assert.That(allocated).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task WarmScopedRentAndDisposeAllocatesNothing()
+    {
+        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+
+        {
+            using CancellationTokenSourcePool.Lease lease = pool.RentScoped();
+            _ = lease.Value.IsCancellationRequested;
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        int canceledCount = 0;
+
+        for (int i = 0; i < 1_000; i++)
+        {
+            using CancellationTokenSourcePool.Lease lease = pool.RentScoped();
+            canceledCount += lease.Value.IsCancellationRequested ? 1 : 0;
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        await Assert.That(canceledCount).IsEqualTo(0);
         await Assert.That(allocated).IsEqualTo(0);
     }
 
@@ -539,6 +688,35 @@ public class CancellationTokenSourcePoolTests
 
             state.CompleteRental(next);
             next.Dispose();
+        }
+    }
+
+    private static void StressScopedPool(
+        CancellationTokenSourcePool pool,
+        StressState state,
+        Barrier start,
+        int iterations)
+    {
+        start.SignalAndWait();
+
+        for (int iteration = 0; iteration < iterations; iteration++)
+        {
+            using CancellationTokenSourcePool.Lease lease = pool.RentScoped();
+            CancellationTokenSource source = lease.Value;
+            state.TrackRental(source);
+
+            if (source.IsCancellationRequested)
+            {
+                state.RecordFailure("Scoped pool returned a canceled source.");
+            }
+
+            if ((iteration & 7) == 0)
+            {
+                source.CancelAfter(TimeSpan.FromMinutes(1));
+            }
+
+            Thread.SpinWait(8);
+            state.CompleteRental(source);
         }
     }
 

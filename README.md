@@ -89,6 +89,10 @@ Consume(values);
 The lease is stack-only and cannot cross an `await`. Manual `Rent` and `Return` keep using the
 bounded shared pool for asynchronous ownership.
 
+`CancellationTokenSourcePool.RentScoped` uses the same per-pool thread-local strategy while
+preserving source reset and disposal semantics. Use `Rent()` or `RentLinked()` when ownership
+crosses an async boundary.
+
 For synchronous, thread-affine hot paths, each specialized collection pool also exposes an
 opt-in `ThreadLocalShared` facade:
 
