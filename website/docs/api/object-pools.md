@@ -14,6 +14,30 @@ var pool = new ObjectPool<Buffer, BufferPolicy>(
     maxCapacity: 128);
 ```
 
+## Application-lifetime pools
+
+Use `PermanentObjectPool<T,TPolicy>` when the pool lives for the application lifetime and must
+never be cleared or disposed:
+
+```csharp
+private static readonly PermanentObjectPool<Buffer, BufferPolicy> Buffers = new(maxCapacity: 64);
+
+Buffer buffer = Buffers.Rent();
+try
+{
+    // Use buffer.
+}
+finally
+{
+    Buffers.Return(buffer);
+}
+```
+
+Its bounded shared storage, reset rejection, and destruction behavior match
+`ObjectPool<T,TPolicy>`. Its API intentionally omits `Clear`, `Dispose`, and scoped rentals, so
+`Rent` and `Return` contain no lifecycle race checks. Use `ObjectPool<T,TPolicy>` whenever retained
+objects must be released before process shutdown.
+
 `maxCapacity` is the maximum number of idle objects retained by the bounded shared tier, not a
 limit on simultaneous rentals. Scoped rentals additionally retain one object per participating
 thread. A miss always calls `Create()`, so demand can exceed the retained count.

@@ -324,6 +324,9 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryResetWithoutLifecycle(T obj) => _policy.TryReset(obj);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void ReturnWithoutResetWithLifecycle(T obj)
     {
         if (Volatile.Read(ref _isDisposed) != 0)
