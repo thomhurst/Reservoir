@@ -127,6 +127,13 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         return ThrowDisposed();
     }
 
+    /// <summary>
+    /// Rents an object using a per-pool thread-local fast path. The object may cross asynchronous
+    /// or thread boundaries and must be returned with <see cref="ReturnThreadLocal"/>.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public T RentThreadLocal() => RentScopedValue();
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal T RentWithoutLifecycle()
     {
@@ -282,6 +289,25 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
         ReturnWithoutReset(obj);
         ClearIfDisposed();
+    }
+
+    /// <summary>
+    /// Resets and returns an object to the current thread's per-pool slot, falling back to bounded
+    /// shared storage when that slot is occupied.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void ReturnThreadLocal(T obj)
+    {
+#if NET6_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(obj);
+#else
+        if (obj is null)
+        {
+            throw new ArgumentNullException(nameof(obj));
+        }
+#endif
+
+        ReturnScoped(obj);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

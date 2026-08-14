@@ -81,6 +81,12 @@ sealed class ObjectPool<T> : IDisposable
     public T Rent() => _pool.Rent();
 
     /// <summary>
+    /// Rents an object using a per-pool thread-local fast path. The object may cross asynchronous
+    /// or thread boundaries and must be returned with <see cref="ReturnThreadLocal"/>.
+    /// </summary>
+    public T RentThreadLocal() => _pool.RentThreadLocal();
+
+    /// <summary>
     /// Rents an object owned by a stack-only lease using a per-pool thread-local fast path.
     /// </summary>
     public PooledLease<T> RentScoped()
@@ -101,6 +107,12 @@ sealed class ObjectPool<T> : IDisposable
 
     /// <summary>Resets and returns an object. Objects exceeding capacity are discarded.</summary>
     public void Return(T obj) => _pool.Return(obj);
+
+    /// <summary>
+    /// Resets and returns an object to the current thread's per-pool slot, falling back to bounded
+    /// shared storage when that slot is occupied.
+    /// </summary>
+    public void ReturnThreadLocal(T obj) => _pool.ReturnThreadLocal(obj);
 
     /// <summary>
     /// Removes all thread-local and shared retained objects and disposes those that implement
