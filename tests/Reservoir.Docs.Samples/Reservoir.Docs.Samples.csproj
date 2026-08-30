@@ -6,4 +6,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Reservoir\Reservoir.csproj" />
   </ItemGroup>
+
+  <Target Name="ValidateDocumentationSnippets" BeforeTargets="CoreCompile">
+    <Exec
+      Command="pwsh -NoProfile -File &quot;$(MSBuildThisFileDirectory)..\..\build\Test-DocumentationSnippets.ps1&quot; -RepositoryPath &quot;$(MSBuildThisFileDirectory)..\..&quot;" />
+  </Target>
 </Project>

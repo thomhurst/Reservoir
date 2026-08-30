@@ -32,25 +32,31 @@ Define lifecycle behavior as a struct policy so the JIT can specialize and inlin
 ```csharp
 using Reservoir;
 
-var pool = new ObjectPool<Buffer, BufferPolicy>(maxCapacity: 64);
-
-using var lease = pool.RentScoped(out Buffer buffer);
-buffer.Write(payload);
-
-sealed class Buffer
+static class Example
 {
-    public int Length { get; set; }
-    public void Write(ReadOnlySpan<byte> value) => Length += value.Length;
-}
-
-readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
-{
-    public Buffer Create() => new();
-
-    public bool TryReset(Buffer buffer)
+    public static void Process(ReadOnlySpan<byte> payload)
     {
-        buffer.Length = 0;
-        return true;
+        var pool = new ObjectPool<Buffer, BufferPolicy>(maxCapacity: 64);
+
+        using var lease = pool.RentScoped(out Buffer buffer);
+        buffer.Write(payload);
+    }
+
+    private sealed class Buffer
+    {
+        public int Length { get; set; }
+        public void Write(ReadOnlySpan<byte> value) => Length += value.Length;
+    }
+
+    private readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
+    {
+        public Buffer Create() => new();
+
+        public bool TryReset(Buffer buffer)
+        {
+            buffer.Length = 0;
+            return true;
+        }
     }
 }
 ```

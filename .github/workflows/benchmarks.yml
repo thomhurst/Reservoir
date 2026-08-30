@@ -54,12 +54,13 @@ jobs:
           }
 
       - name: Restore
-        run: dotnet restore benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj
+        run: dotnet restore benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj --warnaserror
 
       - name: Build
         run: >-
           dotnet build benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj
           --configuration Release
+          --warnaserror
           --no-restore
 
       - name: Validate benchmarks
@@ -120,13 +121,11 @@ jobs:
           "## Reservoir benchmarks" >> $env:GITHUB_STEP_SUMMARY
           $reports = @(Get-ChildItem `
             artifacts/benchmarks/results `
-            -Filter '*-report-github.md' `
-            -ErrorAction SilentlyContinue |
+            -Filter '*-report-github.md' |
             Sort-Object Name)
 
           if ($reports.Count -eq 0) {
-            'No benchmark results were generated.' >> $env:GITHUB_STEP_SUMMARY
-            exit 0
+            throw 'No benchmark results were generated.'
           }
 
           foreach ($report in $reports) {
