@@ -50,18 +50,22 @@ A `readonly struct` policy avoids an interface-object allocation and gives the J
 Types designed for pooling can own their reset logic:
 
 ```csharp
-sealed class Buffer : IResettable
+static class ResettableExample
 {
-    public int Length { get; private set; }
-
-    public bool TryReset()
+    private sealed class Buffer : IResettable
     {
-        Length = 0;
-        return true;
-    }
-}
+        public int Length { get; private set; }
 
-var pool = new ObjectPool<Buffer, ResettablePooledObjectPolicy<Buffer>>();
+        public bool TryReset()
+        {
+            Length = 0;
+            return true;
+        }
+    }
+
+    private static ObjectPool<Buffer, ResettablePooledObjectPolicy<Buffer>> CreatePool()
+        => new();
+}
 ```
 
 `ResettablePooledObjectPolicy<T>` requires `T : class, IResettable, new()` and uses the interface's return value to decide whether to retain the object.

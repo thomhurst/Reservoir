@@ -11,33 +11,39 @@ An object pool needs a reference type and a struct policy. `Create()` handles a 
 ```csharp
 using Reservoir;
 
-var pool = new ObjectPool<Buffer, BufferPolicy>(maxCapacity: 64);
-Buffer buffer = pool.Rent();
-
-try
+static class Example
 {
-    buffer.Write(payload);
-}
-finally
-{
-    pool.Return(buffer);
-}
-
-sealed class Buffer
-{
-    public int Length { get; set; }
-
-    public void Write(ReadOnlySpan<byte> value) => Length += value.Length;
-}
-
-readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
-{
-    public Buffer Create() => new();
-
-    public bool TryReset(Buffer buffer)
+    public static void Process(ReadOnlySpan<byte> payload)
     {
-        buffer.Length = 0;
-        return true;
+        var pool = new ObjectPool<Buffer, BufferPolicy>(maxCapacity: 64);
+        Buffer buffer = pool.Rent();
+
+        try
+        {
+            buffer.Write(payload);
+        }
+        finally
+        {
+            pool.Return(buffer);
+        }
+    }
+
+    private sealed class Buffer
+    {
+        public int Length { get; set; }
+
+        public void Write(ReadOnlySpan<byte> value) => Length += value.Length;
+    }
+
+    private readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
+    {
+        public Buffer Create() => new();
+
+        public bool TryReset(Buffer buffer)
+        {
+            buffer.Length = 0;
+            return true;
+        }
     }
 }
 ```

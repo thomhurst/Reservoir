@@ -37,10 +37,10 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore Reservoir.slnx
+        run: dotnet restore Reservoir.slnx --warnaserror
 
       - name: Build
-        run: dotnet build Reservoir.slnx --configuration Release --no-restore
+        run: dotnet build Reservoir.slnx --configuration Release --warnaserror --no-restore
 
       - name: Test
         run: dotnet test tests/Reservoir.Tests/Reservoir.Tests.csproj --configuration Release --no-build
@@ -62,6 +62,7 @@ jobs:
         run: >-
           dotnet publish tests/Reservoir.NativeAot.Tests/Reservoir.NativeAot.Tests.csproj
           --configuration Release
+          --warnaserror
           --output artifacts/native-aot
 
       - name: Run
@@ -94,6 +95,7 @@ jobs:
         run: >-
           dotnet pack src/Reservoir/Reservoir.csproj
           --configuration Release
+          --warnaserror
           --output artifacts/packages
           -p:Version=${{ steps.version.outputs.version }}
           -p:PackageVersion=${{ steps.version.outputs.version }}
@@ -103,6 +105,7 @@ jobs:
         run: >-
           dotnet build tests/Reservoir.Package.Consumer/Reservoir.Package.Consumer.csproj
           --configuration Release
+          --warnaserror
           -p:ReservoirPackageVersion=${{ steps.version.outputs.version }}
           -p:RestoreAdditionalProjectSources=${{ github.workspace }}/artifacts/packages
 
@@ -156,8 +159,7 @@ jobs:
           Get-ChildItem artifacts/packages/*.nupkg | ForEach-Object {
             dotnet nuget push $_.FullName `
               --source https://api.nuget.org/v3/index.json `
-              --api-key $env:NUGET_API_KEY `
-              --skip-duplicate
+              --api-key $env:NUGET_API_KEY
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
