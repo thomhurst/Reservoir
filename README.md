@@ -19,6 +19,7 @@ Requires a .NET Standard 2.0-compatible runtime or later.
 ## Why Reservoir?
 
 - **Zero general-purpose pool allocations when warm.** `ObjectPool<T,TPolicy>` rent and return reuse fixed slots without allocating nodes. Legacy collection fallbacks may trim or replace backing storage.
+- **Lifecycle-free application pools.** `PermanentObjectPool<T,TPolicy>` removes disposal checks when a pool lives for the process lifetime.
 - **Bounded shared retention.** You choose the shared tier's maximum idle-object count. Scoped
   rentals additionally retain one object per participating thread.
 - **Capacity-aware storage.** Cache-line-separated slots keep small pools fast; dense striped storage keeps large async working sets scalable.
