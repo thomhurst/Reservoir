@@ -32,25 +32,31 @@ Define lifecycle behavior as a struct policy so the JIT can specialize and inlin
 ```csharp
 using Reservoir;
 
-var pool = new ObjectPool<Buffer, BufferPolicy>(maxCapacity: 64);
-
-using var lease = pool.RentScoped(out Buffer buffer);
-buffer.Write(payload);
-
-sealed class Buffer
+static class Example
 {
-    public int Length { get; set; }
-    public void Write(ReadOnlySpan<byte> value) => Length += value.Length;
-}
-
-readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
-{
-    public Buffer Create() => new();
-
-    public bool TryReset(Buffer buffer)
+    public static void Process(ReadOnlySpan<byte> payload)
     {
-        buffer.Length = 0;
-        return true;
+        var pool = new ObjectPool<Buffer, BufferPolicy>(maxCapacity: 64);
+
+        using var lease = pool.RentScoped(out Buffer buffer);
+        buffer.Write(payload);
+    }
+
+    private sealed class Buffer
+    {
+        public int Length { get; set; }
+        public void Write(ReadOnlySpan<byte> value) => Length += value.Length;
+    }
+
+    private readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
+    {
+        public Buffer Create() => new();
+
+        public bool TryReset(Buffer buffer)
+        {
+            buffer.Length = 0;
+            return true;
+        }
     }
 }
 ```
@@ -60,10 +66,12 @@ readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
 For performance-critical synchronous code, prefer `RentScoped(out T)` on .NET 10; its thread-local
 path is faster and avoids the ownership validation needed by repeated `lease.Value` access. On
 .NET 8, manual `Rent()` and `Return()` remain faster. Manual rental is also required when work
-crosses an `await` or total idle retention must stay within `MaximumRetained`. Measure on target
-hardware when nanoseconds matter.
+crosses an `await`. Use `RentThreadLocal()` and `ReturnThreadLocal(T)` for the same per-pool
+thread-local fast path without a lease, or `Rent()` and `Return(T)` when total idle retention must
+stay within `MaximumRetained`. Measure on target hardware when nanoseconds matter.
 
-For work that crosses an `await`, use `Rent()` and return the object in `finally`. See the [quick start](https://thomhurst.github.io/Reservoir/docs/quick-start) for both patterns.
+For work that crosses an `await`, use a manual rental and return the object in `finally`. See the
+[quick start](https://thomhurst.github.io/Reservoir/docs/quick-start) for ownership patterns.
 
 ## Pools included
 

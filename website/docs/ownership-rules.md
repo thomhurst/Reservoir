@@ -20,7 +20,8 @@ Do not concurrently use an object while returning it. If work crosses an `await`
 
 A `PooledLease` is stack-only and protects lexical synchronous scopes. Copies of a lease are safe
 to dispose, but a stale copy cannot release a later rental that reused the lease state. Scoped
-object-pool rentals return through a per-pool thread-local tier; manual rentals return through the
+object-pool rentals return through a per-pool thread-local tier. `RentThreadLocal()` and
+`ReturnThreadLocal(T)` expose that tier for manual ownership; `Rent()` and `Return(T)` use only the
 bounded shared tier.
 
 Specialized collection and cancellation-token-source `Lease` values provide the same stale-copy

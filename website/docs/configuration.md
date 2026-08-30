@@ -12,7 +12,7 @@ Reservoir uses constructor arguments and policy implementations for pool behavio
 Every core pool retains at most `maxCapacity` idle objects. The default is:
 
 ```csharp
-Math.Max(32, 2 * Environment.ProcessorCount)
+int defaultCapacity = Math.Max(32, 2 * Environment.ProcessorCount);
 ```
 
 Size this for peak simultaneous holders, not operations per second. If callers retain objects across asynchronous work, use peak in-flight operations rather than processor count. `maxCapacity` must be positive.

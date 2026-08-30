@@ -1,0 +1,24 @@
+<Project>
+  <Target Name="EnforceZeroWarningTolerance" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <NoWarn></NoWarn>
+      <WarningsNotAsErrors></WarningsNotAsErrors>
+      <MSBuildWarningsAsMessages></MSBuildWarningsAsMessages>
+      <ILLinkTreatWarningsAsErrors>true</ILLinkTreatWarningsAsErrors>
+      <IlcTreatWarningsAsErrors>true</IlcTreatWarningsAsErrors>
+      <SuppressTrimAnalysisWarnings>false</SuppressTrimAnalysisWarnings>
+      <SuppressAotAnalysisWarnings>false</SuppressAotAnalysisWarnings>
+      <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    </PropertyGroup>
+
+    <Error
+      Condition="'$(TreatWarningsAsErrors)' != 'true'"
+      Text="TreatWarningsAsErrors must remain enabled." />
+    <Error
+      Condition="'$(EnableNETAnalyzers)' != 'true'"
+      Text="EnableNETAnalyzers must remain enabled." />
+    <Error
+      Condition="'$(AnalysisLevel)' != 'latest'"
+      Text="AnalysisLevel must remain latest." />
+  </Target>
+</Project>

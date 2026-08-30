@@ -50,18 +50,22 @@ A `readonly struct` policy avoids an interface-object allocation and gives the J
 Types designed for pooling can own their reset logic:
 
 ```csharp
-sealed class Buffer : IResettable
+static class ResettableExample
 {
-    public int Length { get; private set; }
-
-    public bool TryReset()
+    private sealed class Buffer : IResettable
     {
-        Length = 0;
-        return true;
-    }
-}
+        public int Length { get; private set; }
 
-var pool = new ObjectPool<Buffer, ResettablePooledObjectPolicy<Buffer>>();
+        public bool TryReset()
+        {
+            Length = 0;
+            return true;
+        }
+    }
+
+    private static ObjectPool<Buffer, ResettablePooledObjectPolicy<Buffer>> CreatePool()
+        => new();
+}
 ```
 
 `ResettablePooledObjectPolicy<T>` requires `T : class, IResettable, new()` and uses the interface's return value to decide whether to retain the object.
@@ -86,6 +90,8 @@ retain constrained calls, generic specialization, and inlining opportunities.
 
 - `Rent()` retrieves a retained object or creates one.
 - `Return(T)` resets then retains or destroys the object.
+- `RentThreadLocal()` retrieves from a per-pool thread-local slot before shared storage.
+- `ReturnThreadLocal(T)` resets into the returning thread's slot, then shared storage.
 - `RentScoped()` creates a stack-only `PooledLease` for synchronous scopes.
 - `RentScoped(out T)` also exposes the value as a local.
 
@@ -96,8 +102,25 @@ threads until `Clear()` or `Dispose()` drains them.
 For performance-critical synchronous code on .NET 10, prefer `RentScoped(out T)`. Its thread-local
 path is faster and the `out` overload avoids repeated lease ownership validation. On .NET 8,
 manual `Rent()` and `Return()` remain faster. Manual rental is also required when ownership crosses
-an `await` or all idle retention must remain bounded by `MaximumRetained`. Nanosecond results vary,
-so benchmark representative workloads on target hardware.
+an `await`. Use `RentThreadLocal()` and `ReturnThreadLocal(T)` to retain the thread-local fast path:
+
+```csharp
+Buffer buffer = pool.RentThreadLocal();
+try
+{
+    await SerializeAsync(buffer);
+}
+finally
+{
+    pool.ReturnThreadLocal(buffer);
+}
+```
+
+Returning on a different thread is valid. The item enters that returning thread's per-pool slot,
+so retention follows participating returning threads rather than tasks. Each such thread can retain
+one item in addition to `MaximumRetained`; overflow falls back to bounded shared storage. Use
+`Rent()` and `Return(T)` when all idle retention must remain bounded. Nanosecond results vary, so
+benchmark representative workloads on target hardware.
 
 Default shared-tier retention is `Math.Max(32, 2 * Environment.ProcessorCount)`. Pass a positive
 `maxCapacity` to every constructor to override it.
