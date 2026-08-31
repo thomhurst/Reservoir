@@ -8,6 +8,8 @@ public class ObjectPoolBenchmarks
     private readonly ObjectPool<Payload, PayloadPolicy> _pool = new(maxCapacity: 32);
     private readonly ObjectPool<Payload, NonThrowingPayloadPolicy> _nonThrowingPool
         = new(maxCapacity: 32);
+    private readonly ObjectPool<Payload, PayloadPolicy> _threadLocalPool
+        = new(default, maxCapacity: 32, threadLocalFastPath: true);
 
     [GlobalSetup]
     public void WarmPool()
@@ -16,6 +18,7 @@ public class ObjectPoolBenchmarks
         _pool.Return(payload);
 
         _nonThrowingPool.Return(_nonThrowingPool.Rent());
+        _threadLocalPool.Return(_threadLocalPool.Rent());
 
         using PooledLease<Payload, PayloadPolicy> lease = _pool.RentScoped();
     }
@@ -33,6 +36,14 @@ public class ObjectPoolBenchmarks
     {
         Payload payload = _nonThrowingPool.Rent();
         _nonThrowingPool.Return(payload);
+        return payload;
+    }
+
+    [Benchmark]
+    public Payload RentReturnThreadLocalFastPath()
+    {
+        Payload payload = _threadLocalPool.Rent();
+        _threadLocalPool.Return(payload);
         return payload;
     }
 

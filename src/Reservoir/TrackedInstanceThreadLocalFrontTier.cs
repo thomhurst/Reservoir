@@ -27,13 +27,15 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         where TPolicy : struct, IPooledObjectPolicy<T>
     {
         slot = GetSlot();
+        // The atomic exchange makes the take exclusive against a concurrent Clear or Dispose,
+        // which would otherwise destroy the item after a plain read observed it. The cheap read
+        // first keeps empty slots off the interlocked path.
         T? item = slot.Item;
-        if (item is null)
+        if (item is null || (item = Interlocked.Exchange(ref slot.Item, null)) is null)
         {
             return fallback.RentWithoutLifecycle();
         }
 
-        slot.Item = null;
         return item;
     }
 

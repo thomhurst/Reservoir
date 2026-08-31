@@ -26,6 +26,20 @@ public class ObjectPoolContentionBenchmarks
             () => RunReservoir(pool, operationsPerWorker));
     }
 
+    [GlobalSetup(Target = nameof(ReservoirThreadLocalFastPath))]
+    public void SetupReservoirThreadLocalFastPath()
+    {
+        var pool = new ObjectPool<Payload, PayloadPolicy>(
+            default,
+            PoolCapacity,
+            threadLocalFastPath: true);
+        WarmReservoirPool(pool);
+        int operationsPerWorker = OperationsPerInvocation / WorkerCount;
+        _workers = new BenchmarkWorkerGroup(
+            WorkerCount,
+            () => RunReservoir(pool, operationsPerWorker));
+    }
+
     [GlobalSetup(Target = nameof(MicrosoftExtensionsObjectPool))]
     public void SetupMicrosoftPool()
     {
@@ -59,6 +73,9 @@ public class ObjectPoolContentionBenchmarks
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation, Baseline = true)]
     public void Reservoir() => _workers!.Run();
+
+    [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
+    public void ReservoirThreadLocalFastPath() => _workers!.Run();
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
     public void MicrosoftExtensionsObjectPool() => _workers!.Run();

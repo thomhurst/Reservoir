@@ -51,6 +51,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
     private readonly ObjectWrapper[] _items;
     private readonly int _indexMask;
+    private readonly bool _threadLocalFastPath;
     private readonly StripedObjectStore<T>? _largeStore;
     private TrackedInstanceThreadLocalFrontTier<T> _scopedTier;
     private TPolicy _policy;
@@ -104,6 +105,23 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
     }
 
+    /// <summary>
+    /// Initializes a pool with the supplied policy and capacity, optionally routing
+    /// <see cref="Rent()"/> and <see cref="Return"/> through the per-pool thread-local tier.
+    /// </summary>
+    /// <remarks>
+    /// With the fast path enabled, each participating thread retains one object in addition to the
+    /// bounded shared tier and reuses it without atomic operations when its rentals and returns
+    /// happen on the same thread. Threads that hand objects to other threads fall back to the
+    /// shared tier. <see cref="Clear"/> and <see cref="Dispose"/> still release thread-local
+    /// retention.
+    /// </remarks>
+    public ObjectPool(TPolicy policy, int maxCapacity, bool threadLocalFastPath)
+        : this(policy, maxCapacity)
+    {
+        _threadLocalFastPath = threadLocalFastPath;
+    }
+
     /// <summary>Gets the default maximum number of objects retained by the shared tier.</summary>
     public static int DefaultMaximumRetained => Math.Max(32, 2 * Environment.ProcessorCount);
 
@@ -114,6 +132,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Rent()
     {
+        if (_threadLocalFastPath)
+        {
+            return RentScopedValue(out _);
+        }
+
         ThrowIfDisposed();
 
         T rented = RentWithoutLifecycle();
@@ -228,6 +251,40 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
     }
 
+    // The fast-path Return has no lease to carry the slot, so this overload resolves the
+    // returning thread's slot through the tier.
+    internal void ReturnScoped(T value)
+    {
+        if (Volatile.Read(ref _isDisposed) != 0)
+        {
+            DisposeItem(value);
+            return;
+        }
+
+        if (!TryResetItem(value))
+        {
+            DisposeItem(value);
+            return;
+        }
+
+        if (Volatile.Read(ref _isDisposed) != 0)
+        {
+            DisposeItem(value);
+            return;
+        }
+
+        if (!_scopedTier.TryReturn(value))
+        {
+            ReturnWithoutResetWithLifecycle(value);
+            return;
+        }
+
+        if (Volatile.Read(ref _isDisposed) != 0 && _scopedTier.TryRemove(value))
+        {
+            DisposeItem(value);
+        }
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     private T RentSlow(int startIndex)
     {
@@ -270,6 +327,12 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             throw new ArgumentNullException(nameof(obj));
         }
 #endif
+
+        if (_threadLocalFastPath)
+        {
+            ReturnScoped(obj);
+            return;
+        }
 
         if (Volatile.Read(ref _isDisposed) != 0)
         {
