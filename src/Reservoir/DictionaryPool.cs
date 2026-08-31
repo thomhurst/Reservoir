@@ -195,6 +195,16 @@ sealed class DictionaryPool<TKey, TValue>
 
         public bool TryReset(Dictionary<TKey, TValue> obj)
             => Reset(obj, comparer, maxRetainedCapacity);
+
+        // Mirrors the interface default method; the explicit implementation keeps the constrained
+        // Destroy call devirtualized instead of boxing this struct on every discarded object.
+        public void Destroy(Dictionary<TKey, TValue> obj)
+        {
+            if (obj is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
     }
 
     /// <summary>Owns a thread-local dictionary rental and returns it when disposed.</summary>

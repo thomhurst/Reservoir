@@ -145,6 +145,13 @@ sealed class StringBuilderPool
         }
 
         public bool TryReset(StringBuilder obj) => Reset(obj, maxRetainedCapacity);
+
+        // StringBuilder is sealed and never IDisposable, so the interface default method is a
+        // no-op for it; the explicit implementation keeps the constrained Destroy call
+        // devirtualized instead of boxing this struct on every discarded object.
+        public void Destroy(StringBuilder obj)
+        {
+        }
     }
 
     /// <summary>Owns a thread-local builder rental and returns it when disposed.</summary>
