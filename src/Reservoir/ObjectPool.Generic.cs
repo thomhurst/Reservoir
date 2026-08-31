@@ -284,8 +284,21 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         ClearIfDisposed();
     }
 
-    [MethodImpl(MethodImplOptions.NoInlining)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool TryResetItem(T obj)
+    {
+        // The type test folds to a constant per instantiation, so marked policies reset inline
+        // while unmarked policies keep the out-of-line destroy-on-throw wrapper.
+        if (default(TPolicy) is INonThrowingResetPolicy)
+        {
+            return _policy.TryReset(obj);
+        }
+
+        return TryResetItemGuarded(obj);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool TryResetItemGuarded(T obj)
     {
         try
         {
