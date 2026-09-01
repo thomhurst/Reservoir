@@ -20,8 +20,13 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal T Rent<TPolicy>(ObjectPool<T, TPolicy> fallback)
         where TPolicy : struct, IPooledObjectPolicy<T>
+        => Rent(fallback, out _);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal T Rent<TPolicy>(ObjectPool<T, TPolicy> fallback, out Slot slot)
+        where TPolicy : struct, IPooledObjectPolicy<T>
     {
-        Slot slot = GetSlot();
+        slot = GetSlot();
         T? item = slot.Item;
         if (item is null)
         {
@@ -33,9 +38,13 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryReturn(T item)
+    internal bool TryReturn(T item) => TryReturn(GetSlot(), item);
+
+    // A lease-carried slot is always the returning thread's own slot because leases are
+    // stack-only, so plain reads and writes stay safe; only Clear races via Interlocked.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static bool TryReturn(Slot slot, T item)
     {
-        Slot slot = GetSlot();
         if (slot.Item is not null)
         {
             return false;
@@ -46,13 +55,13 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryRemove(T item)
-    {
-        Slot slot = GetSlot();
-        return ReferenceEquals(
+    internal bool TryRemove(T item) => TryRemove(GetSlot(), item);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static bool TryRemove(Slot slot, T item)
+        => ReferenceEquals(
             Interlocked.CompareExchange(ref slot.Item, null, item),
             item);
-    }
 
     internal void Clear<TPolicy>(ObjectPool<T, TPolicy> fallback)
         where TPolicy : struct, IPooledObjectPolicy<T>
@@ -111,7 +120,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         return existing;
     }
 
-    private sealed class Slot
+    internal sealed class Slot
     {
         internal T? Item;
     }
