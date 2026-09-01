@@ -165,6 +165,16 @@ sealed class StackPool<T>
         }
 
         public bool TryReset(Stack<T> obj) => Reset(obj, maxRetainedCapacity);
+
+        // Mirrors the interface default method; the explicit implementation keeps the constrained
+        // Destroy call devirtualized instead of boxing this struct on every discarded object.
+        public void Destroy(Stack<T> obj)
+        {
+            if (obj is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
     }
 
     /// <summary>Owns a thread-local stack rental and returns it when disposed.</summary>

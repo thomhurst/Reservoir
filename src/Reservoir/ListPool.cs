@@ -143,6 +143,16 @@ sealed class ListPool<T>
         }
 
         public bool TryReset(List<T> obj) => Reset(obj, maxRetainedCapacity);
+
+        // Mirrors the interface default method; the explicit implementation keeps the constrained
+        // Destroy call devirtualized instead of boxing this struct on every discarded object.
+        public void Destroy(List<T> obj)
+        {
+            if (obj is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
     }
 
     /// <summary>Owns a thread-local list rental and returns it when disposed.</summary>

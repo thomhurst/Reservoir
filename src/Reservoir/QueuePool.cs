@@ -165,6 +165,16 @@ sealed class QueuePool<T>
         }
 
         public bool TryReset(Queue<T> obj) => Reset(obj, maxRetainedCapacity);
+
+        // Mirrors the interface default method; the explicit implementation keeps the constrained
+        // Destroy call devirtualized instead of boxing this struct on every discarded object.
+        public void Destroy(Queue<T> obj)
+        {
+            if (obj is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
     }
 
     /// <summary>Owns a thread-local queue rental and returns it when disposed.</summary>
