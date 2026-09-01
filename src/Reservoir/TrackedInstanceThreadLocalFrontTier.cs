@@ -33,14 +33,33 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         T? item = slot.Item;
         if (item is null || (item = Interlocked.Exchange(ref slot.Item, null)) is null)
         {
+            // A hit proves a prior return stored here, which the Rents gate already allowed, so
+            // the flag only needs to be raised on the miss path; the hit path stays write-free.
+            if (!slot.Rents)
+            {
+                slot.Rents = true;
+            }
+
             return fallback.RentWithoutLifecycle();
         }
 
         return item;
     }
 
+    // Only threads that rent may park a return in their slot; on a thread that exclusively
+    // returns (an IO or completion thread receiving handed-off objects) the parked object would
+    // never be rented again, starving the shared tier of it until Clear runs.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryReturn(T item) => TryReturn(GetSlot(), item);
+    internal bool TryReturn(T item)
+    {
+        Slot slot = GetSlot();
+        if (!slot.Rents)
+        {
+            return false;
+        }
+
+        return TryReturn(slot, item);
+    }
 
     // A lease-carried slot is always the returning thread's own slot because leases are
     // stack-only, so plain reads and writes stay safe; only Clear races via Interlocked.
@@ -125,5 +144,9 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     internal sealed class Slot
     {
         internal T? Item;
+        // True once the owning thread has rented from this pool. Written and read only by the
+        // owning thread, so plain accesses are safe; Clear never needs it because it drains
+        // Item regardless of who parked it.
+        internal bool Rents;
     }
 }

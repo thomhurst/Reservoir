@@ -11,7 +11,6 @@ namespace Reservoir.Benchmarks;
 public class ObjectPoolHandoffBenchmarks
 {
     private const int OperationsPerInvocation = 262_144;
-    private const int PoolCapacity = 32;
 
     private BenchmarkWorkerGroup? _workers;
     // MemoryDiagnoser only observes the BenchmarkDotNet thread, so worker-side allocations are
@@ -20,6 +19,11 @@ public class ObjectPoolHandoffBenchmarks
 
     [Params(1, 4)]
     public int PairCount { get; set; }
+
+    // The tight capacity models a pool sized near its working set, where an object parked on a
+    // thread that never rents would starve the shared tier and force creation churn.
+    [Params(4, 32)]
+    public int PoolCapacity { get; set; }
 
     [GlobalSetup(Target = nameof(Reservoir))]
     public void SetupReservoir()

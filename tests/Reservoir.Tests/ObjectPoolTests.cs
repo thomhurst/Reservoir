@@ -229,6 +229,15 @@ public class ObjectPoolTests
                     Thread.SpinWait(16);
                 }
 
+                // On a loaded runner the clear loop can finish before any worker is scheduled
+                // for a complete rent/return, and disposing then ends the test with zero resets.
+                // The pool is still usable here and workers cannot exit before Stopping is set,
+                // so at least one return — and its reset — must eventually land.
+                while (Volatile.Read(ref state.ResetCount) == 0)
+                {
+                    Thread.SpinWait(64);
+                }
+
                 pool.Dispose();
                 Volatile.Write(ref state.Stopping, 1);
             },
