@@ -19,9 +19,9 @@ Requires a .NET Standard 2.0-compatible runtime or later.
 ## Why Reservoir?
 
 - **Zero general-purpose pool allocations when warm.** `ObjectPool<T,TPolicy>` rent and return reuse fixed slots without allocating nodes. Legacy collection fallbacks may trim or replace backing storage.
-- **Bounded shared retention.** You choose the shared tier's maximum idle-object count. Rentals
-  additionally retain one object per participating thread by default; pass
-  `threadLocalFastPath: false` to bound retention strictly to the shared tier.
+- **Bounded shared retention.** You choose the shared tier's maximum idle-object count. Manual
+  rentals use the bounded shared tier by default; pass `threadLocalFastPath: true` to opt into
+  retaining one additional object per participating thread.
 - **Capacity-aware storage.** Cache-line-separated slots keep small pools fast; dense striped storage keeps large async working sets scalable.
 - **Library-friendly delivery.** One public assembly identity flows normally through `PackageReference` dependency graphs.
 - **Scoped ownership.** Stack-only leases return rentals automatically when synchronous work leaves scope.
@@ -61,8 +61,9 @@ readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
 For performance-critical synchronous code, prefer `RentScoped(out T)` on .NET 10; its thread-local
 path is faster and avoids the ownership validation needed by repeated `lease.Value` access. On
 .NET 8, manual `Rent()` and `Return()` remain faster. Manual rental is also required when work
-crosses an `await`. When total idle retention must stay within `MaximumRetained`, construct the
-pool with `threadLocalFastPath: false`. Measure on target hardware when nanoseconds matter.
+crosses an `await`. Manual rentals use the bounded shared tier by default; opt into the thread-local
+path with `threadLocalFastPath: true` only when its same-thread reuse wins justify its lookup and
+retention costs. Measure on target hardware when nanoseconds matter.
 
 For work that crosses an `await`, use `Rent()` and return the object in `finally`. See the [quick start](https://thomhurst.github.io/Reservoir/docs/quick-start) for both patterns.
 

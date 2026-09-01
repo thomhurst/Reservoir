@@ -29,13 +29,12 @@ public class ObjectPoolTests
     }
 
     [Test]
-    public async Task PoolRetainsNoMoreThanConfiguredCapacity()
+    public async Task DefaultPoolRetainsNoMoreThanConfiguredCapacity()
     {
         var policy = new CountingPolicy();
         var pool = new ObjectPool<PooledItem, CountingPolicy>(
             policy,
-            maxCapacity: 2,
-            threadLocalFastPath: false);
+            maxCapacity: 2);
         PooledItem first = pool.Rent();
         PooledItem second = pool.Rent();
         PooledItem excess = pool.Rent();
