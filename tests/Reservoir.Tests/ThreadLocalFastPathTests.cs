@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace Reservoir.Tests;
 
 public class ThreadLocalFastPathTests
@@ -89,6 +91,45 @@ public class ThreadLocalFastPathTests
         await Assert.That(item.Destroyed).IsTrue();
     }
 
+    [Test]
+    public async Task ConcurrentClearNeverYieldsADestroyedRentalNorDestroysTwice()
+    {
+        var pool = new ObjectPool<AuditedItem, AuditedPolicy>(
+            default,
+            maxCapacity: 4,
+            threadLocalFastPath: true);
+        using var stop = new CancellationTokenSource();
+
+        Task clearing = Task.Run(() =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                pool.Clear();
+            }
+        });
+
+        Task[] renters = Enumerable.Range(0, 4).Select(_ => Task.Run(() =>
+        {
+            for (int i = 0; i < 50_000; i++)
+            {
+                AuditedItem item = pool.Rent();
+                if (Volatile.Read(ref item.DestroyCount) != 0)
+                {
+                    throw new InvalidOperationException("Rented a destroyed item.");
+                }
+
+                pool.Return(item);
+            }
+        })).ToArray();
+
+        await Task.WhenAll(renters);
+        stop.Cancel();
+        await clearing;
+        pool.Clear();
+
+        await Assert.That(AuditedPolicy.Items.All(item => item.DestroyCount <= 1)).IsTrue();
+    }
+
     public sealed class Item
     {
         public int ResetCount { get; set; }
@@ -96,6 +137,27 @@ public class ThreadLocalFastPathTests
         public bool RejectReset { get; set; }
 
         public bool Destroyed { get; set; }
+    }
+
+    public sealed class AuditedItem
+    {
+        public int DestroyCount;
+    }
+
+    public readonly struct AuditedPolicy : IPooledObjectDestroyPolicy<AuditedItem>
+    {
+        public static readonly ConcurrentBag<AuditedItem> Items = [];
+
+        public AuditedItem Create()
+        {
+            var item = new AuditedItem();
+            Items.Add(item);
+            return item;
+        }
+
+        public bool TryReset(AuditedItem obj) => true;
+
+        public void Destroy(AuditedItem obj) => Interlocked.Increment(ref obj.DestroyCount);
     }
 
     public readonly struct Policy : IPooledObjectDestroyPolicy<Item>
