@@ -45,6 +45,9 @@ jobs:
       - name: Test
         run: dotnet test tests/Reservoir.Tests/Reservoir.Tests.csproj --configuration Release --no-build
 
+      - name: Test netstandard2.0 build
+        run: dotnet test tests/Reservoir.NetStandard.Tests/Reservoir.NetStandard.Tests.csproj --configuration Release --no-build
+
   native-aot:
     name: NativeAOT Smoke
     runs-on: ubuntu-latest
