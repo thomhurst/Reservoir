@@ -122,7 +122,10 @@ public class ObjectLifecycleTests
     [Test]
     public async Task FullPoolDisposesReturnedExcessItem()
     {
-        var pool = new ObjectPool<DisposableItem, DisposablePolicy>(maxCapacity: 1);
+        var pool = new ObjectPool<DisposableItem, DisposablePolicy>(
+            default,
+            maxCapacity: 1,
+            threadLocalFastPath: false);
         DisposableItem retained = pool.Rent();
         DisposableItem excess = pool.Rent();
 
@@ -138,7 +141,10 @@ public class ObjectLifecycleTests
     public async Task LargeFullPoolDisposesReturnedExcessItem()
     {
         const int capacity = 65;
-        var pool = new ObjectPool<DisposableItem, DisposablePolicy>(capacity);
+        var pool = new ObjectPool<DisposableItem, DisposablePolicy>(
+            default,
+            capacity,
+            threadLocalFastPath: false);
         var retained = new DisposableItem[capacity];
 
         for (int i = 0; i < retained.Length; i++)
