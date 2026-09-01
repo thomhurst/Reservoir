@@ -40,6 +40,44 @@ public class ThreadLocalFastPathTests
     }
 
     [Test]
+    public async Task ReturnOnlyThreadDoesNotParkAnObject()
+    {
+        var pool = new ObjectPool<Item, Policy>(default, 1, threadLocalFastPath: true);
+        Item first = pool.Rent();
+        Item second = pool.Rent();
+
+        // A dedicated thread guarantees the returner never rented from this pool; Task.Run could
+        // reuse the pool thread that rented above and park the first return in its slot.
+        var returner = new Thread(() =>
+        {
+            pool.Return(first);
+            pool.Return(second);
+        });
+        returner.Start();
+        returner.Join();
+
+        // The returning thread never rented from this pool, so nothing parks in its slot: the
+        // shared tier retains the first return and the second is destroyed at return time
+        // instead of being stranded on a thread that will never rent it.
+        await Assert.That(first.Destroyed).IsFalse();
+        await Assert.That(second.Destroyed).IsTrue();
+    }
+
+    [Test]
+    public async Task HandedOffObjectsStayAvailableToRentingThreads()
+    {
+        var pool = new ObjectPool<Item, Policy>(default, 1, threadLocalFastPath: true);
+        Item item = pool.Rent();
+
+        var returner = new Thread(() => pool.Return(item));
+        returner.Start();
+        returner.Join();
+
+        // With the return routed to the shared tier, a renting thread gets the object back.
+        await Assert.That(pool.Rent()).IsSameReferenceAs(item);
+    }
+
+    [Test]
     public async Task ResetFailureDestroysInsteadOfRetaining()
     {
         var pool = new ObjectPool<Item, Policy>(default, 4, threadLocalFastPath: true);

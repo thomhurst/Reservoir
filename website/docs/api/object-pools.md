@@ -93,8 +93,10 @@ retain constrained calls, generic specialization, and inlining opportunities.
 Manual `Rent()`/`Return()` use only the bounded shared tier by default. Construct the pool with
 `threadLocalFastPath: true` to opt manual rentals into the same fast path when same-thread reuse
 outweighs the lookup overhead. Thread-local items are additional retention — up to one object per
-participating thread beyond `MaximumRetained` — and can remain attached to idle threads until
-`Clear()` or `Dispose()` drains them.
+thread that rents, beyond `MaximumRetained` — and can remain attached to idle threads until
+`Clear()` or `Dispose()` drains them. A thread that only returns (a completion or IO thread
+receiving handed-off objects) never parks one; its returns overflow to the shared tier so
+renting threads can reuse them.
 
 For performance-critical synchronous code, prefer `RentScoped(out T)`; the `out` overload avoids
 repeated lease ownership validation. Manual rental is required when ownership crosses an `await`.

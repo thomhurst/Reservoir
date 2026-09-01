@@ -21,7 +21,7 @@ Requires a .NET Standard 2.0-compatible runtime or later.
 - **Zero general-purpose pool allocations when warm.** `ObjectPool<T,TPolicy>` rent and return reuse fixed slots without allocating nodes. Legacy collection fallbacks may trim or replace backing storage.
 - **Bounded shared retention.** You choose the shared tier's maximum idle-object count. Manual
   rentals use the bounded shared tier by default; pass `threadLocalFastPath: true` to opt into
-  retaining one additional object per participating thread.
+  retaining one additional object per thread that rents.
 - **Capacity-aware storage.** Cache-line-separated slots keep small pools fast; dense striped storage keeps large async working sets scalable.
 - **Library-friendly delivery.** One public assembly identity flows normally through `PackageReference` dependency graphs.
 - **Scoped ownership.** Stack-only leases return rentals automatically when synchronous work leaves scope.

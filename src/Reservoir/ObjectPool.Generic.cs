@@ -118,11 +118,12 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     /// </summary>
     /// <remarks>
     /// With the fast path enabled, a rent takes the current thread's slot when it holds an object,
-    /// and a return stores into the returning thread's slot when that slot is empty and overflows
-    /// to the bounded shared tier otherwise — so each participating thread, including one that
-    /// only returns, retains up to one object beyond <see cref="MaximumRetained"/> until it rents
-    /// again or <see cref="Clear"/> or <see cref="Dispose"/> runs. Same-thread reuse costs a single
-    /// atomic operation. Pass <see langword="true"/> to opt in.
+    /// and a return stores into the returning thread's slot when that thread has rented from this
+    /// pool and the slot is empty, overflowing to the bounded shared tier otherwise — so each
+    /// thread that rents retains up to one object beyond <see cref="MaximumRetained"/> until it
+    /// rents again or <see cref="Clear"/> or <see cref="Dispose"/> runs. A thread that only
+    /// returns (a completion or IO thread receiving handed-off objects) never parks one. Same-
+    /// thread reuse costs a single atomic operation. Pass <see langword="true"/> to opt in.
     /// </remarks>
     public ObjectPool(TPolicy policy, int maxCapacity, bool threadLocalFastPath)
         : this(policy, maxCapacity)
