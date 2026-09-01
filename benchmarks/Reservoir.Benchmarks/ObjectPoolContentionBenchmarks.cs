@@ -18,7 +18,10 @@ public class ObjectPoolContentionBenchmarks
     [GlobalSetup(Target = nameof(Reservoir))]
     public void SetupReservoir()
     {
-        var pool = new ObjectPool<Payload, PayloadPolicy>(maxCapacity: PoolCapacity);
+        var pool = new ObjectPool<Payload, PayloadPolicy>(
+            default,
+            PoolCapacity,
+            threadLocalFastPath: false);
         WarmReservoirPool(pool);
         int operationsPerWorker = OperationsPerInvocation / WorkerCount;
         _workers = new BenchmarkWorkerGroup(
@@ -29,10 +32,7 @@ public class ObjectPoolContentionBenchmarks
     [GlobalSetup(Target = nameof(ReservoirThreadLocalFastPath))]
     public void SetupReservoirThreadLocalFastPath()
     {
-        var pool = new ObjectPool<Payload, PayloadPolicy>(
-            default,
-            PoolCapacity,
-            threadLocalFastPath: true);
+        var pool = new ObjectPool<Payload, PayloadPolicy>(maxCapacity: PoolCapacity);
         WarmReservoirPool(pool);
         int operationsPerWorker = OperationsPerInvocation / WorkerCount;
         _workers = new BenchmarkWorkerGroup(

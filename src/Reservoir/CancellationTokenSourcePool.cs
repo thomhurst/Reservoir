@@ -44,9 +44,13 @@ sealed class CancellationTokenSourcePool : IDisposable
     /// <summary>Initializes a pool with a custom capacity.</summary>
     public CancellationTokenSourcePool(int maxCapacity)
     {
+        // This pool already retains one source per thread through its own scoped tier; the inner
+        // pool pins the thread-local fast path off so plain rentals do not park a second
+        // timer-backed source per thread.
         _pool = new ObjectPool<PooledCancellationTokenSource, Policy>(
             new Policy(this),
-            maxCapacity);
+            maxCapacity,
+            threadLocalFastPath: false);
     }
 
     /// <summary>Gets the maximum number of sources retained by this pool.</summary>

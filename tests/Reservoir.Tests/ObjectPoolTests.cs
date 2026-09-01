@@ -32,7 +32,10 @@ public class ObjectPoolTests
     public async Task PoolRetainsNoMoreThanConfiguredCapacity()
     {
         var policy = new CountingPolicy();
-        var pool = new ObjectPool<PooledItem, CountingPolicy>(policy, maxCapacity: 2);
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(
+            policy,
+            maxCapacity: 2,
+            threadLocalFastPath: false);
         PooledItem first = pool.Rent();
         PooledItem second = pool.Rent();
         PooledItem excess = pool.Rent();
@@ -56,7 +59,10 @@ public class ObjectPoolTests
     public async Task PoolRetainsConfiguredCapacityAcrossStorageBackends(int capacity)
     {
         var policy = new CountingPolicy();
-        var pool = new ObjectPool<PooledItem, CountingPolicy>(policy, capacity);
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(
+            policy,
+            capacity,
+            threadLocalFastPath: false);
         var items = new PooledItem[capacity + 1];
 
         for (int i = 0; i < items.Length; i++)
@@ -273,7 +279,8 @@ public class ObjectPoolTests
         var state = new StressState();
         var pool = new ObjectPool<StressItem, StressPolicy>(
             new StressPolicy(state),
-            maxCapacity: capacity);
+            capacity,
+            threadLocalFastPath: false);
         var initialItems = new StressItem[capacity];
 
         for (int i = 0; i < initialItems.Length; i++)
@@ -324,7 +331,8 @@ public class ObjectPoolTests
         var state = new StressState();
         var pool = new ObjectPool<StressItem, StressPolicy>(
             new StressPolicy(state),
-            capacity);
+            capacity,
+            threadLocalFastPath: false);
         var initialItems = new StressItem[capacity];
 
         for (int i = 0; i < initialItems.Length; i++)
@@ -364,7 +372,10 @@ public class ObjectPoolTests
     public async Task LargePoolReusesInstanceAcrossThreadHandoffs()
     {
         const int iterations = 20_000;
-        var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 65);
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(
+            default,
+            maxCapacity: 65,
+            threadLocalFastPath: false);
         PooledItem expected = pool.Rent();
         pool.Return(expected);
         using var rented = new AutoResetEvent(false);

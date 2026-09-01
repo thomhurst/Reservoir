@@ -7,7 +7,7 @@ public class ThreadLocalFastPathTests
     [Test]
     public async Task SameThreadRoundTripReusesTheThreadLocalObject()
     {
-        var pool = new ObjectPool<Item, Policy>(default, maxCapacity: 4, threadLocalFastPath: true);
+        var pool = new ObjectPool<Item, Policy>(maxCapacity: 4);
         Item expected = pool.Rent();
 
         pool.Return(expected);
@@ -20,7 +20,7 @@ public class ThreadLocalFastPathTests
     [Test]
     public async Task RetainsOneExtraObjectPerThreadBeyondSharedCapacity()
     {
-        var pool = new ObjectPool<Item, Policy>(default, maxCapacity: 2, threadLocalFastPath: true);
+        var pool = new ObjectPool<Item, Policy>(maxCapacity: 2);
         var items = new[] { pool.Rent(), pool.Rent(), pool.Rent(), pool.Rent() };
 
         foreach (Item item in items)
@@ -42,7 +42,7 @@ public class ThreadLocalFastPathTests
     [Test]
     public async Task ResetFailureDestroysInsteadOfRetaining()
     {
-        var pool = new ObjectPool<Item, Policy>(default, maxCapacity: 4, threadLocalFastPath: true);
+        var pool = new ObjectPool<Item, Policy>(maxCapacity: 4);
         Item rejected = pool.Rent();
         rejected.RejectReset = true;
 
@@ -56,7 +56,7 @@ public class ThreadLocalFastPathTests
     [Test]
     public async Task ClearDestroysTheThreadLocalObject()
     {
-        var pool = new ObjectPool<Item, Policy>(default, maxCapacity: 4, threadLocalFastPath: true);
+        var pool = new ObjectPool<Item, Policy>(maxCapacity: 4);
         Item item = pool.Rent();
         pool.Return(item);
 
@@ -69,7 +69,7 @@ public class ThreadLocalFastPathTests
     [Test]
     public async Task DisposeDestroysTheThreadLocalObjectAndClosesThePool()
     {
-        var pool = new ObjectPool<Item, Policy>(default, maxCapacity: 4, threadLocalFastPath: true);
+        var pool = new ObjectPool<Item, Policy>(maxCapacity: 4);
         Item item = pool.Rent();
         pool.Return(item);
 
@@ -82,7 +82,7 @@ public class ThreadLocalFastPathTests
     [Test]
     public async Task ReturnAfterDisposeDestroysTheObject()
     {
-        var pool = new ObjectPool<Item, Policy>(default, maxCapacity: 4, threadLocalFastPath: true);
+        var pool = new ObjectPool<Item, Policy>(maxCapacity: 4);
         Item item = pool.Rent();
 
         pool.Dispose();

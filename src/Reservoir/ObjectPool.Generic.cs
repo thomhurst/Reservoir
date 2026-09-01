@@ -76,8 +76,16 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     }
 
     /// <summary>Initializes a pool with the supplied policy and capacity.</summary>
+    /// <remarks>
+    /// The thread-local fast path is enabled by default: each participating thread retains one
+    /// object in addition to the bounded shared tier and reuses it with a single atomic operation
+    /// when its rentals and returns happen on the same thread. Use
+    /// <see cref="ObjectPool{T,TPolicy}(TPolicy, int, bool)"/> to disable it and bound retention
+    /// strictly to <see cref="MaximumRetained"/>.
+    /// </remarks>
     public ObjectPool(TPolicy policy, int maxCapacity)
     {
+        _threadLocalFastPath = true;
 #if NET8_0_OR_GREATER
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCapacity);
 #else
@@ -106,15 +114,16 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     }
 
     /// <summary>
-    /// Initializes a pool with the supplied policy and capacity, optionally routing
-    /// <see cref="Rent()"/> and <see cref="Return"/> through the per-pool thread-local tier.
+    /// Initializes a pool with the supplied policy and capacity, controlling whether
+    /// <see cref="Rent()"/> and <see cref="Return"/> use the per-pool thread-local tier.
     /// </summary>
     /// <remarks>
-    /// With the fast path enabled, each participating thread retains one object in addition to the
-    /// bounded shared tier and reuses it without atomic operations when its rentals and returns
-    /// happen on the same thread. Threads that hand objects to other threads fall back to the
-    /// shared tier. <see cref="Clear"/> and <see cref="Dispose"/> still release thread-local
-    /// retention.
+    /// The fast path is on by default. With it enabled, each participating thread retains one
+    /// object in addition to the bounded shared tier and reuses it with a single atomic operation
+    /// when its rentals and returns happen on the same thread; threads that hand objects to other
+    /// threads fall back to the shared tier, and <see cref="Clear"/> and <see cref="Dispose"/>
+    /// still release thread-local retention. Pass <see langword="false"/> to bound retention
+    /// strictly to <see cref="MaximumRetained"/>.
     /// </remarks>
     public ObjectPool(TPolicy policy, int maxCapacity, bool threadLocalFastPath)
         : this(policy, maxCapacity)

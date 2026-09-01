@@ -20,14 +20,14 @@ public class ObjectPoolHandoffBenchmarks
 
     [GlobalSetup(Target = nameof(Reservoir))]
     public void SetupReservoir()
-        => SetupWorkers(new ObjectPool<Payload, PayloadPolicy>(maxCapacity: PoolCapacity));
-
-    [GlobalSetup(Target = nameof(ReservoirThreadLocalFastPath))]
-    public void SetupReservoirThreadLocalFastPath()
         => SetupWorkers(new ObjectPool<Payload, PayloadPolicy>(
             default,
             PoolCapacity,
-            threadLocalFastPath: true));
+            threadLocalFastPath: false));
+
+    [GlobalSetup(Target = nameof(ReservoirThreadLocalFastPath))]
+    public void SetupReservoirThreadLocalFastPath()
+        => SetupWorkers(new ObjectPool<Payload, PayloadPolicy>(maxCapacity: PoolCapacity));
 
     [GlobalCleanup]
     public void Cleanup() => _workers?.Dispose();
