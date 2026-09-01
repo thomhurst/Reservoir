@@ -6,6 +6,9 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
+#if NETCOREAPP3_0_OR_GREATER
+using System.Runtime.InteropServices;
+#endif
 using System.Threading;
 
 namespace Reservoir;
@@ -15,6 +18,14 @@ namespace Reservoir;
 internal struct TrackedInstanceThreadLocalFrontTier<T>
     where T : class
 {
+#if NETCOREAPP3_0_OR_GREATER
+    // The plain-ops take below is proven only against x86-TSO (in-order retirement plus
+    // snoop-triggered replay of early loads); weaker architectures and TFMs without
+    // Interlocked.MemoryBarrierProcessWide keep the interlocked take.
+    private static readonly bool s_asymmetricClear =
+        RuntimeInformation.ProcessArchitecture is Architecture.X86 or Architecture.X64;
+#endif
+
     private ThreadLocal<Slot>? _slots;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -27,24 +38,84 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         where TPolicy : struct, IPooledObjectPolicy<T>
     {
         slot = GetSlot();
-        // The atomic exchange makes the take exclusive against a concurrent Clear or Dispose,
-        // which would otherwise destroy the item after a plain read observed it. The cheap read
-        // first keeps empty slots off the interlocked path.
-        T? item = slot.Item;
-        if (item is null || (item = Interlocked.Exchange(ref slot.Item, null)) is null)
+        // The take must be exclusive against a concurrent Clear or Dispose, which would
+        // otherwise destroy the item after a plain read observed it. The cheap read first keeps
+        // empty slots off both protected paths.
+        T? item;
+#if NETCOREAPP3_0_OR_GREATER
+        if (s_asymmetricClear)
         {
-            // A hit proves a prior return stored here, which the Rents gate already allowed, so
-            // the flag only needs to be raised on the miss path; the hit path stays write-free.
-            if (!slot.Rents)
+            // Plain-cost take. The gate is a generation counter: Clear makes it odd before its
+            // process-wide barrier and even again only after taking from this slot, so an
+            // unchanged even gate across the take proves no Clear boundary was crossed — a take
+            // whose null-store retired before the barrier is visible to Clear's exchange, and
+            // any later or straddling take observes a changed or odd gate here and reconciles.
+            // Volatile keeps the compiler from reordering the gate loads across the item
+            // accesses; x86 needs no fence.
+            int gate = Volatile.Read(ref slot.Gate);
+            item = slot.Item;
+            if (item is not null)
             {
-                slot.Rents = true;
+                Volatile.Write(ref slot.Item, null);
+                if ((Volatile.Read(ref slot.Gate) == gate && (gate & 1) == 0)
+                    || (item = ReconcileRacedTake(slot, item!)) is not null)
+                {
+                    return item;
+                }
             }
+        }
+        else
+        {
+            item = slot.Item;
+            if (item is not null
+                && (item = Interlocked.Exchange(ref slot.Item, null)) is not null)
+            {
+                return item;
+            }
+        }
+#else
+        item = slot.Item;
+        if (item is not null
+            && (item = Interlocked.Exchange(ref slot.Item, null)) is not null)
+        {
+            return item;
+        }
+#endif
 
-            return fallback.RentWithoutLifecycle();
+        // A hit proves a prior return stored here, which the Rents gate already allowed, so
+        // the flag only needs to be raised on the miss path; the hit path stays write-free.
+        if (!slot.Rents)
+        {
+            slot.Rents = true;
         }
 
-        return item;
+        return fallback.RentWithoutLifecycle();
     }
+
+#if NETCOREAPP3_0_OR_GREATER
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T? ReconcileRacedTake(Slot slot, T item)
+    {
+        // The gate generation changed or was odd, so a Clear may have crossed this thread's
+        // plain-stores take of the slot; either side may have captured the item. Clear
+        // records every capture under the slot lock before destroying it, and only the owning
+        // thread refills the slot, so LastTaken answers deterministically whether the racing
+        // Clear captured this item. If Clear is still ahead of its take for this slot, the lock
+        // makes it observe our null-store afterwards and capture nothing.
+        lock (slot)
+        {
+            if (ReferenceEquals(slot.LastTaken, item))
+            {
+                // Clear captured the item and destroys it; drop the record so the dead object
+                // is not pinned and a future take cannot misread it.
+                slot.LastTaken = null;
+                return null;
+            }
+
+            return item;
+        }
+    }
+#endif
 
     // Only threads that rent may park a return in their slot; on a thread that exclusively
     // returns (an IO or completion thread receiving handed-off objects) the parked object would
@@ -94,6 +165,68 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         }
 
         Exception? firstException = null;
+#if NETCOREAPP3_0_OR_GREATER
+        if (s_asymmetricClear)
+        {
+            // Serializing clears gives every per-slot gate a single writer, and one snapshot for
+            // both passes guarantees no slot is taken from without its gate raised first. A slot
+            // created after the snapshot is missed, which matches the existing behavior of a
+            // return racing Clear.
+            lock (slots)
+            {
+                var snapshot = slots.Values;
+                foreach (Slot slot in snapshot)
+                {
+                    // Serialized clears make this the gate's only writer; odd marks in-progress.
+                    Volatile.Write(ref slot.Gate, unchecked(slot.Gate + 1));
+                }
+
+                // Drain every core: a renter whose take retired before this barrier has its
+                // null-store visible to the exchanges below; a later take observes its raised
+                // gate and reconciles through the slot lock instead.
+                Interlocked.MemoryBarrierProcessWide();
+
+                foreach (Slot slot in snapshot)
+                {
+                    T? item;
+                    lock (slot)
+                    {
+                        item = Interlocked.Exchange(ref slot.Item, null);
+                        if (item is not null)
+                        {
+                            slot.LastTaken = item;
+                        }
+
+                        // Back to even only after this slot's take, so a renter that straddled
+                        // it sees a changed generation and reconciles.
+                        Volatile.Write(ref slot.Gate, unchecked(slot.Gate + 1));
+                    }
+
+                    if (item is null)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        fallback.Destroy(item);
+                    }
+                    catch (Exception exception)
+                    {
+                        firstException ??= exception;
+                    }
+                }
+            }
+
+            if (firstException is not null)
+            {
+                ExceptionDispatchInfo.Capture(firstException).Throw();
+            }
+
+            return;
+        }
+#endif
+
         foreach (Slot slot in slots.Values)
         {
             T? item = Interlocked.Exchange(ref slot.Item, null);
@@ -148,5 +281,14 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         // owning thread, so plain accesses are safe; Clear never needs it because it drains
         // Item regardless of who parked it.
         internal bool Rents;
+#if NETCOREAPP3_0_OR_GREATER
+        // Generation counter written only by (serialized) clears: incremented to odd before the
+        // process-wide barrier and back to even under the slot lock after this slot's take. A
+        // renter whose take saw a changed or odd generation reconciles instead of trusting it.
+        internal int Gate;
+        // The item the most recent capturing Clear took from this slot, recorded under the slot
+        // lock; lets a raced renter distinguish "Clear captured my item" from "my take won".
+        internal T? LastTaken;
+#endif
     }
 }
