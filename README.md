@@ -1,6 +1,6 @@
 # Reservoir
 
-**Stop allocating the same thing twice.**
+**Stop allocating the same thing twice**
 
 Reservoir is thread-safe object pooling for .NET with **0 B warm paths** and bounded shared
 retention. It ships as a small runtime library with public, library-friendly types and specialized
