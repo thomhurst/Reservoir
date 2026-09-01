@@ -6,12 +6,16 @@ namespace Reservoir.Benchmarks;
 public class ObjectPoolBenchmarks
 {
     private readonly ObjectPool<Payload, PayloadPolicy> _pool = new(maxCapacity: 32);
+    private readonly ObjectPool<Payload, NonThrowingPayloadPolicy> _nonThrowingPool
+        = new(maxCapacity: 32);
 
     [GlobalSetup]
     public void WarmPool()
     {
         Payload payload = _pool.Rent();
         _pool.Return(payload);
+
+        _nonThrowingPool.Return(_nonThrowingPool.Rent());
 
         using PooledLease<Payload, PayloadPolicy> lease = _pool.RentScoped();
     }
@@ -21,6 +25,14 @@ public class ObjectPoolBenchmarks
     {
         Payload payload = _pool.Rent();
         _pool.Return(payload);
+        return payload;
+    }
+
+    [Benchmark]
+    public Payload RentReturnNonThrowingPolicy()
+    {
+        Payload payload = _nonThrowingPool.Rent();
+        _nonThrowingPool.Return(payload);
         return payload;
     }
 
@@ -41,6 +53,14 @@ public class ObjectPoolBenchmarks
     public sealed class Payload;
 
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
+    {
+        public Payload Create() => new();
+
+        public bool TryReset(Payload obj) => true;
+    }
+
+    public readonly struct NonThrowingPayloadPolicy
+        : IPooledObjectPolicy<Payload>, INonThrowingResetPolicy
     {
         public Payload Create() => new();
 
