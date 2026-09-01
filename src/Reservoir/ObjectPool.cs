@@ -85,8 +85,8 @@ sealed class ObjectPool<T> : IDisposable
     /// </summary>
     public PooledLease<T> RentScoped()
     {
-        T value = _pool.RentScopedValue();
-        return new PooledLease<T>(_pool, value);
+        T value = _pool.RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot);
+        return new PooledLease<T>(_pool, value, slot);
     }
 
     /// <summary>
@@ -95,8 +95,8 @@ sealed class ObjectPool<T> : IDisposable
     /// </summary>
     public PooledLease<T> RentScoped(out T value)
     {
-        value = _pool.RentScopedValue();
-        return new PooledLease<T>(_pool, value);
+        value = _pool.RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot);
+        return new PooledLease<T>(_pool, value, slot);
     }
 
     /// <summary>Resets and returns an object. Objects exceeding capacity are discarded.</summary>

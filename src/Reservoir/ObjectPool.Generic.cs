@@ -164,8 +164,8 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public PooledLease<T, TPolicy> RentScoped()
     {
-        T value = RentScopedValue();
-        return new PooledLease<T, TPolicy>(this, value);
+        T value = RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot);
+        return new PooledLease<T, TPolicy>(this, value, slot);
     }
 
     /// <summary>
@@ -175,15 +175,15 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public PooledLease<T, TPolicy> RentScoped(out T value)
     {
-        value = RentScopedValue();
-        return new PooledLease<T, TPolicy>(this, value);
+        value = RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot);
+        return new PooledLease<T, TPolicy>(this, value, slot);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal T RentScopedValue()
+    internal T RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot)
     {
         ThrowIfDisposed();
-        T value = _scopedTier.Rent(this);
+        T value = _scopedTier.Rent(this, out slot);
         if (Volatile.Read(ref _isDisposed) == 0)
         {
             return value;
@@ -193,7 +193,9 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         return ThrowDisposed();
     }
 
-    internal void ReturnScoped(T value)
+    // The slot rented with the value replaces the return-side thread-local lookup; a stack-only
+    // lease cannot change threads, so it is still the returning thread's own slot.
+    internal void ReturnScoped(T value, TrackedInstanceThreadLocalFrontTier<T>.Slot slot)
     {
         if (Volatile.Read(ref _isDisposed) != 0)
         {
@@ -213,13 +215,14 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             return;
         }
 
-        if (!_scopedTier.TryReturn(value))
+        if (!TrackedInstanceThreadLocalFrontTier<T>.TryReturn(slot, value))
         {
             ReturnWithoutResetWithLifecycle(value);
             return;
         }
 
-        if (Volatile.Read(ref _isDisposed) != 0 && _scopedTier.TryRemove(value))
+        if (Volatile.Read(ref _isDisposed) != 0
+            && TrackedInstanceThreadLocalFrontTier<T>.TryRemove(slot, value))
         {
             DisposeItem(value);
         }

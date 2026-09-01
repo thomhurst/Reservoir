@@ -21,11 +21,16 @@ ref struct PooledLease<T, TPolicy>
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
     private readonly ObjectPool<T, TPolicy>? _pool;
+    private readonly TrackedInstanceThreadLocalFrontTier<T>.Slot? _slot;
     private ScopedPoolLease<T> _lease;
 
-    internal PooledLease(ObjectPool<T, TPolicy> pool, T value)
+    internal PooledLease(
+        ObjectPool<T, TPolicy> pool,
+        T value,
+        TrackedInstanceThreadLocalFrontTier<T>.Slot slot)
     {
         _pool = pool;
+        _slot = slot;
         _lease = new ScopedPoolLease<T>(value);
     }
 
@@ -37,7 +42,7 @@ ref struct PooledLease<T, TPolicy>
     {
         if (_lease.TryRelease(out T value))
         {
-            _pool!.ReturnScoped(value);
+            _pool!.ReturnScoped(value, _slot!);
         }
     }
 }
@@ -53,13 +58,16 @@ ref struct PooledLease<T>
     where T : class
 {
     private readonly ObjectPool<T, ObjectPool<T>.PolicyAdapter>? _pool;
+    private readonly TrackedInstanceThreadLocalFrontTier<T>.Slot? _slot;
     private ScopedPoolLease<T> _lease;
 
     internal PooledLease(
         ObjectPool<T, ObjectPool<T>.PolicyAdapter> pool,
-        T value)
+        T value,
+        TrackedInstanceThreadLocalFrontTier<T>.Slot slot)
     {
         _pool = pool;
+        _slot = slot;
         _lease = new ScopedPoolLease<T>(value);
     }
 
@@ -71,7 +79,7 @@ ref struct PooledLease<T>
     {
         if (_lease.TryRelease(out T value))
         {
-            _pool!.ReturnScoped(value);
+            _pool!.ReturnScoped(value, _slot!);
         }
     }
 }
