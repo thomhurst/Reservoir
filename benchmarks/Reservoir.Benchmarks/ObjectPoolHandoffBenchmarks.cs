@@ -14,6 +14,9 @@ public class ObjectPoolHandoffBenchmarks
     private const int PoolCapacity = 32;
 
     private BenchmarkWorkerGroup? _workers;
+    // MemoryDiagnoser only observes the BenchmarkDotNet thread, so worker-side allocations are
+    // aggregated here per invocation and the steady-state value is printed on cleanup.
+    private long _workerAllocatedBytes;
 
     [Params(1, 4)]
     public int PairCount { get; set; }
@@ -30,13 +33,27 @@ public class ObjectPoolHandoffBenchmarks
         => SetupWorkers(new ObjectPool<Payload, PayloadPolicy>(maxCapacity: PoolCapacity));
 
     [GlobalCleanup]
-    public void Cleanup() => _workers?.Dispose();
+    public void Cleanup()
+    {
+        Console.WriteLine(
+            "// Worker-thread allocated bytes in final invocation: "
+            + Volatile.Read(ref _workerAllocatedBytes));
+        _workers?.Dispose();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation, Baseline = true)]
-    public void Reservoir() => _workers!.Run();
+    public void Reservoir()
+    {
+        Volatile.Write(ref _workerAllocatedBytes, 0);
+        _workers!.Run();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void ReservoirThreadLocalFastPath() => _workers!.Run();
+    public void ReservoirThreadLocalFastPath()
+    {
+        Volatile.Write(ref _workerAllocatedBytes, 0);
+        _workers!.Run();
+    }
 
     private void SetupWorkers(ObjectPool<Payload, PayloadPolicy> pool)
     {
@@ -57,6 +74,7 @@ public class ObjectPoolHandoffBenchmarks
             workerIndex =>
             {
                 HandoffChannel channel = channels[workerIndex / 2];
+                long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
                 if ((workerIndex & 1) == 0)
                 {
                     RunProducer(pool, channel, handoffsPerPair);
@@ -65,6 +83,10 @@ public class ObjectPoolHandoffBenchmarks
                 {
                     RunConsumer(pool, channel, handoffsPerPair);
                 }
+
+                Interlocked.Add(
+                    ref _workerAllocatedBytes,
+                    GC.GetAllocatedBytesForCurrentThread() - allocatedBefore);
             });
     }
 

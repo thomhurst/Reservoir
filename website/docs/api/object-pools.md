@@ -89,15 +89,15 @@ retain constrained calls, generic specialization, and inlining opportunities.
 - `RentScoped()` creates a stack-only `PooledLease` for synchronous scopes.
 - `RentScoped(out T)` also exposes the value as a local.
 
-`RentScoped` uses a per-pool thread-local fast path, then falls back to the bounded shared tier for
-nested rentals. Its thread-local items are additional retention and can remain attached to idle
-threads until `Clear()` or `Dispose()` drains them.
+Both `RentScoped` and, by default, manual `Rent()`/`Return()` use a per-pool thread-local fast
+path, then fall back to the bounded shared tier. Thread-local items are additional retention —
+up to one object per participating thread beyond `MaximumRetained` — and can remain attached to
+idle threads until `Clear()` or `Dispose()` drains them. Construct the pool with
+`threadLocalFastPath: false` when all idle retention must remain bounded by `MaximumRetained`.
 
-For performance-critical synchronous code on .NET 10, prefer `RentScoped(out T)`. Its thread-local
-path is faster and the `out` overload avoids repeated lease ownership validation. On .NET 8,
-manual `Rent()` and `Return()` remain faster. Manual rental is also required when ownership crosses
-an `await` or all idle retention must remain bounded by `MaximumRetained`. Nanosecond results vary,
-so benchmark representative workloads on target hardware.
+For performance-critical synchronous code, prefer `RentScoped(out T)`; the `out` overload avoids
+repeated lease ownership validation. Manual rental is required when ownership crosses an `await`.
+Nanosecond results vary, so benchmark representative workloads on target hardware.
 
 Default shared-tier retention is `Math.Max(32, 2 * Environment.ProcessorCount)`. Pass a positive
 `maxCapacity` to every constructor to override it.
