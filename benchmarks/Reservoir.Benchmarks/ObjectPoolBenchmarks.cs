@@ -5,14 +5,14 @@ namespace Reservoir.Benchmarks;
 [MemoryDiagnoser(displayGenColumns: false)]
 public class ObjectPoolBenchmarks
 {
-    // The baseline pools pin the fast path off so RentReturn keeps measuring the shared tier;
-    // the thread-local pool uses the library default.
+    // The baseline pools use the default shared tier; the thread-local pool opts into the fast
+    // path explicitly.
     private readonly ObjectPool<Payload, PayloadPolicy> _pool
-        = new(default, maxCapacity: 32, threadLocalFastPath: false);
-    private readonly ObjectPool<Payload, NonThrowingPayloadPolicy> _nonThrowingPool
-        = new(default, maxCapacity: 32, threadLocalFastPath: false);
-    private readonly ObjectPool<Payload, PayloadPolicy> _threadLocalPool
         = new(maxCapacity: 32);
+    private readonly ObjectPool<Payload, NonThrowingPayloadPolicy> _nonThrowingPool
+        = new(maxCapacity: 32);
+    private readonly ObjectPool<Payload, PayloadPolicy> _threadLocalPool
+        = new(default, maxCapacity: 32, threadLocalFastPath: true);
 
     [GlobalSetup]
     public void WarmPool()
