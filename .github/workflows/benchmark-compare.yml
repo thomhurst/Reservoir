@@ -1,0 +1,193 @@
+name: Benchmark comparison
+
+# Pushing a bench/** branch compares it against main with the default groups below, one runner
+# per group; the manual trigger chooses refs, filters, and job explicitly and runs one group.
+on:
+  push:
+    branches:
+      - 'bench/**'
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: 'Baseline git ref (branch, tag, or SHA)'
+        required: false
+        default: main
+      candidate_ref:
+        description: 'Candidate git ref; defaults to the ref this workflow runs from'
+        required: false
+        default: ''
+      filter:
+        description: 'BenchmarkDotNet filters, space separated'
+        required: false
+        default: '*ObjectPoolBenchmarks.*'
+      job:
+        description: 'BenchmarkDotNet job preset (bench/** pushes use default)'
+        required: false
+        default: short
+        type: choice
+        options:
+          - short
+          - default
+          - medium
+          - long
+      runtimes:
+        description: 'Runtimes to benchmark, space separated'
+        required: false
+        default: net10.0
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
+permissions:
+  contents: read
+
+# Runs the candidate's benchmark project against both the baseline and the candidate library on
+# the same runner, one after the other, so the two sides share hardware and its noise. The
+# candidate's benchmarks directory is overlaid onto the baseline checkout, so candidate-side
+# benchmark changes must still compile against the baseline library.
+jobs:
+  compare:
+    name: Compare ${{ matrix.group.name }}
+    runs-on: windows-latest
+    timeout-minutes: 180
+
+    strategy:
+      fail-fast: false
+      matrix:
+        group: >-
+          ${{ fromJSON(
+            github.event_name == 'workflow_dispatch'
+              && format('[{{"name":"selected","filter":"{0}","job":"{1}"}}]', inputs.filter, inputs.job)
+              || '[{"name":"core","filter":"*.ObjectPoolBenchmarks.* *ObjectPoolContentionBenchmarks.Reservoir* *ObjectPoolCapacityScalingBenchmarks.RentReturn* *SmallPoolHeaderLineBenchmarks*","job":"default"},{"name":"handoff","filter":"*ObjectPoolHandoffBenchmarks.Reservoir* *StripedObjectStoreHandoffBenchmarks*","job":"default"}]'
+          ) }}
+
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.candidate_ref || github.ref }}
+          path: candidate
+
+      - name: Checkout baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.baseline_ref || 'main' }}
+          path: baseline
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Overlay candidate benchmarks onto baseline
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force baseline/benchmarks
+          Copy-Item -Recurse candidate/benchmarks baseline/benchmarks
+          Write-Host "baseline library:  $(git -C baseline rev-parse HEAD)"
+          Write-Host "candidate library: $(git -C candidate rev-parse HEAD)"
+
+      - name: Build baseline
+        run: >-
+          dotnet build baseline/benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj
+          --configuration Release
+
+      - name: Build candidate
+        run: >-
+          dotnet build candidate/benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj
+          --configuration Release
+
+      - name: Run benchmarks
+        shell: pwsh
+        env:
+          BENCH_FILTER: ${{ matrix.group.filter }}
+          BENCH_JOB: ${{ matrix.group.job }}
+          BENCH_RUNTIMES: ${{ inputs.runtimes || 'net10.0' }}
+        run: |
+          # Force arrays: splatting a single string would spread its characters.
+          [string[]] $filters = @($env:BENCH_FILTER -split '\s+' | Where-Object { $_ })
+          [string[]] $runtimes = @($env:BENCH_RUNTIMES -split '\s+' | Where-Object { $_ })
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+
+          $artifacts = Join-Path $PWD 'artifacts'
+
+          foreach ($side in 'baseline', 'candidate') {
+            Write-Host "::group::$side"
+            # BenchmarkDotNet locates the project by walking up from the working directory and
+            # then scanning every subfolder for a csproj with the benchmark assembly's name, so it
+            # must start inside this side's project directory or it finds both checkouts.
+            Push-Location "$side/benchmarks/Reservoir.Benchmarks"
+            try {
+              & dotnet run `
+                --project Reservoir.Benchmarks.csproj `
+                --configuration Release `
+                --framework net10.0 `
+                --no-build `
+                -- `
+                --filter @filters `
+                --job "$env:BENCH_JOB" `
+                --runtimes @runtimes `
+                --artifacts (Join-Path $artifacts $side) 2>&1 |
+                Tee-Object -FilePath (Join-Path $artifacts "$side.log")
+              $exitCode = $LASTEXITCODE
+            }
+            finally {
+              Pop-Location
+            }
+            Write-Host "::endgroup::"
+            if ($exitCode -ne 0) {
+              Get-Content "artifacts/$side.log" -Tail 200
+              exit $exitCode
+            }
+
+            $reports = @(Get-ChildItem "artifacts/$side/results" -Filter '*-report-github.md' -ErrorAction SilentlyContinue)
+            $executedNone = Select-String -Path "artifacts/$side.log" -Pattern 'Global total time:.*executed benchmarks: 0$' -Quiet
+            if ($reports.Count -eq 0 -or $executedNone) {
+              Get-Content "artifacts/$side.log" -Tail 50
+              throw "The $side run executed no benchmarks."
+            }
+          }
+
+      - name: Publish results to job summary
+        if: always()
+        shell: pwsh
+        env:
+          BASELINE_REF: ${{ inputs.baseline_ref || 'main' }}
+          CANDIDATE_REF: ${{ inputs.candidate_ref || github.ref }}
+          GROUP_NAME: ${{ matrix.group.name }}
+          GROUP_FILTER: ${{ matrix.group.filter }}
+          GROUP_JOB: ${{ matrix.group.job }}
+        run: |
+          "## Reservoir benchmark comparison: $env:GROUP_NAME" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+          "Baseline ``$env:BASELINE_REF`` versus candidate ``$env:CANDIDATE_REF`` on the same runner; filter ``$env:GROUP_FILTER``, job ``$env:GROUP_JOB``." >> $env:GITHUB_STEP_SUMMARY
+
+          foreach ($side in 'baseline', 'candidate') {
+            "" >> $env:GITHUB_STEP_SUMMARY
+            "### $side" >> $env:GITHUB_STEP_SUMMARY
+            $reports = @(Get-ChildItem `
+              "artifacts/$side/results" `
+              -Filter '*-report-github.md' `
+              -ErrorAction SilentlyContinue |
+              Sort-Object Name)
+
+            if ($reports.Count -eq 0) {
+              "No benchmark results were generated." >> $env:GITHUB_STEP_SUMMARY
+              continue
+            }
+
+            foreach ($report in $reports) {
+              Get-Content $report.FullName -Raw >> $env:GITHUB_STEP_SUMMARY
+            }
+          }
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reservoir-benchmark-comparison-${{ matrix.group.name }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 90
