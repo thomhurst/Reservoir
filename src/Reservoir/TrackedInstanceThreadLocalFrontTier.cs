@@ -262,7 +262,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     private ThreadLocal<Slot> InitializeSlots()
     {
         var created = new ThreadLocal<Slot>(
-            static () => new Slot(),
+            static () => new PaddedSlot(),
             trackAllValues: true);
         ThreadLocal<Slot>? existing = Interlocked.CompareExchange(ref _slots, created, null);
         if (existing is null)
@@ -274,7 +274,9 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         return existing;
     }
 
-    internal sealed class Slot
+    // The base-class leading pad and the allocated subclass's trailing pad keep each thread's
+    // slot on its own cache lines; see CacheLinePadded.
+    internal class Slot : CacheLinePadded
     {
         internal T? Item;
         // True once the owning thread has rented from this pool. Written and read only by the
@@ -290,5 +292,12 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         // lock; lets a raced renter distinguish "Clear captured my item" from "my take won".
         internal T? LastTaken;
 #endif
+    }
+
+    private sealed class PaddedSlot : Slot
+    {
+#pragma warning disable CS0169 // The field is only there to occupy space.
+        private readonly CacheLinePad _trailingPad;
+#pragma warning restore CS0169
     }
 }

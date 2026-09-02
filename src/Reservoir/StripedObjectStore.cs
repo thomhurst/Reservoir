@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Reservoir;
@@ -46,7 +45,7 @@ internal sealed class StripedObjectStore<T>
 
         for (int i = 0; i < stripeCount; i++)
         {
-            _stripes[i] = new Stripe(baseCapacity + (i < extraSlots ? 1 : 0));
+            _stripes[i] = new PaddedStripe(baseCapacity + (i < extraSlots ? 1 : 0));
         }
     }
 
@@ -221,8 +220,9 @@ internal sealed class StripedObjectStore<T>
 
     private static int GetIndex(long head) => (int)head;
 
-    [StructLayout(LayoutKind.Sequential, Size = 128)]
-    private sealed class Stripe
+    // A stripe is the unit of contention, so its hot fields get their own cache lines through the
+    // base-class leading pad and the allocated subclass's trailing pad; see CacheLinePadded.
+    private class Stripe : CacheLinePadded
     {
         internal readonly Node[] Nodes;
         internal long AvailableHead;
@@ -241,6 +241,18 @@ internal sealed class StripedObjectStore<T>
 
             AvailableHead = PackHead(0, EmptyIndex);
             FreeHead = PackHead(0, 0);
+        }
+    }
+
+    private sealed class PaddedStripe : Stripe
+    {
+#pragma warning disable CS0169 // The field is only there to occupy space.
+        private readonly CacheLinePad _trailingPad;
+#pragma warning restore CS0169
+
+        internal PaddedStripe(int capacity)
+            : base(capacity)
+        {
         }
     }
 
