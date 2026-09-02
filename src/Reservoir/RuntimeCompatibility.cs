@@ -3,12 +3,20 @@
 
 #if !NET6_0_OR_GREATER
 using System;
+using System.Linq.Expressions;
 using System.Reflection;
 
 namespace Reservoir;
 
 internal static class RuntimeCompatibility
 {
+    // Backing arrays of the pooled collections across runtimes without a public capacity:
+    // Dictionary and HashSet on .NET Core (_buckets), Dictionary on .NET Framework (buckets),
+    // HashSet on .NET Framework (m_buckets), and Queue and Stack everywhere (_array). No type
+    // declares more than one of these, and each array's length is the collection's capacity.
+    private static readonly string[] s_backingArrayFieldNames =
+        ["_buckets", "buckets", "m_buckets", "_array"];
+
     internal static Func<TCollection, int, int>? CreateEnsureCapacity<TCollection>()
         where TCollection : class
     {
@@ -23,6 +31,37 @@ internal static class RuntimeCompatibility
                 method);
     }
 
+    /// <summary>
+    /// Creates a getter for the length of a collection's backing array, or <see langword="null"/>
+    /// when none of the known field names exists, for runtimes whose collections expose no
+    /// capacity. A missing array (before first use) reads as zero.
+    /// </summary>
+    internal static Func<TCollection, int>? CreateBackingArrayLengthGetter<TCollection>()
+        where TCollection : class
+    {
+        foreach (string fieldName in s_backingArrayFieldNames)
+        {
+            FieldInfo? field = typeof(TCollection).GetField(
+                fieldName,
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            if (field is null || !field.FieldType.IsArray)
+            {
+                continue;
+            }
+
+            ParameterExpression collection = Expression.Parameter(typeof(TCollection), "collection");
+            MemberExpression array = Expression.Field(collection, field);
+            Expression length = Expression.Condition(
+                Expression.ReferenceEqual(array, Expression.Constant(null, field.FieldType)),
+                Expression.Constant(0),
+                Expression.ArrayLength(array));
+
+            return Expression.Lambda<Func<TCollection, int>>(length, collection).Compile();
+        }
+
+        return null;
+    }
+
     internal static Func<T, bool>? CreateParameterlessBooleanMethod<T>(string name)
         where T : class
     {
@@ -32,5 +71,32 @@ internal static class RuntimeCompatibility
             ? null
             : (Func<T, bool>)Delegate.CreateDelegate(typeof(Func<T, bool>), method);
     }
+}
+
+/// <summary>
+/// Reports a collection's current capacity on runtimes that predate the public
+/// <c>EnsureCapacity</c> methods, so the pools can bound retention there instead of discarding or
+/// trimming every returned collection.
+/// </summary>
+internal static class CollectionCapacity<TCollection>
+    where TCollection : class
+{
+    private static readonly Func<TCollection, int, int>? s_ensureCapacity
+        = RuntimeCompatibility.CreateEnsureCapacity<TCollection>();
+
+    private static readonly Func<TCollection, int>? s_backingArrayLength
+        = s_ensureCapacity is null
+            ? RuntimeCompatibility.CreateBackingArrayLengthGetter<TCollection>()
+            : null;
+
+    /// <summary>Gets whether the capacity can be read on this runtime.</summary>
+    internal static bool IsAvailable
+        => s_ensureCapacity is not null || s_backingArrayLength is not null;
+
+    /// <summary>Gets the current capacity; requires <see cref="IsAvailable"/>.</summary>
+    internal static int Get(TCollection collection)
+        => s_ensureCapacity is not null
+            ? s_ensureCapacity(collection, 0)
+            : s_backingArrayLength!(collection);
 }
 #endif

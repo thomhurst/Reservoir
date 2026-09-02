@@ -129,24 +129,19 @@ sealed class StackPool<T>
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<Stack<T>>
     {
-#if NETSTANDARD2_0
-        private static readonly Func<Stack<T>, int, int>? s_ensureCapacity
-            = RuntimeCompatibility.CreateEnsureCapacity<Stack<T>>();
-#endif
-
         public Stack<T> Create() => [];
 
         internal static bool Reset(Stack<T> obj, int maximumRetainedCapacity)
         {
 #if NETSTANDARD2_0
-            if (s_ensureCapacity is null)
+            if (!CollectionCapacity<Stack<T>>.IsAvailable)
             {
                 obj.Clear();
                 obj.TrimExcess();
                 return true;
             }
 
-            if (s_ensureCapacity(obj, 0) > maximumRetainedCapacity)
+            if (CollectionCapacity<Stack<T>>.Get(obj) > maximumRetainedCapacity)
             {
                 return false;
             }
