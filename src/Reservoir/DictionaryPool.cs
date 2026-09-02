@@ -166,11 +166,6 @@ sealed class DictionaryPool<TKey, TValue>
         IEqualityComparer<TKey> comparer,
         int maxRetainedCapacity) : IPooledObjectPolicy<Dictionary<TKey, TValue>>
     {
-#if NETSTANDARD2_0
-        private static readonly Func<Dictionary<TKey, TValue>, int, int>? s_ensureCapacity
-            = RuntimeCompatibility.CreateEnsureCapacity<Dictionary<TKey, TValue>>();
-#endif
-
         public Dictionary<TKey, TValue> Create() => new(comparer);
 
         internal static bool Reset(
@@ -178,16 +173,24 @@ sealed class DictionaryPool<TKey, TValue>
             IEqualityComparer<TKey> expectedComparer,
             int maximumRetainedCapacity)
         {
-#if NETSTANDARD2_0
-            int capacity = s_ensureCapacity?.Invoke(obj, 0) ?? int.MaxValue;
-#else
-            int capacity = obj.EnsureCapacity(0);
-#endif
-            if (!ReferenceEquals(obj.Comparer, expectedComparer)
-                || capacity > maximumRetainedCapacity)
+            if (!ReferenceEquals(obj.Comparer, expectedComparer))
             {
                 return false;
             }
+
+#if NETSTANDARD2_0
+            // Without a readable capacity the retention bound cannot be enforced, so discard.
+            if (!CollectionCapacity<Dictionary<TKey, TValue>>.IsAvailable
+                || CollectionCapacity<Dictionary<TKey, TValue>>.Get(obj) > maximumRetainedCapacity)
+            {
+                return false;
+            }
+#else
+            if (obj.EnsureCapacity(0) > maximumRetainedCapacity)
+            {
+                return false;
+            }
+#endif
 
             obj.Clear();
             return true;

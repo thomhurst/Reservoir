@@ -129,24 +129,19 @@ sealed class QueuePool<T>
 
     private readonly struct Policy(int maxRetainedCapacity) : IPooledObjectPolicy<Queue<T>>
     {
-#if NETSTANDARD2_0
-        private static readonly Func<Queue<T>, int, int>? s_ensureCapacity
-            = RuntimeCompatibility.CreateEnsureCapacity<Queue<T>>();
-#endif
-
         public Queue<T> Create() => [];
 
         internal static bool Reset(Queue<T> obj, int maximumRetainedCapacity)
         {
 #if NETSTANDARD2_0
-            if (s_ensureCapacity is null)
+            if (!CollectionCapacity<Queue<T>>.IsAvailable)
             {
                 obj.Clear();
                 obj.TrimExcess();
                 return true;
             }
 
-            if (s_ensureCapacity(obj, 0) > maximumRetainedCapacity)
+            if (CollectionCapacity<Queue<T>>.Get(obj) > maximumRetainedCapacity)
             {
                 return false;
             }

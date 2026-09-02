@@ -164,11 +164,6 @@ sealed class HashSetPool<T>
         IEqualityComparer<T> comparer,
         int maxRetainedCapacity) : IPooledObjectPolicy<HashSet<T>>
     {
-#if NETSTANDARD2_0
-        private static readonly Func<HashSet<T>, int, int>? s_ensureCapacity
-            = RuntimeCompatibility.CreateEnsureCapacity<HashSet<T>>();
-#endif
-
         public HashSet<T> Create() => new(comparer);
 
         internal static bool Reset(
@@ -182,14 +177,14 @@ sealed class HashSetPool<T>
             }
 
 #if NETSTANDARD2_0
-            if (s_ensureCapacity is null)
+            if (!CollectionCapacity<HashSet<T>>.IsAvailable)
             {
                 obj.Clear();
                 obj.TrimExcess();
                 return true;
             }
 
-            if (s_ensureCapacity(obj, 0) > maximumRetainedCapacity)
+            if (CollectionCapacity<HashSet<T>>.Get(obj) > maximumRetainedCapacity)
             {
                 return false;
             }
