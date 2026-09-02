@@ -90,7 +90,10 @@ internal sealed class StripedObjectStore<T>
         for (int i = 0; i < _stripes.Length; i++)
         {
             Stripe stripe = _stripes[stripeIndex];
-            if (Interlocked.CompareExchange(ref stripe.FastItem, item, null) is null
+            // Test before the exchange so an occupied direct slot costs a shared read instead of
+            // a failed locked operation that steals the line from the stripe's other users.
+            if ((Volatile.Read(ref stripe.FastItem) is null
+                    && Interlocked.CompareExchange(ref stripe.FastItem, item, null) is null)
                 || TryPush(stripe, item))
             {
                 return true;

@@ -498,7 +498,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
                 index -= MaximumRetained;
             }
 
-            if (Interlocked.CompareExchange(ref GetSlot(index), displaced, null) is null)
+            // Test before the exchange so an occupied slot costs a shared read instead of a failed
+            // locked operation that steals the line from the thread parked there.
+            ref T? slot = ref GetSlot(index);
+            if (Volatile.Read(ref slot) is null
+                && Interlocked.CompareExchange(ref slot, displaced, null) is null)
             {
                 return;
             }
