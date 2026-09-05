@@ -53,7 +53,7 @@ internal struct InstanceThreadLocalFrontTier<T>
     [MethodImpl(MethodImplOptions.NoInlining)]
     private ThreadLocal<Slot> InitializeSlots()
     {
-        var created = new ThreadLocal<Slot>(static () => new Slot());
+        var created = new ThreadLocal<Slot>(static () => new PaddedSlot());
         ThreadLocal<Slot>? existing = Interlocked.CompareExchange(ref _slots, created, null);
         if (existing is null)
         {
@@ -64,8 +64,17 @@ internal struct InstanceThreadLocalFrontTier<T>
         return existing;
     }
 
-    private sealed class Slot
+    // The base-class leading pad and the allocated subclass's trailing pad keep each thread's
+    // slot on its own cache lines; see CacheLinePadded.
+    private class Slot : CacheLinePadded
     {
         internal T? Item;
+    }
+
+    private sealed class PaddedSlot : Slot
+    {
+#pragma warning disable CS0169 // The field is only there to occupy space.
+        private readonly CacheLinePad _trailingPad;
+#pragma warning restore CS0169
     }
 }

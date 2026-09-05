@@ -67,14 +67,14 @@ internal static class ScopedPoolLeaseStateCache<T>
         ScopedPoolLeaseState? state = _state;
         if (state is null)
         {
-            state = new ScopedPoolLeaseState();
+            state = new PaddedScopedPoolLeaseState();
             _state = state;
         }
         else
         {
             while (!state.TryAcquire(out token))
             {
-                state.Next ??= new ScopedPoolLeaseState();
+                state.Next ??= new PaddedScopedPoolLeaseState();
                 state = state.Next;
             }
 
@@ -86,9 +86,12 @@ internal static class ScopedPoolLeaseStateCache<T>
     }
 }
 
+// The version is written by its owning thread on every scoped rent and release, so the state
+// object keeps its own cache lines through the base-class leading pad and the allocated
+// subclass's trailing pad; see CacheLinePadded.
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-internal sealed class ScopedPoolLeaseState
+internal class ScopedPoolLeaseState : CacheLinePadded
 {
     private long _version;
 
@@ -128,4 +131,13 @@ internal sealed class ScopedPoolLeaseState
         _version = token + 1;
         return true;
     }
+}
+
+[ExcludeFromCodeCoverage]
+[DebuggerNonUserCode]
+internal sealed class PaddedScopedPoolLeaseState : ScopedPoolLeaseState
+{
+#pragma warning disable CS0169 // The field is only there to occupy space.
+    private readonly CacheLinePad _trailingPad;
+#pragma warning restore CS0169
 }

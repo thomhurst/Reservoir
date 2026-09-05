@@ -29,7 +29,10 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 {
     // One logical slot per 64-byte cache line on 64-bit runtimes.
     private const int CacheLineSlotStride = 8;
-    // Bound the cache-line store to 4 KiB and a 64-slot worst-case scan.
+    // The first slot starts one stride in so that no slot shares a cache line with the array
+    // header, whose length every bounds check reads.
+    private const int FirstSlotOffset = CacheLineSlotStride;
+    // Bound the cache-line store to 4 KiB plus the header line and a 64-slot worst-case scan.
     private const int MaximumCacheLineSlotCapacity = 64;
     private const uint StripeHashMultiplier = 2_654_435_769u;
 
@@ -103,7 +106,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 #endif
         if (maxCapacity <= MaximumCacheLineSlotCapacity)
         {
-            _items = new ObjectWrapper[checked(maxCapacity * CacheLineSlotStride)];
+            _items = new ObjectWrapper[checked(FirstSlotOffset + maxCapacity * CacheLineSlotStride)];
         }
         else
         {
@@ -495,7 +498,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
                 index -= MaximumRetained;
             }
 
-            if (Interlocked.CompareExchange(ref GetSlot(index), displaced, null) is null)
+            // Test before the exchange so an occupied slot costs a shared read instead of a failed
+            // locked operation that steals the line from the thread parked there.
+            ref T? slot = ref GetSlot(index);
+            if (Volatile.Read(ref slot) is null
+                && Interlocked.CompareExchange(ref slot, displaced, null) is null)
             {
                 return;
             }
@@ -540,7 +547,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ref T? GetSlot(int index)
-        => ref _items[index * CacheLineSlotStride].Element;
+        => ref _items[FirstSlotOffset + index * CacheLineSlotStride].Element;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ClearIfDisposed()

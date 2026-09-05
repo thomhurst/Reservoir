@@ -17,7 +17,7 @@ Reservoir targets .NET Standard 2.0, .NET 8, and .NET 10. Modern targets use fra
 
 ## Storage and contention
 
-The core pool chooses between two fixed-size stores. Pools retaining up to 64 objects use an array whose logical slots are spaced one 64-byte cache line apart on 64-bit runtimes. Larger pools use dense striped stacks backed by preallocated node arrays. Version-stamped compare-and-swap heads prevent ABA while nodes move between each stripe's available and free lists.
+The core pool chooses between two fixed-size stores. Pools retaining up to 64 objects use an array whose logical slots are spaced one 64-byte cache line apart on 64-bit runtimes, starting one line past the array header so no slot shares a line with the length that every bounds check reads. Larger pools use dense striped stacks backed by preallocated node arrays. Version-stamped compare-and-swap heads prevent ABA while nodes move between each stripe's available and free lists. Each stripe, like each per-thread slot of the thread-local tiers, is padded on both sides so neighbouring objects never share its cache lines; the runtime ignores `StructLayout` sizes on classes that hold references, so the padding comes from an explicit-layout base class and a trailing pad field on the allocated subclass.
 
 Each thread receives stable stripe affinity. Small-pool `Rent()` tries that slot with an atomic exchange, then scans other logical slots on a miss. Large-pool operations try the preferred stripe, then steal across at most 32 stripes. Their work is bounded by stripe count rather than retained capacity. There is no global lock and no separately allocated node per return.
 

@@ -17,8 +17,16 @@ public class ObjectPoolHandoffBenchmarks
     // aggregated here per invocation and the steady-state value is printed on cleanup.
     private long _workerAllocatedBytes;
 
-    [Params(1, 4)]
+    [ParamsSource(nameof(PairCounts))]
     public int PairCount { get; set; }
+
+    // A spinning handoff needs both threads of every pair on a core, so pair counts are capped at
+    // half the processors; beyond that the benchmark measures the scheduler, not the pool.
+    public IEnumerable<int> PairCounts => new[]
+    {
+        1,
+        Math.Min(4, Math.Max(1, Environment.ProcessorCount / 2)),
+    }.Distinct();
 
     // The tight capacity models a pool sized near its working set, where an object parked on a
     // thread that never rents would starve the shared tier and force creation churn.

@@ -20,13 +20,15 @@ public class StripedObjectStoreHandoffBenchmarks
     [ParamsSource(nameof(PairCounts))]
     public int PairCount { get; set; }
 
+    // A spinning handoff needs both threads of every pair on a core, so pair counts are capped at
+    // half the processors; beyond that the benchmark measures the scheduler, not the store.
     public IEnumerable<int> PairCounts => new[]
     {
         1,
         4,
         8,
         Math.Max(1, Environment.ProcessorCount / 2),
-    }.Distinct();
+    }.Where(pairCount => pairCount <= Math.Max(1, Environment.ProcessorCount / 2)).Distinct();
 
     [GlobalSetup]
     public void Setup()
@@ -123,10 +125,20 @@ public class StripedObjectStoreHandoffBenchmarks
 
     public sealed class Payload;
 
-    [StructLayout(LayoutKind.Sequential, Size = 128)]
+    // Size alone is ignored for classes holding references, so explicit offsets keep each pair's
+    // handoff cell on its own cache lines.
+    [StructLayout(LayoutKind.Explicit)]
     private sealed class Handoff
     {
+        [FieldOffset(64)]
         internal Payload? Item;
+
+        [FieldOffset(72)]
         internal int State;
+
+#pragma warning disable CS0169 // The field is only there to occupy space.
+        [FieldOffset(136)]
+        private readonly long _trailingPad;
+#pragma warning restore CS0169
     }
 }
