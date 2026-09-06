@@ -22,6 +22,11 @@ internal sealed class StripedObjectStore<T>
     [ThreadStatic]
     private static int _threadStripe;
 
+    // One-based index of the last successful remote stripe. Only cache affinity, never items or
+    // store references; another store of the same T can reuse this hint with a different size.
+    [ThreadStatic]
+    private static int _lastRentStripe;
+
     private static int s_nextThreadStripe;
 
     private readonly Stripe[] _stripes;
@@ -52,34 +57,58 @@ internal sealed class StripedObjectStore<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool TryPop(out T? item)
     {
-        int stripeIndex = GetStartStripe();
-
-        for (int i = 0; i < _stripes.Length; i++)
+        int start = GetStartStripe();
+        if (TryPopAt(start, out item))
         {
-            Stripe stripe = _stripes[stripeIndex];
-            T? observed = Volatile.Read(ref stripe.FastItem);
-            if (observed is not null
-                && ReferenceEquals(
-                    Interlocked.CompareExchange(ref stripe.FastItem, null, observed),
-                    observed))
+            return true;
+        }
+
+        return TryPopSlow(start, out item);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool TryPopSlow(int start, out T? item)
+    {
+        // A completion thread often returns to the same remote stripe repeatedly. Try that
+        // location before scanning, while keeping same-thread reuse on the home stripe.
+        int hint = _lastRentStripe - 1;
+        if ((uint)hint < (uint)_stripes.Length && hint != start && TryPopAt(hint, out item))
+        {
+            return true;
+        }
+
+        int index = start;
+        for (int i = 1; i < _stripes.Length; i++)
+        {
+            if (++index == _stripes.Length)
             {
-                item = observed;
-                return true;
+                index = 0;
             }
 
-            if (TryPop(stripe, out item))
+            if (TryPopAt(index, out item))
             {
+                _lastRentStripe = index + 1;
                 return true;
-            }
-
-            if (++stripeIndex == _stripes.Length)
-            {
-                stripeIndex = 0;
             }
         }
 
         item = null;
         return false;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool TryPopAt(int index, out T? item)
+    {
+        Stripe stripe = _stripes[index];
+        T? observed = Volatile.Read(ref stripe.FastItem);
+        if (observed is not null
+            && ReferenceEquals(Interlocked.CompareExchange(ref stripe.FastItem, null, observed), observed))
+        {
+            item = observed;
+            return true;
+        }
+
+        return TryPop(stripe, out item);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

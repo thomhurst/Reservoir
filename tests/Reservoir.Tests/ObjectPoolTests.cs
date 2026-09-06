@@ -197,9 +197,11 @@ public class ObjectPoolTests
     }
 
     [Test]
-    public async Task RentReturnClearDisposeRacesPreserveExclusiveOwnership()
+    [Arguments(32)]
+    [Arguments(65)]
+    [Arguments(4096)]
+    public async Task RentReturnClearDisposeRacesPreserveExclusiveOwnership(int capacity)
     {
-        const int capacity = 32;
         const int workerCount = 8;
 #if NET8_0
         const int clearCount = 500;
@@ -254,10 +256,13 @@ public class ObjectPoolTests
     }
 
     [Test]
-    public async Task WarmRentAndReturnAllocatesNothing()
+    [Arguments(32)]
+    [Arguments(65)]
+    [Arguments(4096)]
+    public async Task WarmRentAndReturnAllocatesNothing(int capacity)
     {
         const int iterations = 10_000;
-        var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 32);
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: capacity);
         PooledItem warm = pool.Rent();
         pool.Return(warm);
 
