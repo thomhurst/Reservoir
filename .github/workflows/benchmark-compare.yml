@@ -60,7 +60,7 @@ jobs:
           ${{ fromJSON(
             github.event_name == 'workflow_dispatch'
               && format('[{{"name":"selected","filter":"{0}","job":"{1}"}}]', inputs.filter, inputs.job)
-              || '[{"name":"core","filter":"*.ObjectPoolBenchmarks.* *ObjectPoolContentionBenchmarks.Reservoir* *ObjectPoolCapacityScalingBenchmarks.RentReturn* *SmallPoolHeaderLineBenchmarks* *FullPoolReturnBenchmarks*","job":"default"},{"name":"handoff","filter":"*ObjectPoolHandoffBenchmarks.Reservoir* *StripedObjectStoreHandoffBenchmarks*","job":"default"}]'
+              || '[{"name":"core","filter":"*.ObjectPoolBenchmarks.* *ObjectPoolContentionBenchmarks.Reservoir* *ObjectPoolCapacityScalingBenchmarks.RentReturn* *SmallPoolHeaderLineBenchmarks* *FullPoolReturnBenchmarks*","job":"default"},{"name":"handoff","filter":"*ObjectPoolHandoffBenchmarks.Reservoir* *ObjectPoolSparseHandoffBenchmarks* *StripedObjectStoreHandoffBenchmarks*","job":"default"}]'
           ) }}
 
     steps:

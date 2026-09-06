@@ -431,6 +431,81 @@ public class ObjectPoolTests
         await Assert.That(expected.ResetCount).IsEqualTo(iterations + 1);
     }
 
+    [Test]
+    [Arguments(1)]
+    [Arguments(2)]
+    public async Task SmallPoolReusesInstancesAcrossThreadHandoffs(int inFlight)
+    {
+        const int iterations = 20_000;
+        var policy = new CountingPolicy();
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(
+            policy,
+            maxCapacity: 32,
+            threadLocalFastPath: false);
+        using var rented = new AutoResetEvent(false);
+        using var returned = new AutoResetEvent(false);
+        var handoff = new PooledItem[inFlight];
+
+        // The renting thread never returns and the returning thread never rents, so every rent
+        // misses the renter's home slot and, with two objects in flight, every second return
+        // displaces past the returner's home slot: the shared tier's scan paths carry the whole
+        // exchange, and they must keep finding the same objects instead of creating new ones.
+        Task producer = Task.Factory.StartNew(
+            () =>
+            {
+                for (int i = 0; i < iterations; i++)
+                {
+                    for (int j = 0; j < handoff.Length; j++)
+                    {
+                        PooledItem item = pool.Rent();
+                        if (Interlocked.Exchange(ref item.InUse, 1) != 0)
+                        {
+                            throw new InvalidOperationException(
+                                $"Item {item.Id} was rented while already in use.");
+                        }
+
+                        handoff[j] = item;
+                    }
+
+                    rented.Set();
+                    if (!returned.WaitOne(TimeSpan.FromSeconds(10)))
+                    {
+                        throw new TimeoutException("Return thread did not complete the handoff.");
+                    }
+                }
+            },
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+
+        Task consumer = Task.Factory.StartNew(
+            () =>
+            {
+                for (int i = 0; i < iterations; i++)
+                {
+                    if (!rented.WaitOne(TimeSpan.FromSeconds(10)))
+                    {
+                        throw new TimeoutException("Rent thread did not complete the handoff.");
+                    }
+
+                    foreach (PooledItem item in handoff)
+                    {
+                        Volatile.Write(ref item.InUse, 0);
+                        pool.Return(item);
+                    }
+
+                    returned.Set();
+                }
+            },
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+
+        await Task.WhenAll(producer, consumer).WaitAsync(TimeSpan.FromSeconds(30));
+
+        await Assert.That(policy.Created).IsEqualTo(inFlight);
+    }
+
     private static void StressPool(
         ObjectPool<StressItem, StressPolicy> pool,
         StressState state,
