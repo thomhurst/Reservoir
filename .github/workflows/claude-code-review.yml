@@ -44,6 +44,17 @@ jobs:
       CLAUDE_CODE_SCRIPT_CAPS: '{"pr-review-comment.sh":2}'
 
     steps:
+      - name: Check Claude authentication
+        shell: bash
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [[ -z "$CLAUDE_CODE_OAUTH_TOKEN" && -z "$ANTHROPIC_API_KEY" ]]; then
+            echo "::error::Claude review requires a repository Actions secret named CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY. Add one under Settings > Secrets and variables > Actions, then rerun the review."
+            exit 1
+          fi
+
       # Trusted base ref at the workspace root - this is what Claude runs in.
       - name: Checkout base repository
         uses: actions/checkout@v7.0.1
@@ -75,6 +86,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Prefer the subscription token when both credentials are configured.
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
           # The actor is the PR author, who by definition has no write access on a
           # fork PR. The action only honours this bypass when an explicit token is
           # supplied, and the workflow token is short-lived and scoped to the two
