@@ -206,16 +206,12 @@ public class CancellationTokenSourcePoolTests
         foreach (int workerCount in workerCounts)
         {
             using var start = new Barrier(workerCount + 1);
-            Task[] workers = Enumerable.Range(0, workerCount)
-                .Select(_ => Task.Factory.StartNew(
-                    () => StressPool(pool, state, start, iterations),
-                    CancellationToken.None,
-                    TaskCreationOptions.LongRunning,
-                    TaskScheduler.Default))
-                .ToArray();
+            IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
+                .Select<int, Action<CancellationToken>>(_ => token =>
+                    StressPool(pool, state, start, iterations, token));
 
-            start.SignalAndWait();
-            await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30));
+            await ConcurrentTestWorkers.RunAsync(
+                workers.Append(token => start.SignalAndWait(token)));
         }
 
         await Assert.That(state.Failures).IsEmpty();
@@ -230,16 +226,12 @@ public class CancellationTokenSourcePoolTests
         var pool = new CancellationTokenSourcePool(maxCapacity: 32);
         var state = new StressState();
         using var start = new Barrier(workerCount + 1);
-        Task[] workers = Enumerable.Range(0, workerCount)
-            .Select(_ => Task.Factory.StartNew(
-                () => StressTimerDisarm(pool, state, start, iterations),
-                CancellationToken.None,
-                TaskCreationOptions.LongRunning,
-                TaskScheduler.Default))
-            .ToArray();
+        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
+            .Select<int, Action<CancellationToken>>(_ => token =>
+                StressTimerDisarm(pool, state, start, iterations, token));
 
-        start.SignalAndWait();
-        await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30));
+        await ConcurrentTestWorkers.RunAsync(
+            workers.Append(token => start.SignalAndWait(token)));
 
         await Assert.That(state.Failures).IsEmpty();
     }
@@ -252,16 +244,12 @@ public class CancellationTokenSourcePoolTests
         using var pool = new CancellationTokenSourcePool(maxCapacity: workerCount);
         var state = new StressState();
         using var start = new Barrier(workerCount + 1);
-        Task[] workers = Enumerable.Range(0, workerCount)
-            .Select(_ => Task.Factory.StartNew(
-                () => StressScopedPool(pool, state, start, iterations),
-                CancellationToken.None,
-                TaskCreationOptions.LongRunning,
-                TaskScheduler.Default))
-            .ToArray();
+        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
+            .Select<int, Action<CancellationToken>>(_ => token =>
+                StressScopedPool(pool, state, start, iterations, token));
 
-        start.SignalAndWait();
-        await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30));
+        await ConcurrentTestWorkers.RunAsync(
+            workers.Append(token => start.SignalAndWait(token)));
 
         await Assert.That(state.Failures).IsEmpty();
         await Assert.That(state.ActiveSources).IsEmpty();
@@ -403,36 +391,22 @@ public class CancellationTokenSourcePoolTests
         using var rented = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         CancellationTokenSource? outstanding = null;
-        Exception? failure = null;
-        var worker = new Thread(() =>
-        {
-            try
+        await ConcurrentTestWorkers.RunAsync(
+        [
+            token =>
             {
                 using CancellationTokenSourcePool.Lease lease = pool.RentScoped(out outstanding);
                 rented.Set();
-                release.Wait();
-            }
-            catch (Exception exception)
+                release.Wait(token);
+            },
+            token =>
             {
-                failure = exception;
-                rented.Set();
+                rented.Wait(token);
+                pool.Dispose();
+                release.Set();
             }
-        });
+        ], timeout: TimeSpan.FromSeconds(5));
 
-        worker.Start();
-        if (!rented.Wait(TimeSpan.FromSeconds(5)))
-        {
-            release.Set();
-            worker.Join();
-            throw new TimeoutException("The scoped rental worker did not start.");
-        }
-
-        pool.Dispose();
-        release.Set();
-        bool joined = worker.Join(TimeSpan.FromSeconds(5));
-
-        await Assert.That(joined).IsTrue();
-        await Assert.That(failure).IsNull();
         await Assert.That(outstanding).IsNotNull();
         await Assert.That(() => outstanding!.Cancel()).Throws<ObjectDisposedException>();
     }
@@ -615,12 +589,14 @@ public class CancellationTokenSourcePoolTests
         CancellationTokenSourcePool pool,
         StressState state,
         Barrier start,
-        int iterations)
+        int iterations,
+        CancellationToken token)
     {
-        start.SignalAndWait();
+        start.SignalAndWait(token);
 
         for (int iteration = 0; iteration < iterations; iteration++)
         {
+            token.ThrowIfCancellationRequested();
             CancellationTokenSource source = pool.Rent();
             state.TrackRental(source);
 
@@ -667,12 +643,14 @@ public class CancellationTokenSourcePoolTests
         CancellationTokenSourcePool pool,
         StressState state,
         Barrier start,
-        int iterations)
+        int iterations,
+        CancellationToken token)
     {
-        start.SignalAndWait();
+        start.SignalAndWait(token);
 
         for (int iteration = 0; iteration < iterations; iteration++)
         {
+            token.ThrowIfCancellationRequested();
             CancellationTokenSource source = pool.Rent();
             state.TrackRental(source);
             source.CancelAfter(TimeSpan.FromMinutes(1));
@@ -695,12 +673,14 @@ public class CancellationTokenSourcePoolTests
         CancellationTokenSourcePool pool,
         StressState state,
         Barrier start,
-        int iterations)
+        int iterations,
+        CancellationToken token)
     {
-        start.SignalAndWait();
+        start.SignalAndWait(token);
 
         for (int iteration = 0; iteration < iterations; iteration++)
         {
+            token.ThrowIfCancellationRequested();
             using CancellationTokenSourcePool.Lease lease = pool.RentScoped();
             CancellationTokenSource source = lease.Value;
             state.TrackRental(source);

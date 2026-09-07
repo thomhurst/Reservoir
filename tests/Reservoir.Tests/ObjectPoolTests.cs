@@ -214,41 +214,35 @@ public class ObjectPoolTests
             capacity);
         using var start = new Barrier(workerCount + 2);
 
-        Task[] workers = Enumerable.Range(0, workerCount)
-            .Select(workerIndex => Task.Factory.StartNew(
-                () => StressPoolUntilDisposed(pool, state, start, workerIndex),
-                CancellationToken.None,
-                TaskCreationOptions.LongRunning,
-                TaskScheduler.Default))
-            .ToArray();
-        Task clearer = Task.Factory.StartNew(
-            () =>
+        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
+            .Select<int, Action<CancellationToken>>(workerIndex => token =>
+                StressPoolUntilDisposed(pool, state, start, workerIndex, token));
+        Action<CancellationToken> clearer = token =>
+        {
+            start.SignalAndWait(token);
+            for (int i = 0; i < clearCount; i++)
             {
-                start.SignalAndWait();
-                for (int i = 0; i < clearCount; i++)
-                {
-                    pool.Clear();
-                    Thread.SpinWait(16);
-                }
+                token.ThrowIfCancellationRequested();
+                pool.Clear();
+                Thread.SpinWait(16);
+            }
 
-                // On a loaded runner the clear loop can finish before any worker is scheduled
-                // for a complete rent/return, and disposing then ends the test with zero resets.
-                // The pool is still usable here and workers cannot exit before Stopping is set,
-                // so at least one return — and its reset — must eventually land.
-                while (Volatile.Read(ref state.ResetCount) == 0)
-                {
-                    Thread.SpinWait(64);
-                }
+            // On a loaded runner the clear loop can finish before any worker is scheduled
+            // for a complete rent/return, and disposing then ends the test with zero resets.
+            // The pool is still usable here and workers cannot exit before Stopping is set,
+            // so at least one return — and its reset — must eventually land.
+            while (Volatile.Read(ref state.ResetCount) == 0)
+            {
+                token.ThrowIfCancellationRequested();
+                Thread.SpinWait(64);
+            }
 
-                pool.Dispose();
-                Volatile.Write(ref state.Stopping, 1);
-            },
-            CancellationToken.None,
-            TaskCreationOptions.LongRunning,
-            TaskScheduler.Default);
+            pool.Dispose();
+            Volatile.Write(ref state.Stopping, 1);
+        };
 
-        start.SignalAndWait();
-        await Task.WhenAll(workers.Append(clearer)).WaitAsync(TimeSpan.FromSeconds(30));
+        await ConcurrentTestWorkers.RunAsync(
+            workers.Append(clearer).Append(token => start.SignalAndWait(token)));
 
         await Assert.That(state.Failures).IsEmpty();
         await Assert.That(state.ResetCount > 0).IsTrue();
@@ -309,16 +303,12 @@ public class ObjectPoolTests
         foreach (int workerCount in workerCounts)
         {
             using var start = new Barrier(workerCount + 1);
-            Task[] workers = Enumerable.Range(0, workerCount)
-                .Select(workerIndex => Task.Factory.StartNew(
-                    () => StressPool(pool, state, start, workerIndex, iterations),
-                    CancellationToken.None,
-                    TaskCreationOptions.LongRunning,
-                    TaskScheduler.Default))
-                .ToArray();
+            IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
+                .Select<int, Action<CancellationToken>>(workerIndex => token =>
+                    StressPool(pool, state, start, workerIndex, iterations, token));
 
-            start.SignalAndWait();
-            await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30));
+            await ConcurrentTestWorkers.RunAsync(
+                workers.Append(token => start.SignalAndWait(token)));
         }
 
         var retainedItems = new HashSet<StressItem>();
@@ -359,16 +349,12 @@ public class ObjectPoolTests
         }
 
         using var start = new Barrier(workerCount + 1);
-        Task[] workers = Enumerable.Range(0, workerCount)
-            .Select(workerIndex => Task.Factory.StartNew(
-                () => StressPool(pool, state, start, workerIndex, iterations),
-                CancellationToken.None,
-                TaskCreationOptions.LongRunning,
-                TaskScheduler.Default))
-            .ToArray();
+        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
+            .Select<int, Action<CancellationToken>>(workerIndex => token =>
+                StressPool(pool, state, start, workerIndex, iterations, token));
 
-        start.SignalAndWait();
-        await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30));
+        await ConcurrentTestWorkers.RunAsync(
+            workers.Append(token => start.SignalAndWait(token)));
 
         var retainedItems = new HashSet<StressItem>();
         for (int i = 0; i < capacity; i++)
@@ -391,46 +377,40 @@ public class ObjectPoolTests
             threadLocalFastPath: false);
         PooledItem expected = pool.Rent();
         pool.Return(expected);
-        using var rented = new AutoResetEvent(false);
-        using var returned = new AutoResetEvent(false);
+        using var rented = new SemaphoreSlim(0, 1);
+        using var returned = new SemaphoreSlim(0, 1);
         PooledItem? handoff = null;
 
-        Task producer = Task.Factory.StartNew(
-            () =>
+        Action<CancellationToken> producer = token =>
+        {
+            for (int i = 0; i < iterations; i++)
             {
-                for (int i = 0; i < iterations; i++)
+                token.ThrowIfCancellationRequested();
+                handoff = pool.Rent();
+                rented.Release();
+                if (!returned.Wait(TimeSpan.FromSeconds(10), token))
                 {
-                    handoff = pool.Rent();
-                    rented.Set();
-                    if (!returned.WaitOne(TimeSpan.FromSeconds(10)))
-                    {
-                        throw new TimeoutException("Return thread did not complete the handoff.");
-                    }
+                    throw new TimeoutException("Return thread did not complete the handoff.");
                 }
-            },
-            CancellationToken.None,
-            TaskCreationOptions.LongRunning,
-            TaskScheduler.Default);
+            }
+        };
 
-        Task consumer = Task.Factory.StartNew(
-            () =>
+        Action<CancellationToken> consumer = token =>
+        {
+            for (int i = 0; i < iterations; i++)
             {
-                for (int i = 0; i < iterations; i++)
+                token.ThrowIfCancellationRequested();
+                if (!rented.Wait(TimeSpan.FromSeconds(10), token))
                 {
-                    if (!rented.WaitOne(TimeSpan.FromSeconds(10)))
-                    {
-                        throw new TimeoutException("Rent thread did not complete the handoff.");
-                    }
-
-                    pool.Return(handoff!);
-                    returned.Set();
+                    throw new TimeoutException("Rent thread did not complete the handoff.");
                 }
-            },
-            CancellationToken.None,
-            TaskCreationOptions.LongRunning,
-            TaskScheduler.Default);
 
-        await Task.WhenAll(producer, consumer).WaitAsync(TimeSpan.FromSeconds(30));
+                pool.Return(handoff!);
+                returned.Release();
+            }
+        };
+
+        await ConcurrentTestWorkers.RunAsync([producer, consumer]);
 
         await Assert.That(pool.Rent()).IsSameReferenceAs(expected);
         await Assert.That(expected.ResetCount).IsEqualTo(iterations + 1);
@@ -447,66 +427,60 @@ public class ObjectPoolTests
             policy,
             maxCapacity: 32,
             threadLocalFastPath: false);
-        using var rented = new AutoResetEvent(false);
-        using var returned = new AutoResetEvent(false);
+        using var rented = new SemaphoreSlim(0, 1);
+        using var returned = new SemaphoreSlim(0, 1);
         var handoff = new PooledItem[inFlight];
 
         // The renting thread never returns and the returning thread never rents, so every rent
         // misses the renter's home slot and, with two objects in flight, every second return
         // displaces past the returner's home slot: the shared tier's scan paths carry the whole
         // exchange, and they must keep finding the same objects instead of creating new ones.
-        Task producer = Task.Factory.StartNew(
-            () =>
+        Action<CancellationToken> producer = token =>
+        {
+            for (int i = 0; i < iterations; i++)
             {
-                for (int i = 0; i < iterations; i++)
+                token.ThrowIfCancellationRequested();
+                for (int j = 0; j < handoff.Length; j++)
                 {
-                    for (int j = 0; j < handoff.Length; j++)
+                    PooledItem item = pool.Rent();
+                    if (Interlocked.Exchange(ref item.InUse, 1) != 0)
                     {
-                        PooledItem item = pool.Rent();
-                        if (Interlocked.Exchange(ref item.InUse, 1) != 0)
-                        {
-                            throw new InvalidOperationException(
-                                $"Item {item.Id} was rented while already in use.");
-                        }
-
-                        handoff[j] = item;
+                        throw new InvalidOperationException(
+                            $"Item {item.Id} was rented while already in use.");
                     }
 
-                    rented.Set();
-                    if (!returned.WaitOne(TimeSpan.FromSeconds(10)))
-                    {
-                        throw new TimeoutException("Return thread did not complete the handoff.");
-                    }
+                    handoff[j] = item;
                 }
-            },
-            CancellationToken.None,
-            TaskCreationOptions.LongRunning,
-            TaskScheduler.Default);
 
-        Task consumer = Task.Factory.StartNew(
-            () =>
+                rented.Release();
+                if (!returned.Wait(TimeSpan.FromSeconds(10), token))
+                {
+                    throw new TimeoutException("Return thread did not complete the handoff.");
+                }
+            }
+        };
+
+        Action<CancellationToken> consumer = token =>
+        {
+            for (int i = 0; i < iterations; i++)
             {
-                for (int i = 0; i < iterations; i++)
+                token.ThrowIfCancellationRequested();
+                if (!rented.Wait(TimeSpan.FromSeconds(10), token))
                 {
-                    if (!rented.WaitOne(TimeSpan.FromSeconds(10)))
-                    {
-                        throw new TimeoutException("Rent thread did not complete the handoff.");
-                    }
-
-                    foreach (PooledItem item in handoff)
-                    {
-                        Volatile.Write(ref item.InUse, 0);
-                        pool.Return(item);
-                    }
-
-                    returned.Set();
+                    throw new TimeoutException("Rent thread did not complete the handoff.");
                 }
-            },
-            CancellationToken.None,
-            TaskCreationOptions.LongRunning,
-            TaskScheduler.Default);
 
-        await Task.WhenAll(producer, consumer).WaitAsync(TimeSpan.FromSeconds(30));
+                foreach (PooledItem item in handoff)
+                {
+                    Volatile.Write(ref item.InUse, 0);
+                    pool.Return(item);
+                }
+
+                returned.Release();
+            }
+        };
+
+        await ConcurrentTestWorkers.RunAsync([producer, consumer]);
 
         await Assert.That(policy.Created).IsEqualTo(inFlight);
     }
@@ -516,12 +490,14 @@ public class ObjectPoolTests
         StressState state,
         Barrier start,
         int workerIndex,
-        int iterations)
+        int iterations,
+        CancellationToken token)
     {
-        start.SignalAndWait();
+        start.SignalAndWait(token);
 
         for (int iteration = 0; iteration < iterations; iteration++)
         {
+            token.ThrowIfCancellationRequested();
             StressItem item = pool.Rent();
             if (Interlocked.Exchange(ref item.InUse, 1) != 0)
             {
@@ -545,13 +521,15 @@ public class ObjectPoolTests
         ObjectPool<StressItem, StressPolicy> pool,
         StressState state,
         Barrier start,
-        int workerIndex)
+        int workerIndex,
+        CancellationToken token)
     {
-        start.SignalAndWait();
+        start.SignalAndWait(token);
         int iteration = 0;
 
         while (Volatile.Read(ref state.Stopping) == 0)
         {
+            token.ThrowIfCancellationRequested();
             StressItem item;
             try
             {
