@@ -9,4 +9,23 @@
   <ItemGroup>
     <PackageReference Include="Reservoir" Version="$(ReservoirPackageVersion)" />
   </ItemGroup>
+
+  <Target Name="VerifyReservoirDocumentation" AfterTargets="ResolveReferences">
+    <ItemGroup>
+      <_ReservoirReference Include="@(ReferencePath)" Condition="'%(Filename)' == 'Reservoir'" />
+    </ItemGroup>
+    <Error Condition="'@(_ReservoirReference)' == ''" Text="The Reservoir package reference was not resolved." />
+    <PropertyGroup>
+      <_ReservoirDocumentation>@(_ReservoirReference->'%(RootDir)%(Directory)%(Filename).xml')</_ReservoirDocumentation>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(_ReservoirDocumentation)')" Text="The resolved Reservoir assembly has no companion XML documentation: $(_ReservoirDocumentation)" />
+    <XmlPeek XmlInputPath="$(_ReservoirDocumentation)" Query="/doc/members/member[@name='T:Reservoir.PooledLease`2']/summary/text()">
+      <Output TaskParameter="Result" PropertyName="_ReservoirOwnershipDocumentation" />
+    </XmlPeek>
+    <XmlPeek XmlInputPath="$(_ReservoirDocumentation)" Query="/doc/members/member[@name='M:Reservoir.ObjectPool`2.Dispose']/summary/text()">
+      <Output TaskParameter="Result" PropertyName="_ReservoirLifecycleDocumentation" />
+    </XmlPeek>
+    <Error Condition="'$(_ReservoirOwnershipDocumentation)' == ''" Text="The Reservoir package is missing scoped ownership documentation." />
+    <Error Condition="'$(_ReservoirLifecycleDocumentation)' == ''" Text="The Reservoir package is missing pool lifecycle documentation." />
+  </Target>
 </Project>

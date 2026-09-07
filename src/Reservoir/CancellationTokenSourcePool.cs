@@ -19,7 +19,7 @@ namespace Reservoir;
 /// cancellation operations may remain in flight because
 /// <c>CancellationTokenSource.TryReset()</c> is not thread-safe with concurrent use. Linked rentals
 /// register an upstream token with a pooled source; they do not pool sources created by
-/// <see cref="CancellationTokenSource.CreateLinkedTokenSource(CancellationToken)"/>.
+/// <see cref="CancellationTokenSource.CreateLinkedTokenSource(CancellationToken[])"/>.
 /// Scoped rentals retain one reset source per participating thread in addition to the bounded
 /// shared store. Dispose dedicated pools to release that thread-local retention.
 /// </remarks>

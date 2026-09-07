@@ -11,15 +11,18 @@ $archive = [System.IO.Compression.ZipFile]::OpenRead($resolvedPackagePath)
 
 try {
     $entries = @($archive.Entries.FullName)
-    $expectedAssemblies = @(
+    $expectedAssets = @(
         'lib/netstandard2.0/Reservoir.dll'
+        'lib/netstandard2.0/Reservoir.xml'
         'lib/net8.0/Reservoir.dll'
+        'lib/net8.0/Reservoir.xml'
         'lib/net10.0/Reservoir.dll'
+        'lib/net10.0/Reservoir.xml'
     )
 
-    foreach ($expectedAssembly in $expectedAssemblies) {
-        if ($entries -notcontains $expectedAssembly) {
-            throw "Package is missing $expectedAssembly."
+    foreach ($expectedAsset in $expectedAssets) {
+        if ($entries -notcontains $expectedAsset) {
+            throw "Package is missing $expectedAsset."
         }
     }
 
@@ -36,4 +39,4 @@ finally {
     $archive.Dispose()
 }
 
-Write-Host "Validated runtime assets in $resolvedPackagePath"
+Write-Host "Validated runtime and XML documentation assets in $resolvedPackagePath"
