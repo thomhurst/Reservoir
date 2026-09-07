@@ -104,11 +104,13 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         // makes it observe our null-store afterwards and capture nothing.
         lock (slot)
         {
-            if (ReferenceEquals(slot.LastTaken, item))
+            if (slot.LastTaken is { } lastTaken
+                && lastTaken.TryGetTarget(out T? captured)
+                && ReferenceEquals(captured, item))
             {
-                // Clear captured the item and destroys it; drop the record so the dead object
-                // is not pinned and a future take cannot misread it.
-                slot.LastTaken = null;
+                // The renter keeps item alive while reconciling, so a weak record cannot lose
+                // this match. Clear the target once this take has acknowledged destruction.
+                lastTaken.SetTarget(null!);
                 return null;
             }
 
@@ -194,7 +196,14 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
                         item = Interlocked.Exchange(ref slot.Item, null);
                         if (item is not null)
                         {
-                            slot.LastTaken = item;
+                            if (slot.LastTaken is { } lastTaken)
+                            {
+                                lastTaken.SetTarget(item);
+                            }
+                            else
+                            {
+                                slot.LastTaken = new WeakReference<T>(item);
+                            }
                         }
 
                         // Back to even only after this slot's take, so a renter that straddled
@@ -290,7 +299,10 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         internal int Gate;
         // The item the most recent capturing Clear took from this slot, recorded under the slot
         // lock; lets a raced renter distinguish "Clear captured my item" from "my take won".
-        internal T? LastTaken;
+        // A destroyed object must be collectible even when no renter raced Clear. A racing
+        // renter holds its own strong reference until reconciliation. Allocate the weak handle
+        // only on the first capturing Clear, then reuse it for later clears.
+        internal WeakReference<T>? LastTaken;
 #endif
     }
 
