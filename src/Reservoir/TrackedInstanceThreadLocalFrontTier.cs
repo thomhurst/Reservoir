@@ -125,7 +125,15 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool TryReturn(T item)
     {
-        Slot slot = GetSlot();
+        // A return-only thread cannot use this tier. Avoid allocating and tracking an empty
+        // slot just to discover that it has never rented from this pool.
+        ThreadLocal<Slot>? slots = Volatile.Read(ref _slots);
+        if (slots is null || !slots.IsValueCreated)
+        {
+            return false;
+        }
+
+        Slot slot = slots.Value!;
         if (!slot.Rents)
         {
             return false;
