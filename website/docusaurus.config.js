@@ -1,5 +1,19 @@
 // @ts-check
-import {themes as prismThemes} from 'prism-react-renderer';
+
+/** @type {import('prism-react-renderer').PrismTheme} */
+const reservoirCodeTheme = {
+  plain: {
+    color: 'var(--reservoir-ink)',
+    backgroundColor: 'var(--reservoir-code-background)',
+  },
+  styles: [
+    {types: ['comment', 'prolog', 'doctype', 'cdata'], style: {color: 'var(--reservoir-muted)', fontStyle: 'italic'}},
+    {types: ['keyword', 'builtin', 'class-name', 'tag'], style: {color: 'var(--reservoir-code-keyword)', fontWeight: '600'}},
+    {types: ['string', 'char', 'number', 'boolean', 'constant', 'attr-value'], style: {color: 'var(--reservoir-code-string)'}},
+    {types: ['function', 'selector', 'attr-name'], style: {color: 'var(--reservoir-code-function)'}},
+    {types: ['operator', 'punctuation'], style: {color: 'var(--reservoir-muted)'}},
+  ],
+};
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -35,7 +49,7 @@ const config = {
     ({
       image: 'img/og.png',
       metadata: [
-        {name: 'theme-color', content: '#07171c'},
+        {name: 'theme-color', content: '#102e43'},
         {name: 'keywords', content: '.NET, C#, object pool, allocation-free, source package, performance'},
         {name: 'twitter:card', content: 'summary_large_image'},
       ],
@@ -84,8 +98,8 @@ const config = {
         copyright: `Reservoir · Built in the open · ${new Date().getFullYear()}`,
       },
       prism: {
-        theme: prismThemes.github,
-        darkTheme: prismThemes.dracula,
+        theme: reservoirCodeTheme,
+        darkTheme: reservoirCodeTheme,
         additionalLanguages: ['csharp', 'bash', 'markup'],
       },
     }),

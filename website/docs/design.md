@@ -1,19 +1,11 @@
 ---
 title: Design notes
-description: How Reservoir is distributed and how its contention strategy works.
+description: How Reservoir handles storage, contention, policies, and lifecycle races.
 ---
 
 # Design notes
 
 Reservoir optimizes for a narrow job: short, frequent ownership transfers of reusable reference objects inside one application.
-
-## Why a runtime library
-
-Reservoir ships as a conventional runtime library. The JIT can inline library methods and specialize `ObjectPool<T,TPolicy>` for concrete struct policies across the assembly boundary, so source injection is not required for the optimized hot path.
-
-Compiled package assets give every project the same public type identity, allow dependencies to flow transitively, and keep Reservoir source outside consumer compiler and analyzer settings. Consumers also do not inherit Reservoir's C# language-version requirement.
-
-Reservoir targets .NET Standard 2.0, .NET 8, and .NET 10. Modern targets use framework-specific fast paths; older compatible frameworks use the portable .NET Standard implementation.
 
 ## Storage and contention
 
