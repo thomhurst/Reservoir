@@ -127,6 +127,13 @@ jobs:
           ./build/Test-PackageContents.ps1
           -PackagePath artifacts/packages/Reservoir.${{ steps.version.outputs.version }}.nupkg
 
+      - name: Execute netstandard consumers against modern package assets
+        run: >-
+          dotnet test tests/Reservoir.Package.Tests/Reservoir.Package.Tests.csproj
+          --configuration Release
+          -p:ReservoirPackageVersion=${{ steps.version.outputs.version }}
+          -p:RestoreAdditionalProjectSources=${{ github.workspace }}/artifacts/packages
+
       - name: Upload package
         uses: actions/upload-artifact@v7
         with:

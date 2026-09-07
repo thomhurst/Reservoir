@@ -9,6 +9,7 @@ internal static class Program
         CancellationTokenSourcePoolSupportsNativeAot();
         CustomDestructionSupportsNativeAot();
         SharedScopedDestructionSupportsNativeAot();
+        ExplicitDestructionPreservesPolicyState();
     }
 
     private static void CancellationTokenSourcePoolSupportsNativeAot()
@@ -62,6 +63,31 @@ internal static class Program
     private sealed class PooledItem
     {
         internal bool IsDestroyed { get; set; }
+    }
+
+    private static void ExplicitDestructionPreservesPolicyState()
+    {
+        using var pool = new ObjectPool<PooledItem, ExplicitDestructionPolicy>(maxCapacity: 1);
+        PooledItem first = pool.Rent();
+        pool.Return(first);
+        PooledItem second = pool.Rent();
+        pool.Return(second);
+        if (!first.IsDestroyed || second.IsDestroyed)
+        {
+            throw new InvalidOperationException("Explicit destruction did not preserve policy state.");
+        }
+    }
+
+    private struct ExplicitDestructionPolicy : IPooledObjectDestroyPolicy<PooledItem>
+    {
+        private int _destroyCount;
+        public PooledItem Create() => new();
+        public bool TryReset(PooledItem obj) => _destroyCount != 0;
+        void IPooledObjectDestroyPolicy<PooledItem>.Destroy(PooledItem obj)
+        {
+            _destroyCount++;
+            obj.IsDestroyed = true;
+        }
     }
 
     private readonly struct CustomDestructionPolicy : IPooledObjectPolicy<PooledItem>
