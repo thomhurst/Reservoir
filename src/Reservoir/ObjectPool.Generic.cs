@@ -21,7 +21,11 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class ObjectPool<T, TPolicy> : IDisposable
+sealed class ObjectPool<T,
+#if NET5_0_OR_GREATER
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.NonPublicMethods)]
+#endif
+    TPolicy> : IDisposable
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
@@ -654,6 +658,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 #endif
     }
 
+#if NET5_0_OR_GREATER
+    // Delegate.Method also needs metadata when dispatch selects an interface's default body.
+    [DynamicDependency(nameof(IPooledObjectPolicy<T>.Destroy), typeof(IPooledObjectPolicy<>))]
+    [DynamicDependency(nameof(IPooledObjectDestroyPolicy<T>.Destroy), typeof(IPooledObjectDestroyPolicy<>))]
+#endif
     private static DestroyPolicy? CreateDestroyPolicy()
     {
         if (!typeof(IPooledObjectDestroyPolicy<T>).IsAssignableFrom(typeof(TPolicy)))

@@ -16,7 +16,11 @@ internal struct InstanceThreadLocalFrontTier<T>
     private ThreadLocal<Slot>? _slots;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal T Rent<TPolicy>(ObjectPool<T, TPolicy> fallback)
+    internal T Rent<
+#if NET5_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.NonPublicMethods)]
+#endif
+        TPolicy>(ObjectPool<T, TPolicy> fallback)
         where TPolicy : struct, IPooledObjectPolicy<T>
     {
         Slot slot = GetSlot();

@@ -29,12 +29,20 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     private ThreadLocal<Slot>? _slots;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal T Rent<TPolicy>(ObjectPool<T, TPolicy> fallback)
+    internal T Rent<
+#if NET5_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.NonPublicMethods)]
+#endif
+        TPolicy>(ObjectPool<T, TPolicy> fallback)
         where TPolicy : struct, IPooledObjectPolicy<T>
         => Rent(fallback, out _);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal T Rent<TPolicy>(ObjectPool<T, TPolicy> fallback, out Slot slot)
+    internal T Rent<
+#if NET5_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.NonPublicMethods)]
+#endif
+        TPolicy>(ObjectPool<T, TPolicy> fallback, out Slot slot)
         where TPolicy : struct, IPooledObjectPolicy<T>
     {
         slot = GetSlot();
@@ -157,7 +165,11 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             Interlocked.CompareExchange(ref slot.Item, null, item),
             item);
 
-    internal void Clear<TPolicy>(ObjectPool<T, TPolicy> fallback)
+    internal void Clear<
+#if NET5_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.NonPublicMethods)]
+#endif
+        TPolicy>(ObjectPool<T, TPolicy> fallback)
         where TPolicy : struct, IPooledObjectPolicy<T>
     {
         ThreadLocal<Slot>? slots = Volatile.Read(ref _slots);

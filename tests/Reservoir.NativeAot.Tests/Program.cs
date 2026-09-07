@@ -10,6 +10,7 @@ internal static class Program
         CustomDestructionSupportsNativeAot();
         SharedScopedDestructionSupportsNativeAot();
         ExplicitDestructionPreservesPolicyState();
+        DefaultPortableDestructionSupportsNativeAot();
     }
 
     private static void CancellationTokenSourcePoolSupportsNativeAot()
@@ -60,9 +61,28 @@ internal static class Program
         }
     }
 
-    private sealed class PooledItem
+    private sealed class PooledItem : IDisposable
     {
         internal bool IsDestroyed { get; set; }
+
+        public void Dispose() => IsDestroyed = true;
+    }
+
+    private static void DefaultPortableDestructionSupportsNativeAot()
+    {
+        using var pool = new ObjectPool<PooledItem, DefaultPortablePolicy>(maxCapacity: 1);
+        PooledItem item = pool.Rent();
+        pool.Return(item);
+        if (!item.IsDestroyed)
+        {
+            throw new InvalidOperationException("Default portable destruction was not invoked.");
+        }
+    }
+
+    private readonly struct DefaultPortablePolicy : IPooledObjectDestroyPolicy<PooledItem>
+    {
+        public PooledItem Create() => new();
+        public bool TryReset(PooledItem item) => false;
     }
 
     private static void ExplicitDestructionPreservesPolicyState()
