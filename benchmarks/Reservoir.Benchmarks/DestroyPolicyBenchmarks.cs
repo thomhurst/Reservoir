@@ -5,7 +5,9 @@ namespace Reservoir.Benchmarks;
 // Cover portable destruction dispatch as well as the warm path. Rejected items are created
 // once per operation because returning them transfers ownership and consumes the item.
 [MemoryDiagnoser]
+#if !RESERVOIR_NETSTANDARD
 [DisassemblyDiagnoser(maxDepth: 3)]
+#endif
 public class DestroyPolicyBenchmarks
 {
     private readonly ObjectPool<Item, RetainPolicy> _warm = new(maxCapacity: 1);
