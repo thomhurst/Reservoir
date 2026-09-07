@@ -3,6 +3,29 @@ namespace Reservoir.Tests;
 public class NestedScopedLeaseTests
 {
     [Test]
+    public async Task VersionWrapPreservesAvailabilityAndOwnership()
+    {
+        var state = new PaddedScopedPoolLeaseState();
+        typeof(ScopedPoolLeaseState)
+            .GetField("_version", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(state, long.MaxValue - 1);
+
+        long beforeWrap = state.AcquireAvailable();
+        bool availableWhileOwned = state.IsAvailable;
+        bool releasedBeforeWrap = state.TryRelease(beforeWrap);
+        long afterWrap = state.AcquireAvailable();
+        bool staleReleased = state.TryRelease(beforeWrap);
+        state.ValidateOwnership(afterWrap);
+        bool releasedAfterWrap = state.TryRelease(afterWrap);
+
+        await Assert.That(beforeWrap).IsEqualTo(long.MaxValue);
+        await Assert.That(availableWhileOwned).IsFalse();
+        await Assert.That(afterWrap).IsEqualTo(long.MinValue + 1);
+        await Assert.That(staleReleased).IsFalse();
+        await Assert.That(releasedBeforeWrap && releasedAfterWrap && state.IsAvailable).IsTrue();
+    }
+
+    [Test]
     public async Task DeepOutOfOrderReleasePreservesOtherOwnersAndInvalidatesCopies()
     {
         var first = new ScopedPoolLease<Marker>(new Marker());

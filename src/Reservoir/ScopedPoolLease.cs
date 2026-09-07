@@ -62,25 +62,25 @@ internal static class ScopedPoolLeaseStateCache<T>
     [ThreadStatic]
     private static ScopedPoolLeaseState? _state;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static ScopedPoolLeaseState Acquire(out long token)
     {
-        ScopedPoolLeaseState? state = _state;
-        if (state is null)
+        ScopedPoolLeaseState state = _state ?? Initialize();
+        if (!state.IsAvailable)
         {
-            state = new PaddedScopedPoolLeaseState();
-            _state = state;
-        }
-        else
-        {
-            while (!state.TryAcquire(out token))
-            {
-                state = ScopedPoolLeaseStateCache.FindAvailable(state);
-            }
-
-            return state;
+            state = ScopedPoolLeaseStateCache.FindAvailable(state);
         }
 
-        _ = state.TryAcquire(out token);
+        token = state.AcquireAvailable();
+        return state;
+    }
+
+    // Keep allocation and thread-static publication outside the inlined primary path.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ScopedPoolLeaseState Initialize()
+    {
+        var state = new PaddedScopedPoolLeaseState();
+        _state = state;
         return state;
     }
 
@@ -154,17 +154,13 @@ internal class ScopedPoolLeaseState : CacheLinePadded
     internal bool IsAvailable => (_version & 1) == 0;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryAcquire(out long token)
+    internal long AcquireAvailable()
     {
-        if ((_version & 1) != 0)
-        {
-            token = 0;
-            return false;
-        }
-
-        token = _version + 1;
+        // Selection and acquisition run synchronously on the owning thread.
+        Debug.Assert(IsAvailable);
+        long token = _version + 1;
         _version = token;
-        return true;
+        return token;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
