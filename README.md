@@ -144,11 +144,25 @@ BenchmarkDotNet 0.15.8 `MediumRun`, .NET 10.0.11, Windows 11, AMD EPYC 9V74:
 
 Every measured warm Reservoir path allocated **0 B**. Timings vary by machine; compare methods within the same run.
 
-[See all benchmark results](https://thomhurst.github.io/Reservoir/docs/benchmarks) or reproduce them locally:
+[See all benchmark results and reproduction instructions](https://thomhurst.github.io/Reservoir/docs/benchmarks#reproduce).
+Run the full suite on a GitHub Actions `ubuntu-latest` runner:
 
 ```shell
-dotnet run -c Release -f net10.0 --project benchmarks/Reservoir.Benchmarks -- --filter "*" --job Short --runtimes net8.0 net10.0 --apples
+gh workflow run benchmarks.yml --ref main -f 'filter=*' -f job=short
 ```
+
+For a bounded setup check followed by a short measurement, select one warm rent/return
+benchmark on .NET 8 and .NET 10:
+
+```shell
+gh workflow run benchmarks.yml --ref main -f 'filter=*.ObjectPoolBenchmarks.RentReturn' -f job=short
+```
+
+The workflow first runs `--job Dry` to check compilation and execution; Dry results are
+not performance measurements. It then runs `--job Short`. Do not add `--apples`:
+BenchmarkDotNet 0.15.8 combines it with `OperationsPerInvoke` in a way that makes batched
+contention cases effectively unbounded. Use [Benchmark comparison](.github/workflows/benchmark-compare.yml)
+with explicit baseline and candidate SHAs for performance acceptance; local timings are diagnostic only.
 
 ## When it fits
 

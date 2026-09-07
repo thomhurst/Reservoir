@@ -58,9 +58,53 @@ crosses an `await`, and measure representative workloads on target hardware.
 
 ## Reproduce
 
+Run benchmarks from the repository root with GitHub CLI authenticated to an account that
+can dispatch workflows. Measurements run on GitHub Actions `ubuntu-latest`; local timings
+are diagnostic only and cannot establish performance acceptance.
+
+For routine setup validation, select one warm rent/return benchmark on .NET 8 and .NET 10:
+
 ```shell
-dotnet run -c Release -f net10.0 --project benchmarks/Reservoir.Benchmarks -- --filter "*" --job Short --runtimes net8.0 net10.0 --apples
+gh workflow run benchmarks.yml --ref main -f 'filter=*.ObjectPoolBenchmarks.RentReturn' -f job=short
 ```
+
+The workflow first runs `--job Dry` to check compilation, setup, and execution. Dry output
+is not a performance measurement and cannot establish allocation guarantees. The next
+step runs `--job Short` to measure the same selection. This filter selects two cases: one
+method on each runtime. Short results are useful for initial checks; repeat noisy results
+or use a longer job with a narrow filter before drawing conclusions.
+
+For the full suite, keep the `short` job:
+
+```shell
+gh workflow run benchmarks.yml --ref main -f 'filter=*' -f job=short
+```
+
+The full-suite measurement step uses this BenchmarkDotNet invocation on the runner after
+restoring and building the benchmark project in Release:
+
+```shell
+dotnet run -c Release -f net10.0 --no-build --project benchmarks/Reservoir.Benchmarks -- --filter "*" --job Short --runtimes net8.0 net10.0
+```
+
+For the bounded selection, the runner substitutes `--filter "*.ObjectPoolBenchmarks.RentReturn"`.
+For its validation step, it also substitutes `--job Dry`. The repository SDK comes from
+`global.json`; both .NET 8 and .NET 10 runtimes must be available.
+
+Do not add `--apples` to these commands. With BenchmarkDotNet 0.15.8, apples mode interacts
+with `OperationsPerInvoke` so batched contention cases become effectively unbounded.
+The validated workflow intentionally omits it for both Dry and measurement jobs.
+
+Find the dispatched run in the repository's Actions tab. Download its `reservoir-benchmarks`
+artifact for separate Dry and measurement logs and reports. A filtered run does not
+republish the benchmark tables above. The historical tables identify their own job,
+runtime, hardware, and source commit; new runs need not reproduce their exact timings.
+
+For a performance change, use the
+[Benchmark comparison workflow](https://github.com/thomhurst/Reservoir/actions/workflows/benchmark-compare.yml)
+with explicit baseline and candidate commit SHAs and matching runtime/job settings. It
+runs both revisions sequentially on the same runner with the candidate's benchmark code.
+Report Mean, Ratio, Allocated, and noise, and link the run and artifacts with both SHAs.
 
 <!-- BENCHMARK_RESULTS_LINK_START -->
 Raw Markdown, CSV, and HTML exports—including 1–32 worker contention results—are available from the [GitHub Actions run](https://github.com/thomhurst/Reservoir/actions/runs/31543884370).
