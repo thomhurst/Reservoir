@@ -62,9 +62,6 @@ internal static class ScopedPoolLeaseStateCache<T>
     [ThreadStatic]
     private static ScopedPoolLeaseState? _state;
 
-    [ThreadStatic]
-    private static ScopedPoolLeaseState? _nextNested;
-
     internal static ScopedPoolLeaseState Acquire(out long token)
     {
         ScopedPoolLeaseState? state = _state;
@@ -84,7 +81,7 @@ internal static class ScopedPoolLeaseStateCache<T>
                     return state;
                 }
 
-                return AcquireNested(out token);
+                return ScopedPoolLeaseStateCache.AcquireNested(state, out token);
             }
 
             return state;
@@ -94,13 +91,20 @@ internal static class ScopedPoolLeaseStateCache<T>
         return state;
     }
 
+}
+
+[ExcludeFromCodeCoverage]
+[DebuggerNonUserCode]
+internal static class ScopedPoolLeaseStateCache
+{
     // Keep the first two states on the established path. Deeper rentals rotate through a
     // ring so a warmed recursive traversal does not rescan its active prefix at every depth.
     // Release only advances the ownership version; arbitrary disposal order remains valid.
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static ScopedPoolLeaseState AcquireNested(out long token)
+    internal static ScopedPoolLeaseState AcquireNested(ScopedPoolLeaseState secondary, out long token)
     {
-        ScopedPoolLeaseState? start = _nextNested;
+        // The secondary state anchors the ring cursor without another thread-static lookup.
+        ScopedPoolLeaseState? start = secondary.Next;
         if (start is not null)
         {
             ScopedPoolLeaseState current = start;
@@ -108,7 +112,7 @@ internal static class ScopedPoolLeaseStateCache<T>
             {
                 if (current.TryAcquire(out token))
                 {
-                    _nextNested = current.Next;
+                    secondary.Next = current.Next;
                     return current;
                 }
 
@@ -128,7 +132,7 @@ internal static class ScopedPoolLeaseStateCache<T>
             start.Next = created;
         }
 
-        _nextNested = created.Next;
+        secondary.Next = created.Next;
         _ = created.TryAcquire(out token);
         return created;
     }
