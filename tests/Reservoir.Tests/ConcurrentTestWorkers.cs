@@ -8,12 +8,17 @@ internal static class ConcurrentTestWorkers
     internal static async Task RunAsync(
         IEnumerable<Action<CancellationToken>> workers,
         Action<CancellationToken>? background = null,
-        TimeSpan? timeout = null)
+        TimeSpan? timeout = null,
+        TimeSpan? cleanupTimeout = null)
     {
         TimeSpan deadline = timeout ?? TimeSpan.FromSeconds(30);
         using var stop = new CancellationTokenSource(deadline);
         ExceptionDispatchInfo? failure = null;
+        Exception? cleanupFailure = null;
         var tasks = new List<Task>();
+
+        void RecordFailure(Exception exception) =>
+            Interlocked.CompareExchange(ref failure, ExceptionDispatchInfo.Capture(exception), null);
 
         Task Start(Action<CancellationToken> worker)
         {
@@ -28,8 +33,7 @@ internal static class ConcurrentTestWorkers
                 }
                 catch (Exception exception)
                 {
-                    Interlocked.CompareExchange(
-                        ref failure, ExceptionDispatchInfo.Capture(exception), null);
+                    RecordFailure(exception);
                     stop.Cancel();
                 }
             }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
@@ -45,6 +49,8 @@ internal static class ConcurrentTestWorkers
             }
 
             Task[] foreground = workers.Select(Start).ToArray();
+            // The source cancels cooperative loops and barriers, including during startup.
+            // WaitAsync also bounds observation of a worker that never checks cancellation.
             await Task.WhenAll(foreground).WaitAsync(deadline);
             if (stop.IsCancellationRequested && failure is null)
             {
@@ -53,26 +59,32 @@ internal static class ConcurrentTestWorkers
         }
         catch (Exception exception)
         {
-            Interlocked.CompareExchange(ref failure, ExceptionDispatchInfo.Capture(exception), null);
+            RecordFailure(exception);
         }
         finally
         {
             stop.Cancel();
             try
             {
-                await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(10));
+                await Task.WhenAll(tasks).WaitAsync(cleanupTimeout ?? TimeSpan.FromSeconds(10));
             }
             catch (Exception exception)
             {
-                if (failure is null)
-                {
-                    failure = ExceptionDispatchInfo.Capture(exception);
-                }
-                else
-                {
-                    failure.SourceException.Data["WorkerCleanupFailure"] = exception;
-                }
+                cleanupFailure = exception;
             }
+        }
+
+        if (cleanupFailure is not null)
+        {
+            ExceptionDispatchInfo? primary = Volatile.Read(ref failure);
+            if (primary is not null)
+            {
+                throw new AggregateException(
+                    "Concurrency workers failed and did not complete cleanup.",
+                    primary.SourceException, cleanupFailure);
+            }
+
+            ExceptionDispatchInfo.Capture(cleanupFailure).Throw();
         }
 
         failure?.Throw();

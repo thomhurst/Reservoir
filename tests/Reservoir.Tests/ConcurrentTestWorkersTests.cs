@@ -59,6 +59,52 @@ public class ConcurrentTestWorkersTests
     }
 
     [Test]
+    public async Task CleanupTimeoutReportsBothFailuresAndPreservesOriginalStack()
+    {
+        using var started = new Barrier(2);
+        using var release = new ManualResetEventSlim();
+        var original = new InvalidOperationException("Injected renter failure before cleanup timeout.");
+        Thread? blockedThread = null;
+        Exception? observed = null;
+        bool joined = false;
+        try
+        {
+            await ConcurrentTestWorkers.RunAsync(
+            [
+                token =>
+                {
+                    started.SignalAndWait(token);
+                    throw original;
+                }
+            ], token =>
+            {
+                blockedThread = Thread.CurrentThread;
+                started.SignalAndWait(token);
+                // Deliberately ignore cancellation to exercise the hard cleanup deadline.
+                // The test releases and joins this owned thread in finally.
+                release.Wait();
+            }, cleanupTimeout: TimeSpan.FromMilliseconds(50));
+        }
+        catch (Exception exception)
+        {
+            observed = exception;
+        }
+        finally
+        {
+            release.Set();
+            joined = blockedThread?.Join(TimeSpan.FromSeconds(5)) ?? false;
+        }
+
+        await Assert.That(joined).IsTrue();
+        await Assert.That(observed).IsTypeOf<AggregateException>();
+        var aggregate = (AggregateException)observed!;
+        await Assert.That(aggregate.InnerExceptions.Count).IsEqualTo(2);
+        await Assert.That(aggregate.InnerExceptions[0]).IsSameReferenceAs(original);
+        await Assert.That(original.StackTrace).Contains(nameof(CleanupTimeoutReportsBothFailuresAndPreservesOriginalStack));
+        await Assert.That(aggregate.InnerExceptions[1]).IsTypeOf<TimeoutException>();
+    }
+
+    [Test]
     public async Task DeadlineCancelsAndJoinsBarrierWaiters()
     {
         using var barrier = new Barrier(2);
