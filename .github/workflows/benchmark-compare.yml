@@ -34,6 +34,14 @@ on:
         description: 'Runtimes to benchmark, space separated'
         required: false
         default: net10.0
+      launch_count:
+        description: 'Independent measured processes per benchmark (1-10)'
+        required: false
+        default: '1'
+      jit_disasm:
+        description: 'Optional DOTNET_JitDisasm method filter for diagnosis'
+        required: false
+        default: ''
       library_asset:
         description: 'Reservoir asset (netstandard2.0 selects the bounded destruction/runtime/factory suite)'
         type: choice
@@ -115,10 +123,15 @@ jobs:
           BENCH_FILTER: ${{ matrix.group.filter }}
           BENCH_JOB: ${{ matrix.group.job }}
           BENCH_RUNTIMES: ${{ inputs.runtimes || 'net10.0' }}
+          BENCH_LAUNCH_COUNT: ${{ inputs.launch_count || '1' }}
+          DOTNET_JitDisasm: ${{ inputs.jit_disasm || '' }}
+          DOTNET_JitDisasmDiffable: '1'
         run: |
           # Force arrays: splatting a single string would spread its characters.
           [string[]] $filters = @($env:BENCH_FILTER -split '\s+' | Where-Object { $_ })
           [string[]] $runtimes = @($env:BENCH_RUNTIMES -split '\s+' | Where-Object { $_ })
+          [int] $launchCount = $env:BENCH_LAUNCH_COUNT
+          if ($launchCount -lt 1 -or $launchCount -gt 10) { throw 'launch_count must be between 1 and 10.' }
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
 
           $artifacts = Join-Path $PWD 'artifacts'
@@ -146,6 +159,7 @@ jobs:
               & dotnet bin/Release/net10.0/Reservoir.Benchmarks.dll `
                 --filter @filters `
                 --job "$env:BENCH_JOB" `
+                --launchCount $launchCount `
                 --runtimes @runtimes `
                 --artifacts (Join-Path $artifacts $side) 2>&1 |
                 Tee-Object -FilePath (Join-Path $artifacts "$side.log")
@@ -177,11 +191,13 @@ jobs:
           GROUP_NAME: ${{ matrix.group.name }}
           GROUP_FILTER: ${{ matrix.group.filter }}
           GROUP_JOB: ${{ matrix.group.job }}
+          LAUNCH_COUNT: ${{ inputs.launch_count || '1' }}
         run: |
           "## Reservoir benchmark comparison: $env:GROUP_NAME" >> $env:GITHUB_STEP_SUMMARY
           "" >> $env:GITHUB_STEP_SUMMARY
           "Baseline ``$env:BASELINE_REF`` versus candidate ``$env:CANDIDATE_REF`` on the same runner; filter ``$env:GROUP_FILTER``, job ``$env:GROUP_JOB``." >> $env:GITHUB_STEP_SUMMARY
           "Reservoir target framework override: ``$env:ReservoirTargetFramework`` (empty selects the host asset)." >> $env:GITHUB_STEP_SUMMARY
+          "Independent measured processes per benchmark: ``$env:LAUNCH_COUNT``." >> $env:GITHUB_STEP_SUMMARY
 
           foreach ($side in 'baseline', 'candidate') {
             "" >> $env:GITHUB_STEP_SUMMARY
