@@ -174,9 +174,13 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             // both passes guarantees no slot is taken from without its gate raised first. A slot
             // created after the snapshot is missed, which matches the existing behavior of a
             // return racing Clear.
+            T?[] capturedItems;
             lock (slots)
             {
                 var snapshot = slots.Values;
+                // Reserve the capture buffer before raising gates. Each Clear owns its buffer,
+                // so callbacks may reenter Clear or clear another pool after we release locks.
+                capturedItems = new T?[snapshot.Count];
                 foreach (Slot slot in snapshot)
                 {
                     // Serialized clears make this the gate's only writer; odd marks in-progress.
@@ -188,6 +192,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
                 // gate and reconciles through the slot lock instead.
                 Interlocked.MemoryBarrierProcessWide();
 
+                int index = 0;
                 foreach (Slot slot in snapshot)
                 {
                     T? item;
@@ -211,19 +216,26 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
                         Volatile.Write(ref slot.Gate, unchecked(slot.Gate + 1));
                     }
 
-                    if (item is null)
-                    {
-                        continue;
-                    }
+                    capturedItems[index++] = item;
+                }
+            }
 
-                    try
-                    {
-                        fallback.Destroy(item);
-                    }
-                    catch (Exception exception)
-                    {
-                        firstException ??= exception;
-                    }
+            // Gate reconciliation is complete. Never invoke user cleanup while holding either
+            // the collection lock or a slot lock: callbacks can wait for other pool operations.
+            foreach (T? item in capturedItems)
+            {
+                if (item is null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    fallback.Destroy(item);
+                }
+                catch (Exception exception)
+                {
+                    firstException ??= exception;
                 }
             }
 
