@@ -6,7 +6,7 @@
 
 - [Successful Ubuntu run 34148738010](https://github.com/thomhurst/Reservoir/actions/runs/34148738010), [full logs and artifacts](https://github.com/thomhurst/Reservoir/actions/runs/34148738010/artifacts/10029325401).
 - Measured implementation and harness commit: `f7bdd8f27976f08de059b5ee0db947b438a9e47f`; parent/base: `b0b8d5b`. This is an additive API investigation with manual, existing scoped, and proposed scoped methods measured sequentially in the same process harness/job on one runner, rather than a claim that existing methods became faster.
-- Reviewed implementation commit before this report: `81c3a8fe590d8190baca078923082cc156852fb1`. Its production diff from the measured commit contains only two XML summary clarifications and trimming metadata on the new lease's `TPolicy`; executable method bodies and the benchmark harness are identical.
+- Reviewed implementation commit before this report: `81c3a8fe590d8190baca078923082cc156852fb1`. Its production diff from the measured commit contained only two XML summary clarifications and trimming metadata on the new lease's `TPolicy`. PR validation subsequently removed that unnecessary metadata requirement because it caused NativeAOT error IL2091 at the unannotated pool caller. Executable method bodies and the benchmark harness remain identical to the measured commit.
 - `ubuntu-latest`: Ubuntu 24.04.4 LTS, AMD EPYC 7763 2.45 GHz, 4 logical / 2 physical cores; SDK 10.0.400; .NET 8.0.30 and .NET 10.0.11, X64 RyuJIT.
 - BenchmarkDotNet 0.15.8 `MediumRun`: 2 launches, 10 warmup iterations, 15 measurement iterations per launch; `MemoryDiagnoser`; capacities 1, 32, 256; 42 measured cases. The workflow's separate Dry pass only validates setup.
 
