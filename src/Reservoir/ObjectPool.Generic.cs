@@ -356,15 +356,26 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.NoInlining)]
     private T RentSlow(int startIndex)
     {
-        for (int offset = 1; offset < MaximumRetained; offset++)
+        ObjectWrapper[] items = _items;
+        int startSlot = FirstSlotOffset + startIndex * CacheLineSlotStride;
+        // Scan physical indices in two contiguous ranges. The home slot was already tried;
+        // splitting at the array boundary avoids wrap arithmetic on every empty slot.
+        for (int index = startSlot + CacheLineSlotStride; index < items.Length; index += CacheLineSlotStride)
         {
-            int index = startIndex + offset;
-            if (index >= MaximumRetained)
+            ref T? slot = ref items[index].Element;
+            T? item = Volatile.Read(ref slot);
+            if (item is not null
+                && ReferenceEquals(
+                    Interlocked.CompareExchange(ref slot, null, item),
+                    item))
             {
-                index -= MaximumRetained;
+                return item;
             }
+        }
 
-            ref T? slot = ref GetSlot(index);
+        for (int index = FirstSlotOffset; index < startSlot; index += CacheLineSlotStride)
+        {
+            ref T? slot = ref items[index].Element;
             T? item = Volatile.Read(ref slot);
             if (item is not null
                 && ReferenceEquals(
@@ -555,17 +566,22 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void ReturnSlow(T returned, T displaced, int startIndex)
     {
-        for (int offset = 1; offset < MaximumRetained; offset++)
+        ObjectWrapper[] items = _items;
+        int startSlot = FirstSlotOffset + startIndex * CacheLineSlotStride;
+        for (int index = startSlot + CacheLineSlotStride; index < items.Length; index += CacheLineSlotStride)
         {
-            int index = startIndex + offset;
-            if (index >= MaximumRetained)
+            // Occupied slots cost a shared read, preserving read-before-CAS under contention.
+            ref T? slot = ref items[index].Element;
+            if (Volatile.Read(ref slot) is null
+                && Interlocked.CompareExchange(ref slot, displaced, null) is null)
             {
-                index -= MaximumRetained;
+                return;
             }
+        }
 
-            // Test before the exchange so an occupied slot costs a shared read instead of a failed
-            // locked operation that steals the line from the thread parked there.
-            ref T? slot = ref GetSlot(index);
+        for (int index = FirstSlotOffset; index < startSlot; index += CacheLineSlotStride)
+        {
+            ref T? slot = ref items[index].Element;
             if (Volatile.Read(ref slot) is null
                 && Interlocked.CompareExchange(ref slot, displaced, null) is null)
             {
