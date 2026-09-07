@@ -1,0 +1,58 @@
+```
+
+BenchmarkDotNet v0.15.8, Linux Ubuntu 24.04.4 LTS (Noble Numbat)
+AMD EPYC 7763 2.45GHz, 1 CPU, 4 logical and 2 physical cores
+.NET SDK 10.0.400
+  [Host]    : .NET 10.0.11 (10.0.11, 10.0.1126.37416), X64 RyuJIT x86-64-v3
+  .NET 10.0 : .NET 10.0.11 (10.0.11, 10.0.1126.37416), X64 RyuJIT x86-64-v3
+  .NET 8.0  : .NET 8.0.30 (8.0.30, 8.0.3026.36720), X64 RyuJIT x86-64-v3
+
+IterationCount=15  LaunchCount=2  WarmupCount=10  
+
+```
+| Method              | Job       | Runtime   | Capacity | Mean     | Error    | StdDev   | Median   | Ratio | RatioSD | Allocated | Alloc Ratio |
+|-------------------- |---------- |---------- |--------- |---------:|---------:|---------:|---------:|------:|--------:|----------:|------------:|
+| **Manual**              | **.NET 10.0** | **.NET 10.0** | **1**        | **15.67 ns** | **1.302 ns** | **1.868 ns** | **15.71 ns** |  **0.52** |    **0.06** |         **-** |          **NA** |
+| Scoped              | .NET 10.0 | .NET 10.0 | 1        | 13.87 ns | 0.103 ns | 0.145 ns | 13.97 ns |  0.46 |    0.01 |         - |          NA |
+| SharedScoped        | .NET 10.0 | .NET 10.0 | 1        | 21.85 ns | 1.782 ns | 2.612 ns | 19.51 ns |  0.73 |    0.09 |         - |          NA |
+| SharedScopedValue   | .NET 10.0 | .NET 10.0 | 1        | 22.52 ns | 1.159 ns | 1.735 ns | 22.53 ns |  0.75 |    0.06 |         - |          NA |
+| RuntimeManual       | .NET 10.0 | .NET 10.0 | 1        | 18.51 ns | 0.030 ns | 0.043 ns | 18.50 ns |  0.62 |    0.01 |         - |          NA |
+| RuntimeScoped       | .NET 10.0 | .NET 10.0 | 1        | 19.48 ns | 0.233 ns | 0.334 ns | 19.50 ns |  0.65 |    0.01 |         - |          NA |
+| RuntimeSharedScoped | .NET 10.0 | .NET 10.0 | 1        | 24.27 ns | 0.059 ns | 0.083 ns | 24.29 ns |  0.81 |    0.01 |         - |          NA |
+| Manual              | .NET 8.0  | .NET 8.0  | 1        | 29.97 ns | 0.173 ns | 0.242 ns | 29.78 ns |  1.00 |    0.01 |         - |          NA |
+| Scoped              | .NET 8.0  | .NET 8.0  | 1        | 25.58 ns | 0.024 ns | 0.033 ns | 25.59 ns |  0.85 |    0.01 |         - |          NA |
+| SharedScoped        | .NET 8.0  | .NET 8.0  | 1        | 37.55 ns | 0.130 ns | 0.190 ns | 37.56 ns |  1.25 |    0.01 |         - |          NA |
+| SharedScopedValue   | .NET 8.0  | .NET 8.0  | 1        | 36.56 ns | 0.062 ns | 0.087 ns | 36.58 ns |  1.22 |    0.01 |         - |          NA |
+| RuntimeManual       | .NET 8.0  | .NET 8.0  | 1        | 40.62 ns | 0.114 ns | 0.163 ns | 40.61 ns |  1.36 |    0.01 |         - |          NA |
+| RuntimeScoped       | .NET 8.0  | .NET 8.0  | 1        | 37.21 ns | 0.931 ns | 1.305 ns | 36.03 ns |  1.24 |    0.04 |         - |          NA |
+| RuntimeSharedScoped | .NET 8.0  | .NET 8.0  | 1        | 46.13 ns | 0.442 ns | 0.619 ns | 45.63 ns |  1.54 |    0.02 |         - |          NA |
+|                     |           |           |          |          |          |          |          |       |         |           |             |
+| **Manual**              | **.NET 10.0** | **.NET 10.0** | **32**       | **13.83 ns** | **0.020 ns** | **0.029 ns** | **13.82 ns** |  **0.47** |    **0.00** |         **-** |          **NA** |
+| Scoped              | .NET 10.0 | .NET 10.0 | 32       | 13.72 ns | 0.252 ns | 0.346 ns | 13.72 ns |  0.47 |    0.01 |         - |          NA |
+| SharedScoped        | .NET 10.0 | .NET 10.0 | 32       | 21.67 ns | 1.541 ns | 2.307 ns | 21.72 ns |  0.74 |    0.08 |         - |          NA |
+| SharedScopedValue   | .NET 10.0 | .NET 10.0 | 32       | 19.54 ns | 0.052 ns | 0.073 ns | 19.57 ns |  0.67 |    0.00 |         - |          NA |
+| RuntimeManual       | .NET 10.0 | .NET 10.0 | 32       | 19.77 ns | 0.676 ns | 0.948 ns | 18.94 ns |  0.67 |    0.03 |         - |          NA |
+| RuntimeScoped       | .NET 10.0 | .NET 10.0 | 32       | 18.68 ns | 0.210 ns | 0.301 ns | 18.68 ns |  0.64 |    0.01 |         - |          NA |
+| RuntimeSharedScoped | .NET 10.0 | .NET 10.0 | 32       | 24.61 ns | 0.160 ns | 0.235 ns | 24.61 ns |  0.84 |    0.01 |         - |          NA |
+| Manual              | .NET 8.0  | .NET 8.0  | 32       | 29.32 ns | 0.016 ns | 0.022 ns | 29.33 ns |  1.00 |    0.00 |         - |          NA |
+| Scoped              | .NET 8.0  | .NET 8.0  | 32       | 26.08 ns | 0.260 ns | 0.381 ns | 26.38 ns |  0.89 |    0.01 |         - |          NA |
+| SharedScoped        | .NET 8.0  | .NET 8.0  | 32       | 37.49 ns | 0.077 ns | 0.116 ns | 37.48 ns |  1.28 |    0.00 |         - |          NA |
+| SharedScopedValue   | .NET 8.0  | .NET 8.0  | 32       | 38.18 ns | 0.276 ns | 0.368 ns | 37.94 ns |  1.30 |    0.01 |         - |          NA |
+| RuntimeManual       | .NET 8.0  | .NET 8.0  | 32       | 39.98 ns | 0.271 ns | 0.389 ns | 40.02 ns |  1.36 |    0.01 |         - |          NA |
+| RuntimeScoped       | .NET 8.0  | .NET 8.0  | 32       | 35.95 ns | 0.051 ns | 0.072 ns | 35.97 ns |  1.23 |    0.00 |         - |          NA |
+| RuntimeSharedScoped | .NET 8.0  | .NET 8.0  | 32       | 45.57 ns | 0.350 ns | 0.491 ns | 45.94 ns |  1.55 |    0.02 |         - |          NA |
+|                     |           |           |          |          |          |          |          |       |         |           |             |
+| **Manual**              | **.NET 10.0** | **.NET 10.0** | **256**      | **16.98 ns** | **0.925 ns** | **1.326 ns** | **15.80 ns** |  **0.52** |    **0.04** |         **-** |          **NA** |
+| Scoped              | .NET 10.0 | .NET 10.0 | 256      | 14.68 ns | 0.049 ns | 0.072 ns | 14.70 ns |  0.45 |    0.00 |         - |          NA |
+| SharedScoped        | .NET 10.0 | .NET 10.0 | 256      | 19.97 ns | 0.010 ns | 0.013 ns | 19.97 ns |  0.61 |    0.00 |         - |          NA |
+| SharedScopedValue   | .NET 10.0 | .NET 10.0 | 256      | 19.81 ns | 0.020 ns | 0.028 ns | 19.81 ns |  0.61 |    0.00 |         - |          NA |
+| RuntimeManual       | .NET 10.0 | .NET 10.0 | 256      | 20.88 ns | 0.164 ns | 0.235 ns | 20.91 ns |  0.64 |    0.01 |         - |          NA |
+| RuntimeScoped       | .NET 10.0 | .NET 10.0 | 256      | 18.59 ns | 0.045 ns | 0.064 ns | 18.62 ns |  0.57 |    0.00 |         - |          NA |
+| RuntimeSharedScoped | .NET 10.0 | .NET 10.0 | 256      | 23.87 ns | 0.014 ns | 0.019 ns | 23.87 ns |  0.73 |    0.00 |         - |          NA |
+| Manual              | .NET 8.0  | .NET 8.0  | 256      | 32.62 ns | 0.049 ns | 0.071 ns | 32.62 ns |  1.00 |    0.00 |         - |          NA |
+| Scoped              | .NET 8.0  | .NET 8.0  | 256      | 28.00 ns | 1.192 ns | 1.671 ns | 26.45 ns |  0.86 |    0.05 |         - |          NA |
+| SharedScoped        | .NET 8.0  | .NET 8.0  | 256      | 39.44 ns | 0.112 ns | 0.157 ns | 39.34 ns |  1.21 |    0.01 |         - |          NA |
+| SharedScopedValue   | .NET 8.0  | .NET 8.0  | 256      | 37.61 ns | 0.046 ns | 0.066 ns | 37.61 ns |  1.15 |    0.00 |         - |          NA |
+| RuntimeManual       | .NET 8.0  | .NET 8.0  | 256      | 47.73 ns | 1.227 ns | 1.680 ns | 47.75 ns |  1.46 |    0.05 |         - |          NA |
+| RuntimeScoped       | .NET 8.0  | .NET 8.0  | 256      | 37.22 ns | 0.746 ns | 1.021 ns | 37.21 ns |  1.14 |    0.03 |         - |          NA |
+| RuntimeSharedScoped | .NET 8.0  | .NET 8.0  | 256      | 51.02 ns | 1.205 ns | 1.690 ns | 52.59 ns |  1.56 |    0.05 |         - |          NA |
