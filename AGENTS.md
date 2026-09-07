@@ -8,6 +8,7 @@ Before local benchmarks, profiling, stress runs, builds, tests, restores, or oth
 
 ## Validation
 
+- SDK: `global.json` selects the .NET 10.0.4xx feature band, rolls forward only to the latest patch in that band, and excludes preview SDKs. CI setup reads this file directly.
 - Restore/build: `dotnet restore Reservoir.slnx`, then `dotnet build Reservoir.slnx -c Release --no-restore` (warnings as errors).
 - Tests: `dotnet test tests/Reservoir.Tests/Reservoir.Tests.csproj -c Release --no-build`; also run `tests/Reservoir.NetStandard.Tests/Reservoir.NetStandard.Tests.csproj` with the same options.
 - Website: Node 24; run `npm ci` and `npm run build` from `website/`.
