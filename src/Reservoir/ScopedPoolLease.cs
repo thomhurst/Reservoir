@@ -45,11 +45,6 @@ internal ref struct ScopedPoolLease<T>
         ScopedPoolLeaseState? state = _state;
         if (state is not null && state.TryRelease(_token))
         {
-            if ((_token & ScopedPoolLeaseState.NestedFlag) != 0)
-            {
-                ScopedPoolLeaseStateCache<T>.Return(state);
-            }
-
             value = _value!;
             return true;
         }
@@ -68,47 +63,74 @@ internal static class ScopedPoolLeaseStateCache<T>
     private static ScopedPoolLeaseState? _state;
 
     [ThreadStatic]
-    private static ScopedPoolLeaseState? _available;
+    private static ScopedPoolLeaseState? _nextNested;
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static ScopedPoolLeaseState Acquire(out long token)
     {
         ScopedPoolLeaseState? state = _state;
-        if (state is not null && state.TryAcquire(out token))
+        if (state is null)
         {
-            return state;
-        }
-
-        return AcquireSlow(state, out token);
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static ScopedPoolLeaseState AcquireSlow(ScopedPoolLeaseState? primary, out long token)
-    {
-        ScopedPoolLeaseState state;
-        if (primary is null)
-        {
-            state = new PaddedScopedPoolLeaseState(isPrimary: true);
+            state = new PaddedScopedPoolLeaseState();
             _state = state;
         }
         else
         {
-            state = _available ?? new PaddedScopedPoolLeaseState();
-            _available = state.Next;
-            state.Next = null;
+            if (!state.TryAcquire(out token))
+            {
+                state.Next ??= new PaddedScopedPoolLeaseState();
+                state = state.Next;
+                if (state.TryAcquire(out token))
+                {
+                    return state;
+                }
+
+                return AcquireNested(out token);
+            }
+
+            return state;
         }
 
         _ = state.TryAcquire(out token);
         return state;
     }
 
-    // The primary state stays cached for ordinary rentals. Only a successful release of
-    // a nested state publishes it here; stale copies cannot insert the same state twice.
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static void Return(ScopedPoolLeaseState state)
+    // Keep the first two states on the established path. Deeper rentals rotate through a
+    // ring so a warmed recursive traversal does not rescan its active prefix at every depth.
+    // Release only advances the ownership version; arbitrary disposal order remains valid.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ScopedPoolLeaseState AcquireNested(out long token)
     {
-        state.Next = _available;
-        _available = state;
+        ScopedPoolLeaseState? start = _nextNested;
+        if (start is not null)
+        {
+            ScopedPoolLeaseState current = start;
+            do
+            {
+                if (current.TryAcquire(out token))
+                {
+                    _nextNested = current.Next;
+                    return current;
+                }
+
+                current = current.Next!;
+            }
+            while (!ReferenceEquals(current, start));
+        }
+
+        var created = new PaddedScopedPoolLeaseState();
+        if (start is null)
+        {
+            created.Next = created;
+        }
+        else
+        {
+            created.Next = start.Next;
+            start.Next = created;
+        }
+
+        _nextNested = created.Next;
+        _ = created.TryAcquire(out token);
+        return created;
     }
 }
 
@@ -119,15 +141,7 @@ internal static class ScopedPoolLeaseStateCache<T>
 [DebuggerNonUserCode]
 internal class ScopedPoolLeaseState : CacheLinePadded
 {
-    // Bit 0 records ownership; bit 1 distinguishes nested states from the primary state.
-    // Advancing a generation by four preserves the tag, including across integer overflow.
-    internal const long NestedFlag = 2;
     private long _version;
-
-    internal ScopedPoolLeaseState(bool isPrimary = false)
-    {
-        _version = isPrimary ? 0 : NestedFlag;
-    }
 
     internal ScopedPoolLeaseState? Next { get; set; }
 
@@ -162,7 +176,7 @@ internal class ScopedPoolLeaseState : CacheLinePadded
             return false;
         }
 
-        _version = unchecked(token + 3);
+        _version = token + 1;
         return true;
     }
 }
@@ -171,11 +185,6 @@ internal class ScopedPoolLeaseState : CacheLinePadded
 [DebuggerNonUserCode]
 internal sealed class PaddedScopedPoolLeaseState : ScopedPoolLeaseState
 {
-    internal PaddedScopedPoolLeaseState(bool isPrimary = false)
-        : base(isPrimary)
-    {
-    }
-
 #pragma warning disable CS0169 // The field is only there to occupy space.
     private readonly CacheLinePad _trailingPad;
 #pragma warning restore CS0169
