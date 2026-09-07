@@ -15,8 +15,8 @@ var pool = new ObjectPool<Buffer, BufferPolicy>(
 ```
 
 `maxCapacity` is the maximum number of idle objects retained by the bounded shared tier, not a
-limit on simultaneous rentals. Scoped rentals additionally retain one object per participating
-thread. A miss always calls `Create()`, so demand can exceed the retained count.
+limit on simultaneous rentals. `RentScoped()` rentals additionally retain one object per participating
+thread; `RentScopedShared()` rentals use only the shared tier. A miss always calls `Create()`, so demand can exceed the retained count.
 
 ## Write a policy
 
@@ -101,6 +101,37 @@ renting threads can reuse them.
 For performance-critical synchronous code, prefer `RentScoped(out T)`; the `out` overload avoids
 repeated lease ownership validation. Manual rental is required when ownership crosses an `await`.
 Nanosecond results vary, so benchmark representative workloads on target hardware.
+
+## Scoped rentals with bounded shared retention
+
+Use `RentScopedShared()` or `RentScopedShared(out T)` when idle objects must stay within
+`MaximumRetained`. Both `ObjectPool<T,TPolicy>` and `ObjectPool<T>` expose these methods:
+
+```csharp
+using var pool = new ObjectPool<Buffer, BufferPolicy>(
+    new BufferPolicy(maxRetainedBytes: 64 * 1024), maxCapacity: 32);
+
+using var lease = pool.RentScopedShared(out Buffer buffer);
+// Use buffer synchronously. Disposal resets and returns it to shared storage.
+```
+
+This returns a stack-only `SharedPooledLease`, with the same automatic return and stale-copy
+protection as `PooledLease`. It bypasses thread-local object storage on both rent and return,
+even when the pool has `threadLocalFastPath: true`. Nested scopes and many threads can rent
+more than the capacity concurrently; only idle objects retained by this mode are bounded.
+Excess returns use the policy's existing destruction behavior.
+
+The bound does not include outstanding rentals, references kept by callers, or lease ownership
+bookkeeping. Bookkeeping can allocate on a thread's first rental and when nesting reaches a
+new depth; warmed scopes reuse it. This mode does not drain thread-local objects retained by
+other rental modes on the same pool. Use shared-store rentals consistently when the whole
+pool's idle-object retention must be bounded.
+
+Choose this mode for large objects or many participating threads when bounded idle retention
+matters more than thread-local reuse. Existing `RentScoped()` remains the default thread-local
+option. Shared-store rentals use synchronization like manual `Rent()`/`Return()` and add lease
+ownership checks; they are not intended as a faster replacement for the thread-local path.
+Manual rental is still required across `await`.
 
 Default shared-tier retention is `Math.Max(32, 2 * Environment.ProcessorCount)`. Pass a positive
 `maxCapacity` to every constructor to override it.

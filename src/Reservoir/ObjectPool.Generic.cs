@@ -16,7 +16,7 @@ namespace Reservoir;
 
 /// <summary>
 /// A thread-safe object pool specialized for a struct policy, with bounded shared retention and a
-/// per-pool thread-local tier for scoped rentals.
+/// per-pool thread-local tier for default scoped rentals.
 /// </summary>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
 /// <typeparam name="TPolicy">The policy used to create, reset, and destroy objects.</typeparam>

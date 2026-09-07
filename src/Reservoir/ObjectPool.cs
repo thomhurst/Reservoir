@@ -9,7 +9,7 @@ namespace Reservoir;
 
 /// <summary>
 /// A thread-safe object pool for callers that prefer a policy instance or factory, with bounded
-/// shared retention and a per-pool thread-local tier for scoped rentals.
+/// shared retention and a per-pool thread-local tier for default scoped rentals.
 /// </summary>
 /// <remarks>
 /// This type stores policies through <see cref="IPooledObjectPolicy{T}"/>. Passing a struct policy

@@ -19,8 +19,11 @@ Never return an object twice. Never return an object to a pool that did not rent
 Do not concurrently use an object while returning it. If work crosses an `await`, keep ownership until all operations using the object have completed, then return it in `finally`.
 
 A `PooledLease` is stack-only and protects lexical synchronous scopes. Copies of a lease are safe
-to dispose, but a stale copy cannot release a later rental that reused the lease state. Scoped
-object-pool rentals return through a per-pool thread-local tier. Manual rentals use the same
+to dispose, but a stale copy cannot release a later rental that reused the lease state.
+`RentScoped()` object-pool rentals return through a per-pool thread-local tier.
+`RentScopedShared()` instead returns only to bounded shared storage while preserving the same
+lease-copy protection. Its idle-object bound excludes outstanding rentals and ownership
+bookkeeping; other modes can still retain thread-local objects in the same pool. Manual rentals use the same
 thread-local tier only when constructed with `threadLocalFastPath: true` — a return then prefers
 the returning thread's slot when that thread has rented from the pool, overflowing to the bounded
 shared tier otherwise — so each thread that rents retains up to one object beyond
