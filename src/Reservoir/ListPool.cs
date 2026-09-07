@@ -71,15 +71,18 @@ sealed class ListPool<T>
 
     /// <summary>Rents an empty list owned by a stack-only thread-local lease.</summary>
     public Lease RentScoped()
-        => new(this, _scopedTier.Rent(_pool));
+    {
+        List<T> list = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<List<T>>.Slot slot);
+        return new Lease(this, list, slot);
+    }
 
     /// <summary>
     /// Rents an empty list owned by a stack-only thread-local lease and exposes it directly.
     /// </summary>
     public Lease RentScoped(out List<T> list)
     {
-        list = _scopedTier.Rent(_pool);
-        return new Lease(this, list);
+        list = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<List<T>>.Slot slot);
+        return new Lease(this, list, slot);
     }
 
     /// <summary>Returns a list, clearing it when retained and discarding it when too large.</summary>
@@ -106,14 +109,14 @@ sealed class ListPool<T>
         return false;
     }
 
-    private void ReturnScoped(List<T> list)
+    private void ReturnScoped(List<T> list, InstanceThreadLocalFrontTier<List<T>>.Slot slot)
     {
         if (!TryReset(list))
         {
             return;
         }
 
-        if (!_scopedTier.TryReturn(list))
+        if (!InstanceThreadLocalFrontTier<List<T>>.TryReturn(slot, list))
         {
             _pool.ReturnWithoutReset(list);
         }
@@ -159,11 +162,16 @@ sealed class ListPool<T>
     public ref struct Lease
     {
         private readonly ListPool<T>? _pool;
+        private readonly InstanceThreadLocalFrontTier<List<T>>.Slot? _slot;
         private ScopedPoolLease<List<T>> _lease;
 
-        internal Lease(ListPool<T> pool, List<T> list)
+        internal Lease(
+            ListPool<T> pool,
+            List<T> list,
+            InstanceThreadLocalFrontTier<List<T>>.Slot slot)
         {
             _pool = pool;
+            _slot = slot;
             _lease = new ScopedPoolLease<List<T>>(list);
         }
 
@@ -175,7 +183,7 @@ sealed class ListPool<T>
         {
             if (_lease.TryRelease(out List<T> list))
             {
-                _pool!.ReturnScoped(list);
+                _pool!.ReturnScoped(list, _slot!);
             }
         }
     }

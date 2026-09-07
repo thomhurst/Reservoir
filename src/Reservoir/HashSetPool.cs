@@ -104,15 +104,18 @@ sealed class HashSetPool<T>
 
     /// <summary>Rents an empty hash set owned by a stack-only thread-local lease.</summary>
     public Lease RentScoped()
-        => new(this, _scopedTier.Rent(_pool));
+    {
+        HashSet<T> set = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<HashSet<T>>.Slot slot);
+        return new Lease(this, set, slot);
+    }
 
     /// <summary>
     /// Rents an empty hash set owned by a stack-only thread-local lease and exposes it directly.
     /// </summary>
     public Lease RentScoped(out HashSet<T> set)
     {
-        set = _scopedTier.Rent(_pool);
-        return new Lease(this, set);
+        set = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<HashSet<T>>.Slot slot);
+        return new Lease(this, set, slot);
     }
 
     /// <summary>Returns a hash set, clearing it when retained and discarding it when incompatible or too large.</summary>
@@ -139,14 +142,14 @@ sealed class HashSetPool<T>
         return false;
     }
 
-    private void ReturnScoped(HashSet<T> set)
+    private void ReturnScoped(HashSet<T> set, InstanceThreadLocalFrontTier<HashSet<T>>.Slot slot)
     {
         if (!TryReset(set))
         {
             return;
         }
 
-        if (!_scopedTier.TryReturn(set))
+        if (!InstanceThreadLocalFrontTier<HashSet<T>>.TryReturn(slot, set))
         {
             _pool.ReturnWithoutReset(set);
         }
@@ -220,11 +223,14 @@ sealed class HashSetPool<T>
     public ref struct Lease
     {
         private readonly HashSetPool<T>? _pool;
+        private readonly InstanceThreadLocalFrontTier<HashSet<T>>.Slot? _slot;
         private ScopedPoolLease<HashSet<T>> _lease;
 
-        internal Lease(HashSetPool<T> pool, HashSet<T> set)
+        internal Lease(HashSetPool<T> pool, HashSet<T> set,
+            InstanceThreadLocalFrontTier<HashSet<T>>.Slot slot)
         {
             _pool = pool;
+            _slot = slot;
             _lease = new ScopedPoolLease<HashSet<T>>(set);
         }
 
@@ -236,7 +242,7 @@ sealed class HashSetPool<T>
         {
             if (_lease.TryRelease(out HashSet<T> set))
             {
-                _pool!.ReturnScoped(set);
+                _pool!.ReturnScoped(set, _slot!);
             }
         }
     }
