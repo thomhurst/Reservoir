@@ -18,7 +18,13 @@
                       Condition="'$(ReservoirTargetFramework)' == ''" />
     <ProjectReference Include="..\..\src\Reservoir\Reservoir.csproj"
                       Condition="'$(ReservoirTargetFramework)' != ''"
-                      AdditionalProperties="TargetFramework=$(ReservoirTargetFramework)" />
+                      AdditionalProperties="TargetFramework=$(ReservoirTargetFramework)"
+                      ReferenceOutputAssembly="false" />
+    <!-- A file reference preserves the selected asset in BenchmarkDotNet's transitive host.
+         A project reference alone lets NuGet select the host's nearest modern asset again. -->
+    <Reference Include="Reservoir" Condition="'$(ReservoirTargetFramework)' != ''">
+      <HintPath>../../src/Reservoir/bin/$(Configuration)/$(ReservoirTargetFramework)/Reservoir.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <!-- A bounded portable suite measures destruction and the affected runtime/factory paths. -->
