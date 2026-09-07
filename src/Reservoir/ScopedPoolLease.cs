@@ -74,8 +74,7 @@ internal static class ScopedPoolLeaseStateCache<T>
         {
             while (!state.TryAcquire(out token))
             {
-                state.Next ??= new PaddedScopedPoolLeaseState();
-                state = state.Next;
+                state = ScopedPoolLeaseStateCache.FindAvailable(state);
             }
 
             return state;
@@ -83,6 +82,61 @@ internal static class ScopedPoolLeaseStateCache<T>
 
         _ = state.TryAcquire(out token);
         return state;
+    }
+
+}
+
+[ExcludeFromCodeCoverage]
+[DebuggerNonUserCode]
+internal static class ScopedPoolLeaseStateCache
+{
+    // Keep the caller's ownership token out of this helper so the JIT can promote lease
+    // fields to registers even when the deeper lookup cannot be inlined.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal static ScopedPoolLeaseState FindAvailable(ScopedPoolLeaseState primary)
+    {
+        primary.Next ??= new PaddedScopedPoolLeaseState();
+        ScopedPoolLeaseState secondary = primary.Next;
+        return secondary.IsAvailable ? secondary : FindAvailableNested(secondary);
+    }
+
+    // Deeper rentals rotate through a ring so a warmed recursive traversal does not
+    // rescan its active prefix at every depth. Release only advances the ownership version;
+    // arbitrary disposal order remains valid.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ScopedPoolLeaseState FindAvailableNested(ScopedPoolLeaseState secondary)
+    {
+        // The secondary state anchors the ring cursor without another thread-static lookup.
+        ScopedPoolLeaseState? start = secondary.Next;
+        if (start is not null)
+        {
+            ScopedPoolLeaseState current = start;
+            do
+            {
+                if (current.IsAvailable)
+                {
+                    secondary.Next = current.Next;
+                    return current;
+                }
+
+                current = current.Next!;
+            }
+            while (!ReferenceEquals(current, start));
+        }
+
+        var created = new PaddedScopedPoolLeaseState();
+        if (start is null)
+        {
+            created.Next = created;
+        }
+        else
+        {
+            created.Next = start.Next;
+            start.Next = created;
+        }
+
+        secondary.Next = created.Next;
+        return created;
     }
 }
 
@@ -96,6 +150,8 @@ internal class ScopedPoolLeaseState : CacheLinePadded
     private long _version;
 
     internal ScopedPoolLeaseState? Next { get; set; }
+
+    internal bool IsAvailable => (_version & 1) == 0;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool TryAcquire(out long token)
