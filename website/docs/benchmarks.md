@@ -80,8 +80,9 @@ For the full suite, keep the `short` job:
 gh workflow run benchmarks.yml --ref main -f 'filter=*' -f job=short
 ```
 
-The full-suite measurement step uses this BenchmarkDotNet invocation on the runner after
-restoring and building the benchmark project in Release:
+For reference only, the full-suite measurement step uses this BenchmarkDotNet invocation
+on the runner after restoring and building the benchmark project in Release. This is not
+a standalone setup command; use the workflow commands above to reproduce the run:
 
 ```shell
 dotnet run -c Release -f net10.0 --no-build --project benchmarks/Reservoir.Benchmarks -- --filter "*" --job Short --runtimes net8.0 net10.0
