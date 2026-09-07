@@ -6,6 +6,7 @@
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <_PrecompiledConsumerPath>$(MSBuildThisFileDirectory)../Reservoir.Package.Consumer/bin/$(Configuration)/netstandard2.0/Reservoir.Package.Consumer.dll</_PrecompiledConsumerPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,7 +14,12 @@
     <PackageReference Include="TUnit" Version="1.66.27" />
     <!-- Reference the already compiled netstandard consumer, never rebuild it for the host. -->
     <Reference Include="Reservoir.Package.Consumer">
-      <HintPath>../Reservoir.Package.Consumer/bin/$(Configuration)/netstandard2.0/Reservoir.Package.Consumer.dll</HintPath>
+      <HintPath>$(_PrecompiledConsumerPath)</HintPath>
     </Reference>
   </ItemGroup>
+
+  <Target Name="VerifyPrecompiledConsumer" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(_PrecompiledConsumerPath)')"
+           Text="Build Reservoir.Package.Consumer with the same ReservoirPackageVersion before running package tests. Expected precompiled netstandard2.0 consumer: $(_PrecompiledConsumerPath)" />
+  </Target>
 </Project>
