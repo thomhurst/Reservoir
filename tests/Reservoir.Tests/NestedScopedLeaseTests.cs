@@ -3,6 +3,46 @@ namespace Reservoir.Tests;
 public class NestedScopedLeaseTests
 {
     [Test]
+    public async Task DeepOutOfOrderReleasePreservesOtherOwnersAndInvalidatesCopies()
+    {
+        var first = new ScopedPoolLease<Marker>(new Marker());
+        var second = new ScopedPoolLease<Marker>(new Marker());
+        var third = new ScopedPoolLease<Marker>(new Marker());
+        var fourth = new ScopedPoolLease<Marker>(new Marker());
+        var fifth = new ScopedPoolLease<Marker>(new Marker());
+        ScopedPoolLease<Marker> stale = fourth;
+        Marker thirdValue = third.Value;
+        Marker fourthValue = fourth.Value;
+        Marker fifthValue = fifth.Value;
+        bool releasedFourth = fourth.TryRelease(out _);
+        var replacement = new ScopedPoolLease<Marker>(fourthValue);
+        bool staleReleased = stale.TryRelease(out _);
+        bool staleValueThrew = false;
+        try
+        {
+            _ = stale.Value;
+        }
+        catch (ObjectDisposedException)
+        {
+            staleValueThrew = true;
+        }
+
+        bool ownersUnchanged = ReferenceEquals(third.Value, thirdValue)
+            && ReferenceEquals(fifth.Value, fifthValue)
+            && ReferenceEquals(replacement.Value, fourthValue);
+        bool releasedThird = third.TryRelease(out _);
+        bool releasedFirst = first.TryRelease(out _);
+        bool releasedReplacement = replacement.TryRelease(out _);
+        bool releasedFifth = fifth.TryRelease(out _);
+        bool releasedSecond = second.TryRelease(out _);
+
+        await Assert.That(releasedFirst && releasedSecond && releasedThird
+            && releasedFourth && releasedFifth && releasedReplacement).IsTrue();
+        await Assert.That(staleReleased).IsFalse();
+        await Assert.That(staleValueThrew && ownersUnchanged).IsTrue();
+    }
+
+    [Test]
     public async Task OutOfOrderReleaseAndStaleCopiesKeepAllActiveLeasesDistinct()
     {
         var firstValue = new Marker();
