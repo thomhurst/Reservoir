@@ -27,5 +27,6 @@ public class DestroyPolicyCompatibilityTests
         await Assert.That(DestroyPolicyConsumer.ImplicitGeneric()).IsEqualTo(1);
         await Assert.That(DestroyPolicyConsumer.ImplicitRuntime()).IsEqualTo(1);
         await Assert.That(DestroyPolicyConsumer.ExplicitStatefulGeneric()).IsTrue();
+        await Assert.That(DestroyPolicyConsumer.ExplicitStatefulRuntime()).IsTrue();
     }
 }

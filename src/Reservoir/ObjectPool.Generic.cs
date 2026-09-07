@@ -47,7 +47,10 @@ sealed class ObjectPool<T,
     private static readonly DestroyPolicy? s_destroyPolicy = CreateDestroyPolicy();
     private delegate void DestroyPolicy(ref TPolicy policy, T obj);
 
-#if !NETCOREAPP3_0_OR_GREATER
+#if NETCOREAPP3_0_OR_GREATER
+    // A scalar readonly flag lets the JIT remove dispatch for ordinary policy implementations.
+    private static readonly bool s_hasPortableDestroyOverride = s_destroyPolicy is not null;
+#else
     private static readonly bool s_isStaticallyDisposable
         = typeof(IDisposable).IsAssignableFrom(typeof(T));
 
@@ -644,6 +647,15 @@ sealed class ObjectPool<T,
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void DisposeItem(T obj)
     {
+#if NETCOREAPP3_0_OR_GREATER
+        if (s_hasPortableDestroyOverride)
+        {
+            s_destroyPolicy!(ref _policy, obj);
+            return;
+        }
+
+        _policy.Destroy(obj);
+#else
         DestroyPolicy? destroyPolicy = s_destroyPolicy;
         if (destroyPolicy is not null)
         {
@@ -651,18 +663,10 @@ sealed class ObjectPool<T,
             return;
         }
 
-#if NETCOREAPP3_0_OR_GREATER
-        _policy.Destroy(obj);
-#else
         DefaultDestroy(obj);
 #endif
     }
 
-#if NET5_0_OR_GREATER
-    // Delegate.Method also needs metadata when dispatch selects an interface's default body.
-    [DynamicDependency(nameof(IPooledObjectPolicy<T>.Destroy), typeof(IPooledObjectPolicy<>))]
-    [DynamicDependency(nameof(IPooledObjectDestroyPolicy<T>.Destroy), typeof(IPooledObjectDestroyPolicy<>))]
-#endif
     private static DestroyPolicy? CreateDestroyPolicy()
     {
         if (!typeof(IPooledObjectDestroyPolicy<T>).IsAssignableFrom(typeof(TPolicy)))
@@ -674,15 +678,39 @@ sealed class ObjectPool<T,
         // An explicit portable implementation needs direct by-ref dispatch. Forwarding through
         // a default interface method boxes the struct and loses mutations to its policy state.
         // Keep existing concrete base implementations on their constrained call path.
-        // Resolve individual virtual targets through delegates instead of requesting interface
-        // maps that require metadata for every implementation, including trimmed methods.
         IPooledObjectPolicy<T> policy = default(TPolicy);
         Action<T> baseDestroy = policy.Destroy;
         Action<T> portableDestroy = ((IPooledObjectDestroyPolicy<T>)policy).Destroy;
-        MethodInfo implementation = portableDestroy.Method;
-        return implementation.DeclaringType == typeof(TPolicy) && implementation != baseDestroy.Method
-            ? (DestroyPolicy)implementation.CreateDelegate(typeof(DestroyPolicy))
-            : null;
+        if (portableDestroy == baseDestroy)
+        {
+            return null;
+        }
+
+        // NativeAOT cannot always expose MethodInfo for a generic default interface target.
+        // Match concrete methods by delegate identity instead; this also supports explicit
+        // implementations regardless of the name emitted by the consumer's compiler.
+        foreach (MethodInfo method in typeof(TPolicy).GetMethods(
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+        {
+            if (method.ContainsGenericParameters || method.ReturnType != typeof(void))
+            {
+                continue;
+            }
+
+            ParameterInfo[] parameters = method.GetParameters();
+            if (parameters.Length != 1 || parameters[0].ParameterType != typeof(T))
+            {
+                continue;
+            }
+
+            var candidate = (Action<T>)method.CreateDelegate(typeof(Action<T>), policy);
+            if (candidate == portableDestroy)
+            {
+                return (DestroyPolicy)method.CreateDelegate(typeof(DestroyPolicy));
+            }
+        }
+
+        return null;
 #else
         MethodInfo method = typeof(ObjectPool<T, TPolicy>).GetMethod(
             nameof(DestroyWithPolicy),

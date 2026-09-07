@@ -48,6 +48,15 @@ public static class DestroyPolicyConsumer
         return retained.DestroyCount == 0;
     }
 
+    public static bool ExplicitStatefulRuntime()
+    {
+        using var pool = new ObjectPool<Item>(new StatefulExplicitPolicy(), 1);
+        pool.Return(pool.Rent());
+        Item retained = pool.Rent();
+        pool.Return(retained);
+        return retained.DestroyCount == 0;
+    }
+
     private sealed class Item
     {
         internal int DestroyCount;

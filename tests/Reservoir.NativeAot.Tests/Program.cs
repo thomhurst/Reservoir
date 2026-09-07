@@ -11,6 +11,7 @@ internal static class Program
         SharedScopedDestructionSupportsNativeAot();
         ExplicitDestructionPreservesPolicyState();
         DefaultPortableDestructionSupportsNativeAot();
+        RuntimeDestructionPreservesPolicyState();
     }
 
     private static void CancellationTokenSourcePoolSupportsNativeAot()
@@ -83,6 +84,19 @@ internal static class Program
     {
         public PooledItem Create() => new();
         public bool TryReset(PooledItem item) => false;
+    }
+
+    private static void RuntimeDestructionPreservesPolicyState()
+    {
+        using var pool = new ObjectPool<PooledItem>(new ExplicitDestructionPolicy(), 1);
+        PooledItem first = pool.Rent();
+        pool.Return(first);
+        PooledItem second = pool.Rent();
+        pool.Return(second);
+        if (!first.IsDestroyed || second.IsDestroyed)
+        {
+            throw new InvalidOperationException("Runtime destruction did not preserve policy state.");
+        }
     }
 
     private static void ExplicitDestructionPreservesPolicyState()
