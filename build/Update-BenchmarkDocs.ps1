@@ -77,11 +77,14 @@ function Get-BenchmarkRow {
     return $matches[0]
 }
 
-function Format-Duration {
-    param([Parameter(Mandatory)][string] $Value)
+function Read-BenchmarkValue {
+    param(
+        [Parameter(Mandatory)][string] $Value,
+        [Parameter(Mandatory)][string] $Description
+    )
 
     if ($Value -notmatch '^(?<number>[\d,]+(?:\.\d+)?)\s+(?<unit>\S+)$') {
-        throw "Unexpected benchmark duration: $Value"
+        throw "Unexpected ${Description}: $Value"
     }
 
     $number = [double]::Parse(
@@ -89,18 +92,21 @@ function Format-Duration {
         [System.Globalization.NumberStyles]::AllowDecimalPoint,
         $culture)
 
-    return '{0} {1}' -f $number.ToString('N2', $culture), $Matches.unit
+    return [pscustomobject] @{ Number = $number; Unit = $Matches.unit }
+}
+
+function Format-Duration {
+    param([Parameter(Mandatory)][string] $Value)
+
+    $parsed = Read-BenchmarkValue $Value 'benchmark duration'
+    return '{0} {1}' -f $parsed.Number.ToString('N2', $culture), $parsed.Unit
 }
 
 function Get-DurationNanoseconds {
     param([Parameter(Mandatory)][string] $Value)
 
-    if ($Value -notmatch '^(?<number>[\d,]+(?:\.\d+)?)\s+(?<unit>\S+)$') {
-        throw "Unexpected benchmark duration: $Value"
-    }
-
-    $number = [double]::Parse($Matches.number.Replace(',', ''), $culture)
-    $scale = switch -CaseSensitive ($Matches.unit) {
+    $parsed = Read-BenchmarkValue $Value 'benchmark duration'
+    $scale = switch -CaseSensitive ($parsed.Unit) {
         'ps' { 0.001 }
         'ns' { 1.0 }
         'us' { 1000.0 }
@@ -108,9 +114,9 @@ function Get-DurationNanoseconds {
         'μs' { 1000.0 }
         'ms' { 1000000.0 }
         's' { 1000000000.0 }
-        default { throw "Unexpected benchmark duration unit: $($Matches.unit)" }
+        default { throw "Unexpected benchmark duration unit: $($parsed.Unit)" }
     }
-    return $number * $scale
+    return $parsed.Number * $scale
 }
 
 function Format-CoreRatio {
@@ -129,17 +135,11 @@ function Format-CoreRatio {
 function Format-Allocation {
     param([Parameter(Mandatory)][string] $Value)
 
-    if ($Value -notmatch '^(?<number>[\d,]+(?:\.\d+)?)\s+(?<unit>\S+)$') {
-        throw "Unexpected allocation value: $Value"
-    }
-
-    $number = [double]::Parse(
-        $Matches.number.Replace(',', ''),
-        [System.Globalization.NumberStyles]::AllowDecimalPoint,
-        $culture)
+    $parsed = Read-BenchmarkValue $Value 'allocation value'
+    $number = $parsed.Number
     $format = if ($number -eq [Math]::Truncate($number)) { 'N0' } else { 'N2' }
 
-    return '{0} {1}' -f $number.ToString($format, $culture), $Matches.unit
+    return '{0} {1}' -f $number.ToString($format, $culture), $parsed.Unit
 }
 
 function Update-MarkedSection {
