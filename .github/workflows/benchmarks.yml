@@ -182,6 +182,7 @@ jobs:
           $generatedAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm UTC')
           ./build/Update-BenchmarkDocs.ps1 `
             -ResultsDirectory benchmark-results/benchmarks/results `
+            -Runtime '.NET 10.0' `
             -Commit '${{ github.sha }}' `
             -GeneratedAt $generatedAt `
             -ResultsUrl $env:RUN_URL
