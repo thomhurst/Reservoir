@@ -62,26 +62,32 @@ internal static class ScopedPoolLeaseStateCache<T>
     [ThreadStatic]
     private static ScopedPoolLeaseState? _state;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static ScopedPoolLeaseState Acquire(out long token)
     {
         ScopedPoolLeaseState? state = _state;
-        if (state is null)
+        if (state is null || !state.TryAcquire(out token))
         {
-            state = new PaddedScopedPoolLeaseState();
-            _state = state;
-        }
-        else
-        {
-            while (!state.TryAcquire(out token))
-            {
-                state = ScopedPoolLeaseStateCache.FindAvailable(state);
-            }
-
-            return state;
+            state = FindAvailableSlow(state);
+            _ = state.TryAcquire(out token);
         }
 
-        _ = state.TryAcquire(out token);
         return state;
+    }
+
+    // Keep initialization and nested lookup outside the inlined primary path. Return only
+    // the available state so the caller's ownership token never escapes to a cold helper.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ScopedPoolLeaseState FindAvailableSlow(ScopedPoolLeaseState? primary)
+    {
+        if (primary is null)
+        {
+            primary = new PaddedScopedPoolLeaseState();
+            _state = primary;
+            return primary;
+        }
+
+        return ScopedPoolLeaseStateCache.FindAvailable(primary);
     }
 
 }
