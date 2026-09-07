@@ -74,14 +74,7 @@ internal static class ScopedPoolLeaseStateCache<T>
         {
             if (!state.TryAcquire(out token))
             {
-                state.Next ??= new PaddedScopedPoolLeaseState();
-                state = state.Next;
-                if (state.TryAcquire(out token))
-                {
-                    return state;
-                }
-
-                return ScopedPoolLeaseStateCache.AcquireNested(state, out token);
+                return ScopedPoolLeaseStateCache.AcquireSecondary(state, out token);
             }
 
             return state;
@@ -97,9 +90,17 @@ internal static class ScopedPoolLeaseStateCache<T>
 [DebuggerNonUserCode]
 internal static class ScopedPoolLeaseStateCache
 {
-    // Keep the first two states on the established path. Deeper rentals rotate through a
-    // ring so a warmed recursive traversal does not rescan its active prefix at every depth.
-    // Release only advances the ownership version; arbitrary disposal order remains valid.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal static ScopedPoolLeaseState AcquireSecondary(ScopedPoolLeaseState primary, out long token)
+    {
+        primary.Next ??= new PaddedScopedPoolLeaseState();
+        ScopedPoolLeaseState secondary = primary.Next;
+        return secondary.TryAcquire(out token) ? secondary : AcquireNested(secondary, out token);
+    }
+
+    // Deeper rentals rotate through a ring so a warmed recursive traversal does not
+    // rescan its active prefix at every depth. Release only advances the ownership version;
+    // arbitrary disposal order remains valid.
     [MethodImpl(MethodImplOptions.NoInlining)]
     internal static ScopedPoolLeaseState AcquireNested(ScopedPoolLeaseState secondary, out long token)
     {
