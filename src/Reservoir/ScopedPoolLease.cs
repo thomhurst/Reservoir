@@ -72,9 +72,9 @@ internal static class ScopedPoolLeaseStateCache<T>
         }
         else
         {
-            if (!state.TryAcquire(out token))
+            while (!state.TryAcquire(out token))
             {
-                return ScopedPoolLeaseStateCache.AcquireSecondary(state, out token);
+                state = ScopedPoolLeaseStateCache.FindAvailable(state);
             }
 
             return state;
@@ -90,19 +90,21 @@ internal static class ScopedPoolLeaseStateCache<T>
 [DebuggerNonUserCode]
 internal static class ScopedPoolLeaseStateCache
 {
+    // Keep the caller's ownership token out of this helper so the JIT can promote lease
+    // fields to registers even when the deeper lookup cannot be inlined.
     [MethodImpl(MethodImplOptions.NoInlining)]
-    internal static ScopedPoolLeaseState AcquireSecondary(ScopedPoolLeaseState primary, out long token)
+    internal static ScopedPoolLeaseState FindAvailable(ScopedPoolLeaseState primary)
     {
         primary.Next ??= new PaddedScopedPoolLeaseState();
         ScopedPoolLeaseState secondary = primary.Next;
-        return secondary.TryAcquire(out token) ? secondary : AcquireNested(secondary, out token);
+        return secondary.IsAvailable ? secondary : FindAvailableNested(secondary);
     }
 
     // Deeper rentals rotate through a ring so a warmed recursive traversal does not
     // rescan its active prefix at every depth. Release only advances the ownership version;
     // arbitrary disposal order remains valid.
     [MethodImpl(MethodImplOptions.NoInlining)]
-    internal static ScopedPoolLeaseState AcquireNested(ScopedPoolLeaseState secondary, out long token)
+    private static ScopedPoolLeaseState FindAvailableNested(ScopedPoolLeaseState secondary)
     {
         // The secondary state anchors the ring cursor without another thread-static lookup.
         ScopedPoolLeaseState? start = secondary.Next;
@@ -111,7 +113,7 @@ internal static class ScopedPoolLeaseStateCache
             ScopedPoolLeaseState current = start;
             do
             {
-                if (current.TryAcquire(out token))
+                if (current.IsAvailable)
                 {
                     secondary.Next = current.Next;
                     return current;
@@ -134,7 +136,6 @@ internal static class ScopedPoolLeaseStateCache
         }
 
         secondary.Next = created.Next;
-        _ = created.TryAcquire(out token);
         return created;
     }
 }
@@ -149,6 +150,8 @@ internal class ScopedPoolLeaseState : CacheLinePadded
     private long _version;
 
     internal ScopedPoolLeaseState? Next { get; set; }
+
+    internal bool IsAvailable => (_version & 1) == 0;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool TryAcquire(out long token)
