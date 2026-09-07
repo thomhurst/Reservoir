@@ -163,17 +163,30 @@ public class CancellationTokenSourcePoolTests
         }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         bool disposalWasStarted = disposeStarted.Wait(TimeSpan.FromSeconds(5));
 
+        Exception? assertionFailure = null;
         try
         {
             await Assert.That(callbackWasEntered).IsTrue();
             await Assert.That(disposalWasStarted).IsTrue();
             await Assert.That(disposeTask.IsCompleted).IsFalse();
         }
+        catch (Exception exception)
+        {
+            assertionFailure = exception;
+            throw;
+        }
         finally
         {
             releaseCallback.Set();
             // Join even when a startup assertion fails, before disposing worker-owned signals.
-            await Task.WhenAll(cancelTask, disposeTask).WaitAsync(TimeSpan.FromSeconds(10));
+            try
+            {
+                await Task.WhenAll(cancelTask, disposeTask).WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            catch (Exception joinFailure) when (assertionFailure is not null)
+            {
+                throw new AggregateException("The assertion and worker cleanup both failed.", assertionFailure, joinFailure);
+            }
         }
 
         CancellationTokenSource replacement = pool.Rent();
