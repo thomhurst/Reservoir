@@ -78,7 +78,9 @@ public class BenchmarkDocsTests
         using var fixture = new Fixture(extraJob: true);
         (int exitCode, string output) = await fixture.Run();
         await Assert.That(exitCode).IsNotEqualTo(0);
-        await Assert.That(output).Contains("Specify -Job");
+        // PowerShell may wrap the diagnostic between "Specify" and "-Job" on CI.
+        await Assert.That(output).Contains("Expected one measurement job");
+        await Assert.That(output).Contains("-Job");
         await fixture.AssertUnchanged();
 
         (exitCode, _) = await fixture.Run(job: "Alternative");
