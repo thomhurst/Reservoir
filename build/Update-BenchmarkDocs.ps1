@@ -9,7 +9,14 @@ param(
 
     [string] $GeneratedAt,
 
-    [string] $ResultsUrl
+    [string] $ResultsUrl,
+
+    # Publish one explicitly selected runtime; retain other runtimes in the raw reports.
+    [ValidatePattern('^\.NET \d+\.\d+$')]
+    [string] $Runtime = '.NET 10.0',
+
+    # Required only when the selected runtime has multiple measurement jobs.
+    [string] $Job
 )
 
 Set-StrictMode -Version Latest
@@ -42,12 +49,17 @@ function Get-BenchmarkRow {
         [hashtable] $Properties = @{}
     )
 
+    $qualifiers = @{ Runtime = $Runtime; Job = $Job }
+    foreach ($entry in $Properties.GetEnumerator()) {
+        $qualifiers[$entry.Key] = $entry.Value
+    }
+
     $matches = @($Rows | Where-Object {
         if ($_.Method -ne $Method) {
             return $false
         }
 
-        foreach ($entry in $Properties.GetEnumerator()) {
+        foreach ($entry in $qualifiers.GetEnumerator()) {
             $property = $_.PSObject.Properties[$entry.Key]
             if ($null -eq $property -or $property.Value -ne [string] $entry.Value) {
                 return $false
@@ -58,18 +70,21 @@ function Get-BenchmarkRow {
     })
 
     if ($matches.Count -ne 1) {
-        $qualifiers = @($Properties.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '
-        throw "Expected one '$Method' result ($qualifiers), found $($matches.Count)."
+        $description = @($qualifiers.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '
+        throw "Expected one '$Method' result ($description), found $($matches.Count)."
     }
 
     return $matches[0]
 }
 
-function Format-Duration {
-    param([Parameter(Mandatory)][string] $Value)
+function Read-BenchmarkValue {
+    param(
+        [Parameter(Mandatory)][string] $Value,
+        [Parameter(Mandatory)][string] $Description
+    )
 
     if ($Value -notmatch '^(?<number>[\d,]+(?:\.\d+)?)\s+(?<unit>\S+)$') {
-        throw "Unexpected benchmark duration: $Value"
+        throw "Unexpected ${Description}: $Value"
     }
 
     $number = [double]::Parse(
@@ -77,30 +92,54 @@ function Format-Duration {
         [System.Globalization.NumberStyles]::AllowDecimalPoint,
         $culture)
 
-    return '{0} {1}' -f $number.ToString('N2', $culture), $Matches.unit
+    return [pscustomobject] @{ Number = $number; Unit = $Matches.unit }
 }
 
-function Format-Ratio {
+function Format-Duration {
     param([Parameter(Mandatory)][string] $Value)
 
-    $number = [double]::Parse($Value, [System.Globalization.NumberStyles]::Float, $culture)
-    return $number.ToString('F2', $culture)
+    $parsed = Read-BenchmarkValue $Value 'benchmark duration'
+    return '{0} {1}' -f $parsed.Number.ToString('N2', $culture), $parsed.Unit
+}
+
+function Get-DurationNanoseconds {
+    param([Parameter(Mandatory)][string] $Value)
+
+    $parsed = Read-BenchmarkValue $Value 'benchmark duration'
+    $scale = switch -CaseSensitive ($parsed.Unit) {
+        'ps' { 0.001 }
+        'ns' { 1.0 }
+        'us' { 1000.0 }
+        'µs' { 1000.0 }
+        'μs' { 1000.0 }
+        'ms' { 1000000.0 }
+        's' { 1000000000.0 }
+        default { throw "Unexpected benchmark duration unit: $($parsed.Unit)" }
+    }
+    return $parsed.Number * $scale
+}
+
+function Format-CoreRatio {
+    param([Parameter(Mandatory)][object] $Row)
+
+    # BDN can normalize multi-runtime ratios against the other runtime's New job.
+    # Published tables compare each selected method with New in that same job.
+    $baselineMean = Get-DurationNanoseconds $coreNew.Mean
+    if ($baselineMean -le 0) {
+        throw 'The selected New benchmark must have a positive mean.'
+    }
+    $ratio = (Get-DurationNanoseconds $Row.Mean) / $baselineMean
+    return $ratio.ToString('F2', $culture)
 }
 
 function Format-Allocation {
     param([Parameter(Mandatory)][string] $Value)
 
-    if ($Value -notmatch '^(?<number>[\d,]+(?:\.\d+)?)\s+(?<unit>\S+)$') {
-        throw "Unexpected allocation value: $Value"
-    }
-
-    $number = [double]::Parse(
-        $Matches.number.Replace(',', ''),
-        [System.Globalization.NumberStyles]::AllowDecimalPoint,
-        $culture)
+    $parsed = Read-BenchmarkValue $Value 'allocation value'
+    $number = $parsed.Number
     $format = if ($number -eq [Math]::Truncate($number)) { 'N0' } else { 'N2' }
 
-    return '{0} {1}' -f $number.ToString($format, $culture), $Matches.unit
+    return '{0} {1}' -f $number.ToString($format, $culture), $parsed.Unit
 }
 
 function Update-MarkedSection {
@@ -139,6 +178,16 @@ $objectPoolRows = Import-BenchmarkReport 'ObjectPoolBenchmarks'
 $capacityRows = Import-BenchmarkReport 'ObjectPoolCapacityScalingBenchmarks'
 $burstRows = Import-BenchmarkReport 'ObjectPoolBurstBenchmarks'
 $stringBuilderRows = Import-BenchmarkReport 'StringBuilderPoolBenchmarks'
+
+if (-not $Job) {
+    $jobs = @($coreRows | Where-Object { $_.Runtime -eq $Runtime } |
+        ForEach-Object { $_.Job } | Sort-Object -Unique)
+    if ($jobs.Count -ne 1 -or [string]::IsNullOrWhiteSpace($jobs[0])) {
+        throw "Expected one measurement job for runtime '$Runtime', found $($jobs.Count). Specify -Job when multiple jobs exist."
+    }
+
+    $Job = $jobs[0]
+}
 
 $coreNew = Get-BenchmarkRow $coreRows 'New'
 $coreReservoir = Get-BenchmarkRow $coreRows 'Reservoir'
@@ -204,21 +253,24 @@ $environmentMatch = [regex]::Match(
 $cpuMatch = [regex]::Match(
     $metadata,
     '(?m)^(?<cpu>.*?)(?:\s+\d+(?:\.\d+)?GHz)?,\s+\d+\s+CPU')
-$runtimeMatch = [regex]::Match(
+$runtimeFamily = $Runtime.Substring('.NET '.Length)
+$runtimeMatches = @([regex]::Matches(
     $metadata,
-    '(?m)^\s*\[Host\]\s+:\s+\.NET\s+(?<runtime>[^\s(]+)')
+    ('(?m)^\s*' + [regex]::Escape($Job) + '\s+:\s+\.NET\s+(?<runtime>[^\s(]+)')) | Where-Object {
+        $version = $_.Groups['runtime'].Value
+        $version -eq $runtimeFamily -or $version.StartsWith($runtimeFamily + '.', [StringComparison]::Ordinal)
+    })
 
-if (-not $environmentMatch.Success -or -not $cpuMatch.Success -or -not $runtimeMatch.Success) {
+if (-not $environmentMatch.Success -or -not $cpuMatch.Success -or $runtimeMatches.Count -ne 1) {
     throw "Could not read benchmark environment metadata from $metadataPath"
 }
 
 $benchmarkDotNetVersion = $environmentMatch.Groups['benchmarkDotNet'].Value.Trim()
 $os = $environmentMatch.Groups['os'].Value.Trim()
 $cpu = $cpuMatch.Groups['cpu'].Value.Trim() -replace '^\d+(?:st|nd|rd|th) Gen\s+', ''
-$runtime = $runtimeMatch.Groups['runtime'].Value.Trim()
-$job = $coreRows[0].Job
+$runtimeVersion = $runtimeMatches[0].Groups['runtime'].Value.Trim()
 $tick = [char] 96
-$environment = "BenchmarkDotNet $benchmarkDotNetVersion $tick$job$tick, .NET $runtime, $os, $cpu"
+$environment = "BenchmarkDotNet $benchmarkDotNetVersion $tick$Job$tick, .NET $runtimeVersion, $os, $cpu"
 
 $coreTableRows = @(
     [pscustomobject]@{ Label = '`new`'; Row = $coreNew }
@@ -238,7 +290,7 @@ foreach ($item in $coreTableRows) {
     $label = $item.Label
     $row = $item.Row
     $mean = Format-Duration $row.Mean
-    $ratio = Format-Ratio $row.Ratio
+    $ratio = Format-CoreRatio $row
     $allocated = Format-Allocation $row.Allocated
 
     if ($row.Method -eq 'Reservoir') {
@@ -252,7 +304,7 @@ foreach ($item in $coreTableRows) {
 $docsContent = @(
     'Every measured warm Reservoir path allocated **0 B per operation**.'
     ''
-    "Results below used $environment. Nanosecond timings vary by machine; compare methods within a table."
+    "Results below select $Runtime and used $environment. Other runtimes remain in the raw reports. Nanosecond timings vary by machine; compare methods within a table."
     ''
 )
 
@@ -281,7 +333,7 @@ foreach ($item in $coreTableRows) {
     $docsContent += '| {0} | {1} | {2} | {3} |' -f @(
         $label,
         (Format-Duration $row.Mean),
-        (Format-Ratio $row.Ratio),
+        (Format-CoreRatio $row),
         (Format-Allocation $row.Allocated)
     )
 }
