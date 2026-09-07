@@ -14,6 +14,8 @@ Run performance benchmarks on GitHub Actions `ubuntu-latest` runners to avoid lo
 - Website: Node 24; run `npm ci` and `npm run build` from `website/`.
 - Benchmarks: use [Benchmark comparison](.github/workflows/benchmark-compare.yml) on `ubuntu-latest` with explicit baseline and candidate commit SHAs, relevant filters, and matching runtimes/job settings. Use [Benchmarks](.github/workflows/benchmarks.yml) for the full suite on `ubuntu-latest`.
 
+For a bounded benchmark setup check and short measurement, run `gh workflow run benchmarks.yml --ref main -f 'filter=*.ObjectPoolBenchmarks.RentReturn' -f job=short`. The workflow validates both runtimes with `--job Dry` before measuring with `--job Short`; Dry output cannot establish performance or allocation guarantees. For the full suite, use `-f 'filter=*' -f job=short`. Never add `--apples` to these commands: BenchmarkDotNet 0.15.8 interacts with `OperationsPerInvoke` such that batched contention cases become effectively unbounded. See [reproduction details](website/docs/benchmarks.md#reproduce).
+
 ## Performance Engineering
 
 Throughput, latency, and zero allocation are primary goals; measured micro-optimizations are welcome. Warm `Rent`/`Return` and established hot paths must remain 0 B allocated with no Gen0 collections.
