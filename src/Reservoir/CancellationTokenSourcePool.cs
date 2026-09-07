@@ -85,8 +85,8 @@ sealed class CancellationTokenSourcePool : IDisposable
     /// </summary>
     public Lease RentScoped()
     {
-        PooledCancellationTokenSource source = RentScopedValue();
-        return new Lease(this, source);
+        PooledCancellationTokenSource source = RentScopedValue(out TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot);
+        return new Lease(this, source, slot);
     }
 
     /// <summary>
@@ -94,9 +94,9 @@ sealed class CancellationTokenSourcePool : IDisposable
     /// </summary>
     public Lease RentScoped(out CancellationTokenSource source)
     {
-        PooledCancellationTokenSource pooledSource = RentScopedValue();
+        PooledCancellationTokenSource pooledSource = RentScopedValue(out TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot);
         source = pooledSource;
-        return new Lease(this, pooledSource);
+        return new Lease(this, pooledSource, slot);
     }
 
     /// <summary>
@@ -158,10 +158,10 @@ sealed class CancellationTokenSourcePool : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private PooledCancellationTokenSource RentScopedValue()
+    private PooledCancellationTokenSource RentScopedValue(out TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot)
     {
         ThrowIfDisposed();
-        PooledCancellationTokenSource source = _scopedTier.Rent(_pool);
+        PooledCancellationTokenSource source = _scopedTier.Rent(_pool, out slot);
         if (Volatile.Read(ref _isDisposed) == 0)
         {
             return source;
@@ -171,7 +171,7 @@ sealed class CancellationTokenSourcePool : IDisposable
         return ThrowDisposed();
     }
 
-    private void ReturnScoped(PooledCancellationTokenSource source)
+    private void ReturnScoped(PooledCancellationTokenSource source, TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot)
     {
         if (Volatile.Read(ref _isDisposed) != 0)
         {
@@ -190,13 +190,13 @@ sealed class CancellationTokenSourcePool : IDisposable
             return;
         }
 
-        if (!_scopedTier.TryReturn(source))
+        if (!TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.TryReturn(slot, source))
         {
             _pool.ReturnWithoutResetWithLifecycle(source);
             return;
         }
 
-        if (Volatile.Read(ref _isDisposed) != 0 && _scopedTier.TryRemove(source))
+        if (Volatile.Read(ref _isDisposed) != 0 && TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.TryRemove(slot, source))
         {
             _pool.Destroy(source);
         }
@@ -293,13 +293,16 @@ sealed class CancellationTokenSourcePool : IDisposable
     public ref struct Lease
     {
         private readonly CancellationTokenSourcePool? _pool;
+        private readonly TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot? _slot;
         private ScopedPoolLease<PooledCancellationTokenSource> _lease;
 
         internal Lease(
             CancellationTokenSourcePool pool,
-            PooledCancellationTokenSource source)
+            PooledCancellationTokenSource source,
+            TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot)
         {
             _pool = pool;
+            _slot = slot;
             _lease = new ScopedPoolLease<PooledCancellationTokenSource>(source);
         }
 
@@ -312,7 +315,7 @@ sealed class CancellationTokenSourcePool : IDisposable
         {
             if (_lease.TryRelease(out PooledCancellationTokenSource source))
             {
-                _pool!.ReturnScoped(source);
+                _pool!.ReturnScoped(source, _slot!);
             }
         }
     }

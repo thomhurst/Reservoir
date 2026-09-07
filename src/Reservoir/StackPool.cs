@@ -71,15 +71,18 @@ sealed class StackPool<T>
 
     /// <summary>Rents an empty stack owned by a stack-only thread-local lease.</summary>
     public Lease RentScoped()
-        => new(this, _scopedTier.Rent(_pool));
+    {
+        Stack<T> stack = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<Stack<T>>.Slot slot);
+        return new Lease(this, stack, slot);
+    }
 
     /// <summary>
     /// Rents an empty stack owned by a stack-only thread-local lease and exposes it directly.
     /// </summary>
     public Lease RentScoped(out Stack<T> stack)
     {
-        stack = _scopedTier.Rent(_pool);
-        return new Lease(this, stack);
+        stack = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<Stack<T>>.Slot slot);
+        return new Lease(this, stack, slot);
     }
 
     /// <summary>Returns a stack, clearing it when retained and discarding it when too large.</summary>
@@ -106,14 +109,14 @@ sealed class StackPool<T>
         return false;
     }
 
-    private void ReturnScoped(Stack<T> stack)
+    private void ReturnScoped(Stack<T> stack, InstanceThreadLocalFrontTier<Stack<T>>.Slot slot)
     {
         if (!TryReset(stack))
         {
             return;
         }
 
-        if (!_scopedTier.TryReturn(stack))
+        if (!InstanceThreadLocalFrontTier<Stack<T>>.TryReturn(slot, stack))
         {
             _pool.ReturnWithoutReset(stack);
         }
@@ -176,11 +179,14 @@ sealed class StackPool<T>
     public ref struct Lease
     {
         private readonly StackPool<T>? _pool;
+        private readonly InstanceThreadLocalFrontTier<Stack<T>>.Slot? _slot;
         private ScopedPoolLease<Stack<T>> _lease;
 
-        internal Lease(StackPool<T> pool, Stack<T> stack)
+        internal Lease(StackPool<T> pool, Stack<T> stack,
+            InstanceThreadLocalFrontTier<Stack<T>>.Slot slot)
         {
             _pool = pool;
+            _slot = slot;
             _lease = new ScopedPoolLease<Stack<T>>(stack);
         }
 
@@ -192,7 +198,7 @@ sealed class StackPool<T>
         {
             if (_lease.TryRelease(out Stack<T> stack))
             {
-                _pool!.ReturnScoped(stack);
+                _pool!.ReturnScoped(stack, _slot!);
             }
         }
     }

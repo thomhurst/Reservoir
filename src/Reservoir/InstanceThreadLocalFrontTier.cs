@@ -16,10 +16,10 @@ internal struct InstanceThreadLocalFrontTier<T>
     private ThreadLocal<Slot>? _slots;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal T Rent<TPolicy>(ObjectPool<T, TPolicy> fallback)
+    internal T Rent<TPolicy>(ObjectPool<T, TPolicy> fallback, out Slot slot)
         where TPolicy : struct, IPooledObjectPolicy<T>
     {
-        Slot slot = GetSlot();
+        slot = GetSlot();
         T? item = slot.Item;
         if (item is null)
         {
@@ -31,9 +31,8 @@ internal struct InstanceThreadLocalFrontTier<T>
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryReturn(T item)
+    internal static bool TryReturn(Slot slot, T item)
     {
-        Slot slot = GetSlot();
         if (slot.Item is not null)
         {
             return false;
@@ -66,7 +65,7 @@ internal struct InstanceThreadLocalFrontTier<T>
 
     // The base-class leading pad and the allocated subclass's trailing pad keep each thread's
     // slot on its own cache lines; see CacheLinePadded.
-    private class Slot : CacheLinePadded
+    internal class Slot : CacheLinePadded
     {
         internal T? Item;
     }

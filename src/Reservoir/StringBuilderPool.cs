@@ -72,15 +72,18 @@ sealed class StringBuilderPool
 
     /// <summary>Rents an empty builder owned by a stack-only thread-local lease.</summary>
     public Lease RentScoped()
-        => new(this, _scopedTier.Rent(_pool));
+    {
+        StringBuilder builder = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<StringBuilder>.Slot slot);
+        return new Lease(this, builder, slot);
+    }
 
     /// <summary>
     /// Rents an empty builder owned by a stack-only thread-local lease and exposes it directly.
     /// </summary>
     public Lease RentScoped(out StringBuilder builder)
     {
-        builder = _scopedTier.Rent(_pool);
-        return new Lease(this, builder);
+        builder = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<StringBuilder>.Slot slot);
+        return new Lease(this, builder, slot);
     }
 
     /// <summary>Returns a builder, clearing it when retained and discarding it when incompatible or too large.</summary>
@@ -107,14 +110,14 @@ sealed class StringBuilderPool
         return false;
     }
 
-    private void ReturnScoped(StringBuilder builder)
+    private void ReturnScoped(StringBuilder builder, InstanceThreadLocalFrontTier<StringBuilder>.Slot slot)
     {
         if (!TryReset(builder))
         {
             return;
         }
 
-        if (!_scopedTier.TryReturn(builder))
+        if (!InstanceThreadLocalFrontTier<StringBuilder>.TryReturn(slot, builder))
         {
             _pool.ReturnWithoutReset(builder);
         }
@@ -158,11 +161,14 @@ sealed class StringBuilderPool
     public ref struct Lease
     {
         private readonly StringBuilderPool? _pool;
+        private readonly InstanceThreadLocalFrontTier<StringBuilder>.Slot? _slot;
         private ScopedPoolLease<StringBuilder> _lease;
 
-        internal Lease(StringBuilderPool pool, StringBuilder builder)
+        internal Lease(StringBuilderPool pool, StringBuilder builder,
+            InstanceThreadLocalFrontTier<StringBuilder>.Slot slot)
         {
             _pool = pool;
+            _slot = slot;
             _lease = new ScopedPoolLease<StringBuilder>(builder);
         }
 
@@ -174,7 +180,7 @@ sealed class StringBuilderPool
         {
             if (_lease.TryRelease(out StringBuilder builder))
             {
-                _pool!.ReturnScoped(builder);
+                _pool!.ReturnScoped(builder, _slot!);
             }
         }
     }

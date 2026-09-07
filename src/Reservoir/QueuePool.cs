@@ -71,15 +71,18 @@ sealed class QueuePool<T>
 
     /// <summary>Rents an empty queue owned by a stack-only thread-local lease.</summary>
     public Lease RentScoped()
-        => new(this, _scopedTier.Rent(_pool));
+    {
+        Queue<T> queue = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<Queue<T>>.Slot slot);
+        return new Lease(this, queue, slot);
+    }
 
     /// <summary>
     /// Rents an empty queue owned by a stack-only thread-local lease and exposes it directly.
     /// </summary>
     public Lease RentScoped(out Queue<T> queue)
     {
-        queue = _scopedTier.Rent(_pool);
-        return new Lease(this, queue);
+        queue = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<Queue<T>>.Slot slot);
+        return new Lease(this, queue, slot);
     }
 
     /// <summary>Returns a queue, clearing it when retained and discarding it when too large.</summary>
@@ -106,14 +109,14 @@ sealed class QueuePool<T>
         return false;
     }
 
-    private void ReturnScoped(Queue<T> queue)
+    private void ReturnScoped(Queue<T> queue, InstanceThreadLocalFrontTier<Queue<T>>.Slot slot)
     {
         if (!TryReset(queue))
         {
             return;
         }
 
-        if (!_scopedTier.TryReturn(queue))
+        if (!InstanceThreadLocalFrontTier<Queue<T>>.TryReturn(slot, queue))
         {
             _pool.ReturnWithoutReset(queue);
         }
@@ -176,11 +179,14 @@ sealed class QueuePool<T>
     public ref struct Lease
     {
         private readonly QueuePool<T>? _pool;
+        private readonly InstanceThreadLocalFrontTier<Queue<T>>.Slot? _slot;
         private ScopedPoolLease<Queue<T>> _lease;
 
-        internal Lease(QueuePool<T> pool, Queue<T> queue)
+        internal Lease(QueuePool<T> pool, Queue<T> queue,
+            InstanceThreadLocalFrontTier<Queue<T>>.Slot slot)
         {
             _pool = pool;
+            _slot = slot;
             _lease = new ScopedPoolLease<Queue<T>>(queue);
         }
 
@@ -192,7 +198,7 @@ sealed class QueuePool<T>
         {
             if (_lease.TryRelease(out Queue<T> queue))
             {
-                _pool!.ReturnScoped(queue);
+                _pool!.ReturnScoped(queue, _slot!);
             }
         }
     }
