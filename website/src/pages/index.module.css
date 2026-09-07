@@ -213,7 +213,6 @@
 }
 
 .heroFoot p { font-size: .93rem; margin: 0; }
-.heroFoot strong { font-family: var(--ifm-font-family-monospace); font-size: 1.25rem; margin-right: .55rem; }
 .heroFoot a { color: var(--home-ink); font-size: .85rem; text-decoration: underline; }
 
 .lifecycle {

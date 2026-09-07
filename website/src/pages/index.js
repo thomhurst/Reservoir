@@ -72,7 +72,7 @@ function Hero() {
         <div className={styles.heroCopy}>
           <p className={styles.introduction}>Object pooling for .NET</p>
           <Heading as="h1">Good objects.<br />Back in circulation.</Heading>
-          <p className={styles.heroLead}>Create it once. Use it again. Reservoir keeps your objects ready for the next piece of work, with thread-safe pooling and bounded shared retention.</p>
+          <p className={styles.heroLead}>Create it once. Use it again. Reservoir keeps your objects ready for the next piece of work, with thread-safe pooling and bounded shared retention. Scoped rentals and opt-in manual rentals also retain objects in per-pool thread-local storage.</p>
           <div className={styles.heroActions}>
             <Link className={styles.primaryButton} to="/docs/quick-start">Start pooling</Link>
             <Link className={styles.secondaryLink} to="/docs/design">How Reservoir works</Link>
@@ -80,12 +80,12 @@ function Hero() {
           <div className={styles.installCommand}>
             <code>dotnet add package Reservoir</code>
           </div>
-          <p className={styles.compatibility}>.NET Standard 2.0 and later. Available on NuGet.</p>
+          <p className={styles.compatibility}>.NET Standard 2.0-compatible runtimes, with dedicated .NET 8 and .NET 10 assets. <Link to="/docs/installation">Package compatibility</Link>.</p>
         </div>
         <PoolIllustration />
       </div>
       <div className={clsx('container', styles.heroFoot)}>
-        <p><strong>0 B</strong> allocated on measured warm paths</p>
+        <p>Compare workloads, timings, and allocations.</p>
         <Link to="/docs/benchmarks">See the benchmarks and methodology</Link>
       </div>
     </header>
@@ -166,7 +166,7 @@ function DocsSection() {
 
 export default function Home() {
   return (
-    <Layout title="Reusable objects. Bounded pools." description="Thread-safe object pooling for .NET with bounded shared retention and zero-allocation warm paths. Explore Reservoir, try the pooling lifecycle, and get started.">
+    <Layout title="Reusable objects. Clear ownership." description="Thread-safe object pooling for .NET with bounded shared retention and per-pool thread-local storage. Explore Reservoir, try the pooling lifecycle, and get started.">
       <main className={styles.home}>
         <Hero />
         <LifecycleSection />
