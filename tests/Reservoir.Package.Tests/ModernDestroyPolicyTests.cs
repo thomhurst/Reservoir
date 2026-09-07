@@ -5,6 +5,24 @@ namespace Reservoir.Package.Tests;
 public class ModernDestroyPolicyTests
 {
     [Test]
+    public async Task DerivedInterfaceAndConstraintPreserveExplicitBaseOverride()
+    {
+        var direct = new Item();
+        IPooledObjectDestroyPolicy<Item> policy = new ExplicitBasePolicy();
+        policy.Destroy(direct);
+        await Assert.That(direct.DestroyCount).IsEqualTo(1);
+        await Assert.That(direct.DisposeCount).IsEqualTo(0);
+
+        var constrained = new Item();
+        DestroyConstrained(new ExplicitBasePolicy(), constrained);
+        await Assert.That(constrained.DestroyCount).IsEqualTo(1);
+        await Assert.That(constrained.DisposeCount).IsEqualTo(0);
+    }
+
+    private static void DestroyConstrained<TPolicy>(TPolicy policy, Item item)
+        where TPolicy : struct, IPooledObjectDestroyPolicy<Item> => policy.Destroy(item);
+
+    [Test]
     [Arguments(false)]
     [Arguments(true)]
     public async Task ModernDestructionContractsRemainAvailable(bool runtime)

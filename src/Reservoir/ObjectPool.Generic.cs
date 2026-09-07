@@ -665,28 +665,15 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         // An explicit portable implementation needs direct by-ref dispatch. Forwarding through
         // a default interface method boxes the struct and loses mutations to its policy state.
         // Keep existing concrete base implementations on their constrained call path.
-        InterfaceMapping baseMap = typeof(TPolicy).GetInterfaceMap(typeof(IPooledObjectPolicy<T>));
-        for (int i = 0; i < baseMap.InterfaceMethods.Length; i++)
-        {
-            if (baseMap.InterfaceMethods[i].Name == nameof(IPooledObjectPolicy<T>.Destroy)
-                && baseMap.TargetMethods[i].DeclaringType == typeof(TPolicy))
-            {
-                return null;
-            }
-        }
-
-        InterfaceMapping destroyMap = typeof(TPolicy).GetInterfaceMap(typeof(IPooledObjectDestroyPolicy<T>));
-        for (int i = 0; i < destroyMap.InterfaceMethods.Length; i++)
-        {
-            MethodInfo implementation = destroyMap.TargetMethods[i];
-            if (destroyMap.InterfaceMethods[i].Name == nameof(IPooledObjectDestroyPolicy<T>.Destroy)
-                && implementation.DeclaringType == typeof(TPolicy))
-            {
-                return (DestroyPolicy)implementation.CreateDelegate(typeof(DestroyPolicy));
-            }
-        }
-
-        return null;
+        // Resolve individual virtual targets through delegates instead of requesting interface
+        // maps that require metadata for every implementation, including trimmed methods.
+        IPooledObjectPolicy<T> policy = default(TPolicy);
+        Action<T> baseDestroy = policy.Destroy;
+        Action<T> portableDestroy = ((IPooledObjectDestroyPolicy<T>)policy).Destroy;
+        MethodInfo implementation = portableDestroy.Method;
+        return implementation.DeclaringType == typeof(TPolicy) && implementation != baseDestroy.Method
+            ? (DestroyPolicy)implementation.CreateDelegate(typeof(DestroyPolicy))
+            : null;
 #else
         MethodInfo method = typeof(ObjectPool<T, TPolicy>).GetMethod(
             nameof(DestroyWithPolicy),
