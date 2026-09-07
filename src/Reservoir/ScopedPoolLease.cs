@@ -66,12 +66,12 @@ internal static class ScopedPoolLeaseStateCache<T>
     internal static ScopedPoolLeaseState Acquire(out long token)
     {
         ScopedPoolLeaseState? state = _state;
-        if (state is null || (token = state.TryAcquire()) == 0)
+        if (state is null || !state.IsAvailable)
         {
             state = FindAvailableSlow(state);
-            token = state.TryAcquire();
         }
 
+        token = state.AcquireAvailable();
         return state;
     }
 
@@ -160,13 +160,9 @@ internal class ScopedPoolLeaseState : CacheLinePadded
     internal bool IsAvailable => (_version & 1) == 0;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal long TryAcquire()
+    internal long AcquireAvailable()
     {
-        if ((_version & 1) != 0)
-        {
-            return 0;
-        }
-
+        Debug.Assert(IsAvailable);
         long token = _version + 1;
         _version = token;
         return token;
