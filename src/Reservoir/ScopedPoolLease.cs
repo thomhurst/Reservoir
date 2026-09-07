@@ -45,6 +45,7 @@ internal ref struct ScopedPoolLease<T>
         ScopedPoolLeaseState? state = _state;
         if (state is not null && state.TryRelease(_token))
         {
+            ScopedPoolLeaseStateCache<T>.Return(state);
             value = _value!;
             return true;
         }
@@ -62,27 +63,31 @@ internal static class ScopedPoolLeaseStateCache<T>
     [ThreadStatic]
     private static ScopedPoolLeaseState? _state;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static ScopedPoolLeaseState Acquire(out long token)
     {
         ScopedPoolLeaseState? state = _state;
         if (state is null)
         {
             state = new PaddedScopedPoolLeaseState();
-            _state = state;
         }
         else
         {
-            while (!state.TryAcquire(out token))
-            {
-                state.Next ??= new PaddedScopedPoolLeaseState();
-                state = state.Next;
-            }
-
-            return state;
+            _state = state.Next;
+            state.Next = null;
         }
 
         _ = state.TryAcquire(out token);
         return state;
+    }
+
+    // Only a successful version-checked release publishes a state. Stale copies cannot
+    // insert it twice, and arbitrary disposal order needs no search through active leases.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void Return(ScopedPoolLeaseState state)
+    {
+        state.Next = _state;
+        _state = state;
     }
 }
 
