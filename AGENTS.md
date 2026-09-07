@@ -11,6 +11,7 @@ Run performance benchmarks on GitHub Actions `ubuntu-latest` runners to avoid lo
 - SDK: `global.json` selects the .NET 10.0.4xx feature band, rolls forward only to the latest patch in that band, and excludes preview SDKs. CI setup reads this file directly.
 - Restore/build: `dotnet restore Reservoir.slnx`, then `dotnet build Reservoir.slnx -c Release --no-restore` (warnings as errors).
 - Tests: `dotnet test tests/Reservoir.Tests/Reservoir.Tests.csproj -c Release --no-build`; also run `tests/Reservoir.NetStandard.Tests/Reservoir.NetStandard.Tests.csproj` with the same options.
+- Runtime coverage: CI runs the full suites on Linux x64/ARM64 and Windows x64, plus a bounded .NET Framework smoke on Windows. See [tests/README.md](tests/README.md) for coverage and local commands.
 - Website: Node 24; run `npm ci` and `npm run build` from `website/`.
 - Benchmarks: use [Benchmark comparison](.github/workflows/benchmark-compare.yml) on `ubuntu-latest` with explicit baseline and candidate commit SHAs, relevant filters, and matching runtimes/job settings. Use [Benchmarks](.github/workflows/benchmarks.yml) for the full suite on `ubuntu-latest`.
 
