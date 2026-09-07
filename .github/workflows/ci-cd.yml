@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm]
 
     steps:
       - name: Checkout
@@ -35,6 +35,13 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          dotnet-version: 8.0.x
+
+      - name: Verify ARM64 runner
+        if: matrix.os == 'ubuntu-24.04-arm'
+        run: |
+          test "$(uname -m)" = aarch64
+          dotnet --info
 
       - name: Restore
         run: dotnet restore Reservoir.slnx
@@ -47,6 +54,11 @@ jobs:
 
       - name: Test netstandard2.0 build
         run: dotnet test tests/Reservoir.NetStandard.Tests/Reservoir.NetStandard.Tests.csproj --configuration Release --no-build
+
+      - name: Test actual .NET Framework runtime
+        if: runner.os == 'Windows'
+        timeout-minutes: 2
+        run: ./tests/Reservoir.Legacy.Tests/bin/Release/net48/Reservoir.Legacy.Tests.exe
 
   native-aot:
     name: NativeAOT Smoke
