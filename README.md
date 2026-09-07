@@ -164,10 +164,15 @@ BenchmarkDotNet 0.15.8 combines it with `OperationsPerInvoke` in a way that make
 contention cases effectively unbounded. Use [Benchmark comparison](.github/workflows/benchmark-compare.yml)
 with explicit baseline and candidate SHAs for performance acceptance; local timings are diagnostic only.
 
+
 ## When it fits
 
 Choose Reservoir when you want bounded shared custom-object reuse, struct-policy specialization,
 scoped leases, or capacity-aware storage.
+
+For synchronous ownership with bounded idle retention, use `pool.RentScopedShared(out var item)`.
+It returns a stack-only `SharedPooledLease` through the shared store. Existing `RentScoped()`
+uses additional per-thread object retention. [Compare retention modes](https://thomhurst.github.io/Reservoir/docs/api/object-pools#scoped-rentals-with-bounded-shared-retention).
 
 Use `ArrayPool<T>` for raw arrays. Use `Microsoft.Extensions.ObjectPool` when integration with Microsoft Extensions abstractions matters more than Reservoir's specialized policies and leases.
 

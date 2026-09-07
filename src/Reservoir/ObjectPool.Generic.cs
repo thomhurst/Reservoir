@@ -16,7 +16,7 @@ namespace Reservoir;
 
 /// <summary>
 /// A thread-safe object pool specialized for a struct policy, with bounded shared retention and a
-/// per-pool thread-local tier for scoped rentals.
+/// per-pool thread-local tier for default scoped rentals.
 /// </summary>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
 /// <typeparam name="TPolicy">The policy used to create, reset, and destroy objects.</typeparam>
@@ -212,6 +212,62 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     {
         value = RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot);
         return new PooledLease<T, TPolicy>(this, value, slot);
+    }
+
+    /// <summary>
+    /// Rents a stack-only lease whose idle object returns only to the bounded shared store.
+    /// </summary>
+    /// <remarks>
+    /// This mode bypasses thread-local object retention, including when manual rentals opt into
+    /// that tier. The bound applies to idle pooled objects, not outstanding rentals or lease
+    /// ownership bookkeeping. Other rental modes can still retain thread-local objects.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public SharedPooledLease<T, TPolicy> RentScopedShared()
+        => new(this, RentSharedValue());
+
+    /// <summary>
+    /// Rents a shared-store scoped lease and exposes its object directly.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public SharedPooledLease<T, TPolicy> RentScopedShared(out T value)
+    {
+        value = RentSharedValue();
+        return new SharedPooledLease<T, TPolicy>(this, value);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal T RentSharedValue()
+    {
+        ThrowIfDisposed();
+        T value = RentWithoutLifecycle();
+        if (Volatile.Read(ref _isDisposed) == 0)
+        {
+            return value;
+        }
+
+        DisposeItem(value);
+        return ThrowDisposed();
+    }
+
+    // Shared-store leases bypass the manual TLS option on both rent and return.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void ReturnSharedValue(T value)
+    {
+        if (Volatile.Read(ref _isDisposed) != 0)
+        {
+            DisposeItem(value);
+            return;
+        }
+
+        if (!TryResetItem(value))
+        {
+            DisposeItem(value);
+            return;
+        }
+
+        ReturnWithoutReset(value);
+        ClearIfDisposed();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -9,7 +9,7 @@ namespace Reservoir;
 
 /// <summary>
 /// A thread-safe object pool for callers that prefer a policy instance or factory, with bounded
-/// shared retention and a per-pool thread-local tier for scoped rentals.
+/// shared retention and a per-pool thread-local tier for default scoped rentals.
 /// </summary>
 /// <remarks>
 /// This type stores policies through <see cref="IPooledObjectPolicy{T}"/>. Passing a struct policy
@@ -97,6 +97,17 @@ sealed class ObjectPool<T> : IDisposable
     {
         value = _pool.RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot);
         return new PooledLease<T>(_pool, value, slot);
+    }
+
+    /// <summary>Rents a scoped lease that retains idle objects only in the bounded shared store.</summary>
+    /// <remarks>Outstanding rentals and lease bookkeeping are outside the idle-object bound.</remarks>
+    public SharedPooledLease<T> RentScopedShared() => new(_pool, _pool.RentSharedValue());
+
+    /// <summary>Rents a shared-store scoped lease and exposes its object directly.</summary>
+    public SharedPooledLease<T> RentScopedShared(out T value)
+    {
+        value = _pool.RentSharedValue();
+        return new SharedPooledLease<T>(_pool, value);
     }
 
     /// <summary>Resets and returns an object. Objects exceeding capacity are discarded.</summary>

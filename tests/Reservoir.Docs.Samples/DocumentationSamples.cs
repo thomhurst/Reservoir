@@ -26,6 +26,14 @@ internal static class DocumentationSamples
         buffer.Write(payload);
     }
 
+    internal static void SharedStoreScopedLease(ReadOnlySpan<byte> payload)
+    {
+        using var pool = new ObjectPool<Buffer, BufferPolicy>(
+            new BufferPolicy(maxRetainedBytes: 64 * 1024), maxCapacity: 32);
+        using var lease = pool.RentScopedShared(out Buffer buffer);
+        buffer.Write(payload);
+    }
+
     internal static void CustomPolicy()
     {
         using var pool = new ObjectPool<Buffer, BufferPolicy>(
