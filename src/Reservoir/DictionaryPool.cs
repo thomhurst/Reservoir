@@ -106,15 +106,18 @@ sealed class DictionaryPool<TKey, TValue>
 
     /// <summary>Rents an empty dictionary owned by a stack-only thread-local lease.</summary>
     public Lease RentScoped()
-        => new(this, _scopedTier.Rent(_pool));
+    {
+        Dictionary<TKey, TValue> dictionary = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<Dictionary<TKey, TValue>>.Slot slot);
+        return new Lease(this, dictionary, slot);
+    }
 
     /// <summary>
     /// Rents an empty dictionary owned by a stack-only thread-local lease and exposes it directly.
     /// </summary>
     public Lease RentScoped(out Dictionary<TKey, TValue> dictionary)
     {
-        dictionary = _scopedTier.Rent(_pool);
-        return new Lease(this, dictionary);
+        dictionary = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<Dictionary<TKey, TValue>>.Slot slot);
+        return new Lease(this, dictionary, slot);
     }
 
     /// <summary>Returns a dictionary, clearing it when retained and discarding it when incompatible or too large.</summary>
@@ -141,14 +144,14 @@ sealed class DictionaryPool<TKey, TValue>
         return false;
     }
 
-    private void ReturnScoped(Dictionary<TKey, TValue> dictionary)
+    private void ReturnScoped(Dictionary<TKey, TValue> dictionary, InstanceThreadLocalFrontTier<Dictionary<TKey, TValue>>.Slot slot)
     {
         if (!TryReset(dictionary))
         {
             return;
         }
 
-        if (!_scopedTier.TryReturn(dictionary))
+        if (!InstanceThreadLocalFrontTier<Dictionary<TKey, TValue>>.TryReturn(slot, dictionary))
         {
             _pool.ReturnWithoutReset(dictionary);
         }
@@ -214,13 +217,16 @@ sealed class DictionaryPool<TKey, TValue>
     public ref struct Lease
     {
         private readonly DictionaryPool<TKey, TValue>? _pool;
+        private readonly InstanceThreadLocalFrontTier<Dictionary<TKey, TValue>>.Slot? _slot;
         private ScopedPoolLease<Dictionary<TKey, TValue>> _lease;
 
         internal Lease(
             DictionaryPool<TKey, TValue> pool,
-            Dictionary<TKey, TValue> dictionary)
+            Dictionary<TKey, TValue> dictionary,
+            InstanceThreadLocalFrontTier<Dictionary<TKey, TValue>>.Slot slot)
         {
             _pool = pool;
+            _slot = slot;
             _lease = new ScopedPoolLease<Dictionary<TKey, TValue>>(dictionary);
         }
 
@@ -232,7 +238,7 @@ sealed class DictionaryPool<TKey, TValue>
         {
             if (_lease.TryRelease(out Dictionary<TKey, TValue> dictionary))
             {
-                _pool!.ReturnScoped(dictionary);
+                _pool!.ReturnScoped(dictionary, _slot!);
             }
         }
     }
