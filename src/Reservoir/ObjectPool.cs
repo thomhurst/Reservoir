@@ -99,6 +99,17 @@ sealed class ObjectPool<T> : IDisposable
         return new PooledLease<T>(_pool, value, slot);
     }
 
+    /// <summary>Rents a scoped lease that retains idle objects only in the bounded shared store.</summary>
+    /// <remarks>Outstanding rentals and lease bookkeeping are outside the idle-object bound.</remarks>
+    public SharedPooledLease<T> RentScopedShared() => new(_pool, _pool.RentSharedValue());
+
+    /// <summary>Rents a shared-store scoped lease and exposes its object directly.</summary>
+    public SharedPooledLease<T> RentScopedShared(out T value)
+    {
+        value = _pool.RentSharedValue();
+        return new SharedPooledLease<T>(_pool, value);
+    }
+
     /// <summary>Resets and returns an object. Objects exceeding capacity are discarded.</summary>
     public void Return(T obj) => _pool.Return(obj);
 
