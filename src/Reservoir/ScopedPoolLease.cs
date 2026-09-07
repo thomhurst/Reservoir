@@ -45,7 +45,7 @@ internal ref struct ScopedPoolLease<T>
         ScopedPoolLeaseState? state = _state;
         if (state is not null && state.TryRelease(_token))
         {
-            if (!state.IsPrimary)
+            if ((_token & ScopedPoolLeaseState.NestedFlag) != 0)
             {
                 ScopedPoolLeaseStateCache<T>.Return(state);
             }
@@ -119,14 +119,15 @@ internal static class ScopedPoolLeaseStateCache<T>
 [DebuggerNonUserCode]
 internal class ScopedPoolLeaseState : CacheLinePadded
 {
+    // Bit 0 records ownership; bit 1 distinguishes nested states from the primary state.
+    // Advancing a generation by four preserves the tag, including across integer overflow.
+    internal const long NestedFlag = 2;
     private long _version;
 
     internal ScopedPoolLeaseState(bool isPrimary = false)
     {
-        IsPrimary = isPrimary;
+        _version = isPrimary ? 0 : NestedFlag;
     }
-
-    internal bool IsPrimary { get; }
 
     internal ScopedPoolLeaseState? Next { get; set; }
 
@@ -161,7 +162,7 @@ internal class ScopedPoolLeaseState : CacheLinePadded
             return false;
         }
 
-        _version = token + 1;
+        _version = unchecked(token + 3);
         return true;
     }
 }
