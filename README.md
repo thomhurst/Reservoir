@@ -142,7 +142,7 @@ BenchmarkDotNet 0.15.8 `MediumRun`, .NET 10.0.11, Windows 11, AMD EPYC 9V74:
 | `ConcurrentBag<T>` pool | 25.19 ns | 2.13 | 0 B |
 <!-- BENCHMARK_RESULTS_END -->
 
-Every measured warm Reservoir path allocated **0 B**. Timings vary by machine; compare methods within the same run.
+Allocation measurements apply to the published workloads and their recorded runtime and job. Timings vary by machine; compare methods within the same run.
 
 [See all benchmark results and reproduction instructions](https://thomhurst.github.io/Reservoir/docs/benchmarks#reproduce).
 Run the full suite on a GitHub Actions `ubuntu-latest` runner:

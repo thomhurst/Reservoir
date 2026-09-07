@@ -136,7 +136,111 @@ public class BenchmarkDocsTests
         await fixture.AssertUnchanged();
     }
 
-    private sealed record Row(string Method, string Runtime, string Job, string Mean, string Count, string Capacity);
+    [Test]
+    [Arguments("64 B")]
+    [Arguments("")]
+    public async Task EveryClaimedWarmResultRejectsAllocationOrMissingMeasurement(string allocated)
+    {
+        using var fixture = new Fixture();
+        (string Report, string[] Methods)[] claimed =
+        [
+            ("ObjectPoolBenchmarks", ["ScopedOutRentReturn", "ScopedRentReturn", "RentReturn"]),
+            ("StringBuilderPoolBenchmarks", ["ThreadStaticCache", "Reservoir"]),
+            ("CorePoolComparisonBenchmarks", ["Reservoir"]),
+            ("CollectionPoolAllocationBenchmarks", ["ObjectPool", "ListPool", "DictionaryPool", "HashSetPool", "QueuePool", "StackPool", "StringBuilderPool"]),
+            ("ListPoolBenchmarks", ["Reservoir"]),
+            ("ObjectPoolCapacityScalingBenchmarks", ["RentReturn"]),
+            ("ObjectPoolBurstBenchmarks", ["DrainAndRefill"])
+        ];
+        int checkedRows = 0;
+        foreach ((string report, string[] methods) in claimed)
+        {
+            List<Row> rows = fixture.Reports[report];
+            for (int index = 0; index < rows.Count; index++)
+            {
+                Row original = rows[index];
+                if (original.Runtime != ".NET 10.0" || !methods.Contains(original.Method))
+                {
+                    continue;
+                }
+
+                rows[index] = original with { Allocated = allocated };
+                (int exitCode, string output) = await fixture.Run();
+                await Assert.That(exitCode).IsNotEqualTo(0);
+                await Assert.That(output).Contains(original.Method);
+                await fixture.AssertUnchanged();
+                rows[index] = original;
+                checkedRows++;
+            }
+        }
+        await Assert.That(checkedRows).IsEqualTo(24);
+    }
+
+    [Test]
+    [Arguments("NaN B")]
+    [Arguments("-1 B")]
+    [Arguments("0 frogs")]
+    [Arguments("-")]
+    [Arguments("0.001 B")]
+    public async Task InvalidOrPositiveAllocationCannotBecomeZeroClaim(string allocated)
+    {
+        using var fixture = new Fixture();
+        List<Row> rows = fixture.Reports["ObjectPoolBenchmarks"];
+        int index = rows.FindIndex(row => row.Runtime == ".NET 10.0" && row.Method == "ScopedOutRentReturn");
+        rows[index] = rows[index] with { Allocated = allocated };
+        (int exitCode, _) = await fixture.Run();
+        await Assert.That(exitCode).IsNotEqualTo(0);
+        await fixture.AssertUnchanged();
+    }
+
+    [Test]
+    public async Task MissingAllocationColumnPreventsPublication()
+    {
+        using var fixture = new Fixture { ReportWithoutAllocationColumn = "ObjectPoolBenchmarks" };
+        (int exitCode, _) = await fixture.Run();
+        await Assert.That(exitCode).IsNotEqualTo(0);
+        await fixture.AssertUnchanged();
+    }
+
+    [Test]
+    public async Task InvalidDocumentationMarkerDoesNotPartiallyPublish()
+    {
+        using var fixture = new Fixture();
+        string invalidDocs = File.ReadAllText(fixture.DocsPath).Replace("BENCHMARK_RESULTS_LINK_END", "MISSING_LINK_END");
+        string originalReadme = File.ReadAllText(fixture.ReadmePath);
+        File.WriteAllText(fixture.DocsPath, invalidDocs);
+        (int exitCode, _) = await fixture.Run();
+        await Assert.That(exitCode).IsNotEqualTo(0);
+        await Assert.That(File.ReadAllText(fixture.ReadmePath)).IsEqualTo(originalReadme);
+        await Assert.That(File.ReadAllText(fixture.DocsPath)).IsEqualTo(invalidDocs);
+    }
+
+    [Test]
+    public async Task ClaimsUseValidatedResultsAndOnlySelectedWarmRows()
+    {
+        using var fixture = new Fixture(extraJob: true);
+        foreach ((string report, List<Row> rows) in fixture.Reports)
+        {
+            for (int index = 0; index < rows.Count; index++)
+            {
+                Row row = rows[index];
+                bool outsideClaim = row.Runtime != ".NET 10.0" || row.Job != "ShortRun" ||
+                    row.Method is "New" or "NewList" or "NewStringBuilder" or "MicrosoftExtensionsObjectPool" or "ConcurrentBag" or "EmptyRent";
+                rows[index] = row with { Allocated = outsideClaim ? "64 B" : "0.00 B" };
+            }
+        }
+        (int exitCode, _) = await fixture.Run(job: "ShortRun");
+        await Assert.That(exitCode).IsEqualTo(0);
+        string docs = File.ReadAllText(fixture.DocsPath);
+        await Assert.That(docs).Contains("24 validated warm results");
+        await Assert.That(docs).DoesNotContain("Every measured warm Reservoir path");
+        await Assert.That(docs).Contains("**0 B per operation**");
+        await Assert.That(docs).Contains("TLS `StringBuilder` cache measured 10.00 ns and 0 B");
+        await Assert.That(docs).Contains("manual rent/return measured 10.00 ns and 0 B");
+        await Assert.That(File.ReadAllText(fixture.ReadmePath)).DoesNotContain("Every measured warm Reservoir path");
+    }
+
+    private sealed record Row(string Method, string Runtime, string Job, string Mean, string Count, string Capacity, string Allocated = "0 B");
 
     private sealed class Fixture : IDisposable
     {
@@ -146,6 +250,7 @@ public class BenchmarkDocsTests
         private readonly string _initialDocs;
         internal Dictionary<string, List<Row>> Reports { get; } = new();
         internal string Metadata { get; set; }
+        internal string? ReportWithoutAllocationColumn { get; set; }
         internal string ReadmePath => Path.Combine(_root, "README.md");
         internal string DocsPath => Path.Combine(_root, "website", "docs", "benchmarks.md");
 
@@ -221,7 +326,11 @@ public class BenchmarkDocsTests
             foreach ((string name, List<Row> rows) in Reports)
             {
                 string csv = "Method,Runtime,Job,Mean,Ratio,Allocated,Count,Capacity\n" + string.Join('\n', rows.Select(row =>
-                    $"{row.Method},{row.Runtime},{row.Job},{row.Mean},9.99,0 B,{row.Count},{row.Capacity}"));
+                    $"{row.Method},{row.Runtime},{row.Job},{row.Mean},9.99,{row.Allocated},{row.Count},{row.Capacity}"));
+                if (name == ReportWithoutAllocationColumn)
+                {
+                    csv = csv.Replace(",Allocated,", ",Unavailable,");
+                }
                 File.WriteAllText(Path.Combine(_root, "results", $"Reservoir.Benchmarks.{name}-report.csv"), csv);
             }
             File.WriteAllText(Path.Combine(_root, "results", "Reservoir.Benchmarks.CorePoolComparisonBenchmarks-report-github.md"), Metadata);

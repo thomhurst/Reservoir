@@ -142,17 +142,17 @@ function Format-Allocation {
     return '{0} {1}' -f $number.ToString($format, $culture), $parsed.Unit
 }
 
-function Update-MarkedSection {
+function Get-UpdatedMarkedSection {
     param(
         [Parameter(Mandatory)][string] $Path,
+        [Parameter(Mandatory)][string] $OriginalText,
         [Parameter(Mandatory)][string] $Marker,
         [Parameter(Mandatory)][string] $Content
     )
 
     $startMarker = "<!-- ${Marker}_START -->"
     $endMarker = "<!-- ${Marker}_END -->"
-    $originalText = Get-Content -LiteralPath $Path -Raw
-    $text = $originalText.Replace("`r`n", "`n")
+    $text = $OriginalText.Replace("`r`n", "`n")
     $pattern = '(?s)' + [regex]::Escape($startMarker) + '.*?' + [regex]::Escape($endMarker)
     $matches = [regex]::Matches($text, $pattern)
 
@@ -161,14 +161,10 @@ function Update-MarkedSection {
     }
 
     $replacement = $startMarker + $newLine + $Content.Trim() + $newLine + $endMarker
-    $updated = [regex]::Replace(
+    return [regex]::Replace(
         $text,
         $pattern,
         [System.Text.RegularExpressions.MatchEvaluator] { param($match) $replacement })
-
-    if ($updated -ne $originalText) {
-        Set-Content -LiteralPath $Path -Value $updated -Encoding utf8 -NoNewline
-    }
 }
 
 $coreRows = Import-BenchmarkReport 'CorePoolComparisonBenchmarks'
@@ -236,13 +232,20 @@ $publishedWarmRows = @(
     $stringBuilderReservoir
     $manualRent
     $scopedRent
-) + $allocationResults + @($listResults | ForEach-Object { $_.Reservoir })
+    $scopedOutRent
+    $stringBuilderTls
+) + $allocationResults + @($listResults | ForEach-Object { $_.Reservoir }) +
+    @($capacityResults | ForEach-Object { $_.RentReturn; $_.DrainAndRefill })
 
-$allocatingWarmRows = @($publishedWarmRows | Where-Object { $_.Allocated -ne '0 B' })
-if ($allocatingWarmRows.Count -gt 0) {
-    $methods = @($allocatingWarmRows | ForEach-Object { $_.Method }) -join ', '
-    throw "A documented warm path allocated memory: $methods"
+foreach ($row in $publishedWarmRows) {
+    $allocation = $row.PSObject.Properties['Allocated']
+    # Require an explicit measured zero in bytes. Missing data, placeholders, unknown units,
+    # and positive values (even too small to survive numeric rounding) cannot support a claim.
+    if ($null -eq $allocation -or [string] $allocation.Value -cnotmatch '^0(?:\.0+)? B$') {
+        throw "A documented warm path requires a measured zero-byte allocation: $($row.Method) (runtime=$Runtime, job=$Job)."
+    }
 }
+$warmAllocation = Format-Allocation $publishedWarmRows[0].Allocated
 
 $metadataPath = Join-Path $resultsPath 'Reservoir.Benchmarks.CorePoolComparisonBenchmarks-report-github.md'
 $metadata = Get-Content -LiteralPath $metadataPath -Raw
@@ -302,7 +305,8 @@ foreach ($item in $coreTableRows) {
 }
 
 $docsContent = @(
-    'Every measured warm Reservoir path allocated **0 B per operation**.'
+    "The $($publishedWarmRows.Count) validated warm results below allocated **$warmAllocation per operation**."
+    'This covers the Reservoir core, collection, list, warm capacity and burst results, manual/scoped rentals, and the TLS StringBuilder reference. Empty-rent results and other libraries are excluded from this claim.'
     ''
     "Results below select $Runtime and used $environment. Other runtimes remain in the raw reports. Nanosecond timings vary by machine; compare methods within a table."
     ''
@@ -400,11 +404,15 @@ foreach ($result in $listResults) {
 
 $docsContent += @(
     ''
-    ('The single-thread TLS `StringBuilder` cache measured {0} and 0 B; it gives up cross-thread reuse and bounded shared capacity. `ObjectPool.RentScoped(out T)` measured {1}, `RentScoped()` measured {2}, and manual rent/return measured {3}, with 0 B allocated on every path.' -f @(
+    ('The single-thread TLS `StringBuilder` cache measured {0} and {1}; it gives up cross-thread reuse and bounded shared capacity. `ObjectPool.RentScoped(out T)` measured {2} and {3}, `RentScoped()` measured {4} and {5}, and manual rent/return measured {6} and {7}. Allocations are per operation in the selected runtime and job.' -f @(
         (Format-Duration $stringBuilderTls.Mean),
+        (Format-Allocation $stringBuilderTls.Allocated),
         (Format-Duration $scopedOutRent.Mean),
+        (Format-Allocation $scopedOutRent.Allocated),
         (Format-Duration $scopedRent.Mean),
-        (Format-Duration $manualRent.Mean)
+        (Format-Allocation $scopedRent.Allocated),
+        (Format-Duration $manualRent.Mean),
+        (Format-Allocation $manualRent.Allocated)
     ))
 )
 
@@ -420,19 +428,33 @@ else {
     )
 }
 
-Update-MarkedSection `
-    -Path (Join-Path $repositoryPath 'README.md') `
+# Validate every marker and construct both documents before writing either file.
+$readmePath = Join-Path $repositoryPath 'README.md'
+$originalReadme = Get-Content -LiteralPath $readmePath -Raw
+$updatedReadme = Get-UpdatedMarkedSection `
+    -Path $readmePath `
+    -OriginalText $originalReadme `
     -Marker 'BENCHMARK_RESULTS' `
     -Content ($readmeTable -join $newLine)
 
 $docsPath = Join-Path $repositoryPath 'website/docs/benchmarks.md'
-Update-MarkedSection `
+$originalDocs = Get-Content -LiteralPath $docsPath -Raw
+$updatedDocs = Get-UpdatedMarkedSection `
     -Path $docsPath `
+    -OriginalText $originalDocs `
     -Marker 'BENCHMARK_RESULTS' `
     -Content ($docsContent -join $newLine)
-Update-MarkedSection `
+$updatedDocs = Get-UpdatedMarkedSection `
     -Path $docsPath `
+    -OriginalText $updatedDocs `
     -Marker 'BENCHMARK_RESULTS_LINK' `
     -Content $resultsLink
+
+if ($updatedReadme -ne $originalReadme) {
+    Set-Content -LiteralPath $readmePath -Value $updatedReadme -Encoding utf8 -NoNewline
+}
+if ($updatedDocs -ne $originalDocs) {
+    Set-Content -LiteralPath $docsPath -Value $updatedDocs -Encoding utf8 -NoNewline
+}
 
 Write-Host "Updated benchmark documentation from $relativeResultsPath"

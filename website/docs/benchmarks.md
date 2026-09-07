@@ -6,7 +6,7 @@ description: BenchmarkDotNet results for Reservoir's warm paths and specialized 
 # Benchmarks
 
 <!-- BENCHMARK_RESULTS_START -->
-Every measured warm Reservoir path allocated **0 B per operation**.
+Allocation measurements for the published workloads appear in the tables below.
 
 Results below used BenchmarkDotNet 0.15.8 `MediumRun`, .NET 10.0.11, Windows 11, AMD EPYC 9V74. Nanosecond timings vary by machine; compare methods within a table.
 
@@ -53,7 +53,7 @@ reuse and bounded shared capacity.
 ## Choosing a rental API
 
 For synchronous hot paths on .NET 10, prefer `RentScoped(out T)`. On .NET 8, manual `Rent()` and
-`Return()` remain faster. Both warm paths allocate 0 B. Always use manual rental when ownership
+`Return()` remain faster. See the measured allocation results above. Always use manual rental when ownership
 crosses an `await`, and measure representative workloads on target hardware.
 
 ## Reproduce
