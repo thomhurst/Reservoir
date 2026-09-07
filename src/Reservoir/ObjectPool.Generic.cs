@@ -382,9 +382,18 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         {
             return _policy.TryReset(obj);
         }
-        catch
+        catch (Exception resetException)
         {
-            DisposeItem(obj);
+            try
+            {
+                DisposeItem(obj);
+            }
+            catch (Exception destroyException)
+            {
+                throw new AggregateException(
+                    "Reset and destruction both failed.", resetException, destroyException);
+            }
+
             throw;
         }
     }
