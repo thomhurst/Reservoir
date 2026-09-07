@@ -2,9 +2,9 @@
 
 Follow `.editorconfig` and existing code conventions. Use TUnit for regression tests; cover concurrency and ownership boundaries when affected.
 
-## Local workload coordination
+## Benchmark execution and local work
 
-Before local benchmarks, profiling, stress runs, builds, tests, restores, or other heavy work, follow [the shared performance lock workflow](scripts/PerformanceLock.md). All four repositories reserve the same Redis `performance` key through `C:/git/Dekaf/scripts/AgentLocks.ps1`; this repository's item-lock backend is separate. Reading and editing can continue while another agent owns the reservation.
+Run performance benchmarks on GitHub Actions `ubuntu-latest` runners to avoid local machine noise. This repository no longer requires the local Redis `performance` lock, including for local restores, builds, tests, or website builds. PR/issue ownership locks still apply.
 
 ## Validation
 
@@ -12,13 +12,13 @@ Before local benchmarks, profiling, stress runs, builds, tests, restores, or oth
 - Restore/build: `dotnet restore Reservoir.slnx`, then `dotnet build Reservoir.slnx -c Release --no-restore` (warnings as errors).
 - Tests: `dotnet test tests/Reservoir.Tests/Reservoir.Tests.csproj -c Release --no-build`; also run `tests/Reservoir.NetStandard.Tests/Reservoir.NetStandard.Tests.csproj` with the same options.
 - Website: Node 24; run `npm ci` and `npm run build` from `website/`.
-- Benchmarks: `dotnet run -c Release -f net10.0 --project benchmarks/Reservoir.Benchmarks -- --filter "*" --job Short --runtimes net8.0 net10.0 --apples`.
+- Benchmarks: use [Benchmark comparison](.github/workflows/benchmark-compare.yml) on `ubuntu-latest` with explicit baseline and candidate commit SHAs, relevant filters, and matching runtimes/job settings. Use [Benchmarks](.github/workflows/benchmarks.yml) for the full suite on `ubuntu-latest`.
 
 ## Performance Engineering
 
 Throughput, latency, and zero allocation are primary goals; measured micro-optimizations are welcome. Warm `Rent`/`Return` and established hot paths must remain 0 B allocated with no Gen0 collections.
 
-Every performance change requires repeatable before/after Release benchmarks on identical hardware and configuration, preferably a same-run baseline. Use BenchmarkDotNet allocation diagnostics; report Mean, Ratio, Allocated, and noise. Inspect IL/JIT assembly when needed to explain results. Do not merge unproven gains or allocation/correctness regressions.
+Every performance change requires repeatable before/after Release benchmarks on a GitHub Actions `ubuntu-latest` runner. Run the baseline and candidate sequentially in the same job on the same runner with identical benchmark code and configuration; separate jobs or workflow runs do not guarantee identical hardware. Local measurements are diagnostic only and cannot establish performance acceptance. Use BenchmarkDotNet allocation diagnostics; report Mean, Ratio, Allocated, and noise, and link the workflow run and artifacts with both commit SHAs. Hosted runners can still be noisy: repeat inconclusive comparisons before claiming a gain. Inspect IL/JIT assembly when needed to explain results. Do not merge unproven gains or allocation/correctness regressions.
 
 ## Commits and PRs
 

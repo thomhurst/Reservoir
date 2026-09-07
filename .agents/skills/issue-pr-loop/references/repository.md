@@ -1,6 +1,6 @@
 # Reservoir
 
-Before heavy local work, follow [the shared performance lock workflow](../../../../scripts/PerformanceLock.md). Reserve `performance` through the current shared `C:/git/Dekaf/scripts/AgentLocks.ps1`, using `$performanceLocks` separately from this repository's `$agentLocks`. Acquire it after the item lock and release it first. Repository-local Redis namespaces do not provide cross-repository isolation.
+Run before/after Release benchmarks through [Benchmark comparison](../../../../.github/workflows/benchmark-compare.yml) on GitHub Actions `ubuntu-latest`, with baseline and candidate sequentially in the same job on the same runner. Record both commit SHAs and link the run and artifacts. Local measurements are diagnostic only. This repository no longer requires the local Redis `performance` lock for benchmarks or local validation; retain PR/issue ownership locks.
 
 Read [AGENTS.md](../../../../AGENTS.md) for validation and performance acceptance. Preserve zero-allocation warm Rent/Return paths and ownership/concurrency contracts; performance changes require repeatable before/after evidence. Use the project files and workflows for current framework/test coverage and the website build.
 

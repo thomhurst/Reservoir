@@ -31,7 +31,7 @@ permissions:
 jobs:
   benchmark:
     name: Run benchmarks
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 180
 
     steps:
