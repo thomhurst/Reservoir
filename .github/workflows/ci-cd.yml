@@ -34,7 +34,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.4xx
+          global-json-file: global.json
 
       - name: Restore
         run: dotnet restore Reservoir.slnx
@@ -59,7 +59,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.4xx
+          global-json-file: global.json
 
       - name: Publish
         run: >-
@@ -84,7 +84,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.4xx
+          global-json-file: global.json
 
       - name: Generate package version
         id: version
