@@ -45,7 +45,10 @@ internal ref struct ScopedPoolLease<T>
         ScopedPoolLeaseState? state = _state;
         if (state is not null && state.TryRelease(_token))
         {
-            ScopedPoolLeaseStateCache<T>.Return(state);
+            if (!state.IsPrimary)
+            {
+                ScopedPoolLeaseStateCache<T>.Return(state);
+            }
             value = _value!;
             return true;
         }
@@ -63,17 +66,34 @@ internal static class ScopedPoolLeaseStateCache<T>
     [ThreadStatic]
     private static ScopedPoolLeaseState? _state;
 
+    [ThreadStatic]
+    private static ScopedPoolLeaseState? _available;
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static ScopedPoolLeaseState Acquire(out long token)
     {
         ScopedPoolLeaseState? state = _state;
-        if (state is null)
+        if (state is not null && state.TryAcquire(out token))
         {
-            state = new PaddedScopedPoolLeaseState();
+            return state;
+        }
+
+        return AcquireSlow(state, out token);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ScopedPoolLeaseState AcquireSlow(ScopedPoolLeaseState? primary, out long token)
+    {
+        ScopedPoolLeaseState state;
+        if (primary is null)
+        {
+            state = new PaddedScopedPoolLeaseState(isPrimary: true);
+            _state = state;
         }
         else
         {
-            _state = state.Next;
+            state = _available ?? new PaddedScopedPoolLeaseState();
+            _available = state.Next;
             state.Next = null;
         }
 
@@ -81,13 +101,13 @@ internal static class ScopedPoolLeaseStateCache<T>
         return state;
     }
 
-    // Only a successful version-checked release publishes a state. Stale copies cannot
-    // insert it twice, and arbitrary disposal order needs no search through active leases.
+    // The primary state stays cached for ordinary rentals. Only a successful release of
+    // a nested state publishes it here; stale copies cannot insert the same state twice.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void Return(ScopedPoolLeaseState state)
     {
-        state.Next = _state;
-        _state = state;
+        state.Next = _available;
+        _available = state;
     }
 }
 
@@ -99,6 +119,13 @@ internal static class ScopedPoolLeaseStateCache<T>
 internal class ScopedPoolLeaseState : CacheLinePadded
 {
     private long _version;
+
+    internal ScopedPoolLeaseState(bool isPrimary = false)
+    {
+        IsPrimary = isPrimary;
+    }
+
+    internal bool IsPrimary { get; }
 
     internal ScopedPoolLeaseState? Next { get; set; }
 
@@ -142,6 +169,11 @@ internal class ScopedPoolLeaseState : CacheLinePadded
 [DebuggerNonUserCode]
 internal sealed class PaddedScopedPoolLeaseState : ScopedPoolLeaseState
 {
+    internal PaddedScopedPoolLeaseState(bool isPrimary = false)
+        : base(isPrimary)
+    {
+    }
+
 #pragma warning disable CS0169 // The field is only there to occupy space.
     private readonly CacheLinePad _trailingPad;
 #pragma warning restore CS0169
