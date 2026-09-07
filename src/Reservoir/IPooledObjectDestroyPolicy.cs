@@ -4,15 +4,16 @@
 namespace Reservoir;
 
 /// <summary>
-/// Adds custom destruction to a pooled-object policy.
+/// Identifies a pooled-object policy with custom destruction.
 /// </summary>
+/// <remarks>
+/// Destruction is declared by <see cref="IPooledObjectPolicy{T}"/> on every target framework.
+/// This interface is a marker; explicit implementations must implement the base interface's
+/// Destroy method. Implementing <see cref="IPooledObjectPolicy{T}"/> directly is sufficient.
+/// </remarks>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
 public
 interface IPooledObjectDestroyPolicy<T> : IPooledObjectPolicy<T>
     where T : class
 {
-#if !NETCOREAPP3_0_OR_GREATER
-    /// <summary>Destroys an object that cannot be retained by the pool.</summary>
-    void Destroy(T obj);
-#endif
 }

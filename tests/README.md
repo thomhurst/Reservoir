@@ -15,6 +15,8 @@ The legacy smoke covers:
 
 This is selected compatibility coverage, not a claim that every .NET Standard 2.0-compatible runtime or patch has been tested. The legacy smoke is separate because the current TUnit runner targets modern .NET.
 
+`Reservoir.Package.Consumer` compiles a netstandard2.0 fixture against the packed package. `Reservoir.Package.Tests` loads that already compiled fixture with the net8.0 and net10.0 package assets. The tests verify implicit and explicit base-interface cleanup, mutable state through generic/runtime pools and direct constrained calls, inherited modern defaults, and the single declaring interface for `Destroy`. Package validation also checks API compatibility between the package's target frameworks. This covers consumers rebuilt for the unified contract; old netstandard2.0 binaries require the documented breaking migration.
+
 From the repository root on Windows:
 
 ```powershell

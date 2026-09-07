@@ -590,6 +590,10 @@ public class ObjectPoolTests
 
     private readonly struct StressPolicy(StressState state) : IPooledObjectPolicy<StressItem>
     {
+        public void Destroy(StressItem obj)
+        {
+        }
+
         public StressItem Create()
             => new(Interlocked.Increment(ref state.CreatedCount));
 
@@ -613,6 +617,10 @@ public class ObjectPoolTests
         private Counter? _counter = new();
 
         public CountingPolicy()
+        {
+        }
+
+        public void Destroy(PooledItem obj)
         {
         }
 
@@ -640,6 +648,10 @@ public class ObjectPoolTests
     private sealed class ReferencePolicy : IPooledObjectPolicy<PooledItem>
     {
         private int _created;
+
+        public void Destroy(PooledItem obj)
+        {
+        }
 
         public PooledItem Create() => new(Interlocked.Increment(ref _created));
 

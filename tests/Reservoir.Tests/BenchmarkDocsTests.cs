@@ -341,6 +341,12 @@ public class BenchmarkDocsTests
                 RedirectStandardError = true,
                 CreateNoWindow = true
             };
+            // Parallel pwsh processes can corrupt their shared startup profile cache:
+            // https://github.com/PowerShell/PowerShell/issues/26528
+            if (!OperatingSystem.IsWindows())
+            {
+                start.Environment["XDG_CACHE_HOME"] = Path.Combine(_root, "cache");
+            }
             foreach (string argument in new[] { "-NoProfile", "-File", _script, "-ResultsDirectory", Path.Combine(_root, "results"), "-RepositoryRoot", _root })
             {
                 start.ArgumentList.Add(argument);

@@ -107,6 +107,13 @@ with explicit baseline and candidate commit SHAs and matching runtime/job settin
 runs both revisions sequentially on the same runner with the candidate's benchmark code.
 Report Mean, Ratio, Allocated, and noise, and link the run and artifacts with both SHAs.
 
+To compare the netstandard2.0 asset on modern runtimes, add `-f library_asset=netstandard2.0`
+and select `*DestroyPolicyBenchmarks.*`, `*RuntimePolicyObjectPoolBenchmarks.*`, or
+`*FactoryObjectPoolBenchmarks.*`. That option builds a bounded portable suite and forwards
+the asset selection to BenchmarkDotNet's generated projects. The default `automatic` option
+uses the host's matching asset and the full benchmark suite. Both selections run Dry validation
+before measuring each revision; the logs print the loaded Reservoir asset.
+
 <!-- BENCHMARK_RESULTS_LINK_START -->
 Raw Markdown, CSV, and HTML exports—including 1–32 worker contention results—are available from the [GitHub Actions run](https://github.com/thomhurst/Reservoir/actions/runs/31543884370).
 <!-- BENCHMARK_RESULTS_LINK_END -->

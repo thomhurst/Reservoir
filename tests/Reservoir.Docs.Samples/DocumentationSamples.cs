@@ -173,6 +173,10 @@ internal readonly struct QuickStartBufferPolicy : IPooledObjectPolicy<Buffer>
 {
     public Buffer Create() => new();
 
+    public void Destroy(Buffer buffer)
+    {
+    }
+
     public bool TryReset(Buffer buffer)
     {
         buffer.Clear();
@@ -197,6 +201,10 @@ internal readonly struct BufferPolicy(int maxRetainedBytes)
 internal sealed class RuntimeBufferPolicy : IPooledObjectPolicy<Buffer>
 {
     public Buffer Create() => new();
+
+    public void Destroy(Buffer buffer)
+    {
+    }
 
     public bool TryReset(Buffer buffer)
     {

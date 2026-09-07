@@ -5,9 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
-#if !NETCOREAPP3_0_OR_GREATER
-using System.Reflection;
-#endif
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
@@ -41,16 +38,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private static int _threadStripe;
 
     private static int s_nextThreadStripe;
-
-#if !NETCOREAPP3_0_OR_GREATER
-    private static readonly DestroyPolicy? s_destroyPolicy = CreateDestroyPolicy();
-    private static readonly bool s_isStaticallyDisposable
-        = typeof(IDisposable).IsAssignableFrom(typeof(T));
-
-    private static readonly bool s_mayHaveDisposableImplementations = !typeof(T).IsSealed;
-
-    private delegate void DestroyPolicy(ref TPolicy policy, T obj);
-#endif
 
     private readonly ObjectWrapper[] _items;
     private readonly int _indexMask;
@@ -657,58 +644,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void DisposeItem(T obj)
-    {
-#if NETCOREAPP3_0_OR_GREATER
-        _policy.Destroy(obj);
-#else
-        DestroyPolicy? destroyPolicy = s_destroyPolicy;
-        if (destroyPolicy is not null)
-        {
-            destroyPolicy(ref _policy, obj);
-            return;
-        }
-
-        DefaultDestroy(obj);
-#endif
-    }
-
-#if !NETCOREAPP3_0_OR_GREATER
-    private static DestroyPolicy? CreateDestroyPolicy()
-    {
-        if (!typeof(IPooledObjectDestroyPolicy<T>).IsAssignableFrom(typeof(TPolicy)))
-        {
-            return null;
-        }
-
-        MethodInfo method = typeof(ObjectPool<T, TPolicy>).GetMethod(
-            nameof(DestroyWithPolicy),
-            BindingFlags.NonPublic | BindingFlags.Static)!
-            .MakeGenericMethod(typeof(TPolicy));
-
-        return (DestroyPolicy)Delegate.CreateDelegate(typeof(DestroyPolicy), method);
-    }
-
-    private static void DestroyWithPolicy<TDestroyPolicy>(
-        ref TDestroyPolicy policy,
-        T obj)
-        where TDestroyPolicy : struct, IPooledObjectDestroyPolicy<T>
-        => policy.Destroy(obj);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void DefaultDestroy(T obj)
-    {
-        if (s_isStaticallyDisposable)
-        {
-            ((IDisposable)obj).Dispose();
-            return;
-        }
-
-        if (s_mayHaveDisposableImplementations && obj is IDisposable disposable)
-        {
-            disposable.Dispose();
-        }
-    }
-#endif
+        => _policy.Destroy(obj);
 
     private void DisposeRetained(T? obj, ref Exception? firstException)
     {

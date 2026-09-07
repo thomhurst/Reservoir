@@ -10,6 +10,7 @@ public class RuntimePolicyObjectPoolBenchmarks
     [GlobalSetup]
     public void WarmPool()
     {
+        BenchmarkAsset.Verify();
         Payload payload = _pool.Rent();
         _pool.Return(payload);
 
@@ -45,6 +46,11 @@ public class RuntimePolicyObjectPoolBenchmarks
         public Payload Create() => new();
 
         public bool TryReset(Payload obj) => true;
+#if RESERVOIR_NETSTANDARD
+        public void Destroy(Payload obj)
+        {
+        }
+#endif
     }
 }
 
@@ -56,6 +62,7 @@ public class FactoryObjectPoolBenchmarks
     [GlobalSetup]
     public void WarmPool()
     {
+        BenchmarkAsset.Verify();
         Payload payload = _pool.Rent();
         _pool.Return(payload);
 

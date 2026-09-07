@@ -148,17 +148,10 @@ sealed class ObjectPool<T> : IDisposable
 
         public void Destroy(T obj)
         {
-#if NETCOREAPP3_0_OR_GREATER
             if (_policy is not null)
             {
                 _policy.Destroy(obj);
             }
-#else
-            if (_policy is IPooledObjectDestroyPolicy<T> destroyPolicy)
-            {
-                destroyPolicy.Destroy(obj);
-            }
-#endif
             else if (obj is IDisposable disposable)
             {
                 disposable.Dispose();

@@ -39,9 +39,31 @@ readonly struct BufferPolicy(int maxRetainedBytes) : IPooledObjectDestroyPolicy<
 | --- | --- | --- |
 | `Create()` | No retained object is available | Return a non-null object. |
 | `TryReset(T)` | An object is returned | Restore clean state; return `false` to discard. |
-| `Destroy(T)` | An object is discarded, cleared, or returned after disposal | Permanently release resources when implementing `IPooledObjectDestroyPolicy<T>`. |
+| `Destroy(T)` | An object is discarded, cleared, or returned after disposal | Permanently release resources. Required on netstandard2.0; modern targets provide default `IDisposable` cleanup. |
 
-Implement `IPooledObjectPolicy<T>` when default destruction is sufficient. Reservoir automatically disposes discarded objects that implement `IDisposable`. Implement `IPooledObjectDestroyPolicy<T>` only when cleanup needs different behavior. This derived interface is the portable custom-destruction contract, including on .NET Standard 2.0; modern targets retain the base interface's default `Destroy` method for compatibility.
+`IPooledObjectPolicy<T>` declares all three methods on every target framework. On netstandard2.0, implement `Destroy` even when cleanup is a no-op. On modern targets, omitting it uses the default implementation, which disposes objects implementing `IDisposable`. Implementing `Destroy` on a struct policy also avoids boxing when discarded objects need cleanup. `IPooledObjectDestroyPolicy<T>` remains an optional marker that inherits the same contract.
+
+## Migrate the destruction contract
+
+This is a breaking change for libraries compiled against the previous netstandard2.0 asset. Rebuild those libraries with the new package before consuming them from an application. Updating only the application's package reference does not migrate old policy binaries.
+
+1. Add `Destroy(T)` to every netstandard2.0 policy. To preserve previous default cleanup, dispose the object when it implements `IDisposable`; use a no-op only when nothing needs releasing.
+2. Change explicit implementations to name `IPooledObjectPolicy<T>`. A public `Destroy(T)` method already satisfies the new contract.
+3. Rebuild and deploy the consuming libraries together with the application. Existing modern base-interface overrides and default cleanup retain their behavior.
+
+```csharp
+readonly struct ResourcePolicy : IPooledObjectDestroyPolicy<Resource>
+{
+    public Resource Create() => new();
+    public bool TryReset(Resource resource) => false;
+
+    // Previously: void IPooledObjectDestroyPolicy<Resource>.Destroy(...)
+    void IPooledObjectPolicy<Resource>.Destroy(Resource resource)
+        => resource.Dispose();
+}
+```
+
+There is now one declaring interface for `Destroy` across netstandard2.0, net8.0, and net10.0. A library rebuilt against the netstandard2.0 asset can execute unchanged against either modern asset. Generic calls preserve mutable struct state by reference, including calls constrained to the marker interface. Pools use ordinary interface dispatch without reflection-based destruction discovery.
 
 A `readonly struct` policy avoids an interface-object allocation and gives the JIT a concrete call target. Policy state should be immutable or explicitly thread-safe because pool operations may call it concurrently.
 
@@ -75,7 +97,7 @@ var factoryPool = new ObjectPool<Buffer>(() => new Buffer(), maxCapacity: 32);
 var policyPool = new ObjectPool<Buffer>(new RuntimeBufferPolicy(), maxCapacity: 32);
 ```
 
-The factory overload retains every returned object after no-op reset. It still disposes discarded `IDisposable` instances. The interface-policy overload delegates creation and reset. It also delegates destruction when the policy implements `IPooledObjectDestroyPolicy<T>`.
+The factory overload retains every returned object after no-op reset. It still disposes discarded `IDisposable` instances. The interface-policy overload delegates creation, reset, and destruction to `IPooledObjectPolicy<T>`.
 
 Use this overload for class policies selected at runtime. Passing a struct policy to
 `ObjectPool<T>` boxes it once and keeps `Create`, `TryReset`, and `Destroy` behind interface

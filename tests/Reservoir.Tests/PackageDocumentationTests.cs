@@ -13,6 +13,7 @@ public class PackageDocumentationTests
     public async Task PackageValidationRequiresDocumentationForEveryTarget(string? missingTarget)
     {
         string packagePath = Path.Combine(Path.GetTempPath(), $"Reservoir.PackageDocs.{Guid.NewGuid():N}.nupkg");
+        string cacheDirectory = packagePath + ".cache";
         try
         {
             using (ZipArchive package = ZipFile.Open(packagePath, ZipArchiveMode.Create))
@@ -45,6 +46,12 @@ public class PackageDocumentationTests
                 RedirectStandardError = true,
                 CreateNoWindow = true
             };
+            // Keep concurrent fixtures out of PowerShell's shared startup profile cache.
+            // https://github.com/PowerShell/PowerShell/issues/26528
+            if (!OperatingSystem.IsWindows())
+            {
+                start.Environment["XDG_CACHE_HOME"] = cacheDirectory;
+            }
             start.ArgumentList.Add("-NoProfile");
             start.ArgumentList.Add("-File");
             start.ArgumentList.Add(Path.Combine(repository.FullName, "build", "Test-PackageContents.ps1"));
@@ -80,6 +87,10 @@ public class PackageDocumentationTests
         finally
         {
             File.Delete(packagePath);
+            if (Directory.Exists(cacheDirectory))
+            {
+                Directory.Delete(cacheDirectory, recursive: true);
+            }
         }
     }
 }

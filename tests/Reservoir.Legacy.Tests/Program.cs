@@ -166,6 +166,6 @@ internal static class Program
             item.ResetCount++;
             return !item.Reject;
         }
-        void IPooledObjectDestroyPolicy<Item>.Destroy(Item item) => item.DestroyCount++;
+        void IPooledObjectPolicy<Item>.Destroy(Item item) => item.DestroyCount++;
     }
 }
