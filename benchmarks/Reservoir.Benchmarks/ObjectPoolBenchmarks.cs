@@ -3,6 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace Reservoir.Benchmarks;
 
 [MemoryDiagnoser(displayGenColumns: false)]
+[DisassemblyDiagnoser(maxDepth: 3, exportCombinedDisassemblyReport: true)]
 public class ObjectPoolBenchmarks
 {
     // The baseline pools use the default shared tier; the thread-local pool opts into the fast
