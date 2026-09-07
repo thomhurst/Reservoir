@@ -138,28 +138,29 @@ public class CancellationTokenSourcePoolTests
     [Test]
     public async Task LinkedDisposalWaitsForInFlightUpstreamCallback()
     {
-        var pool = new CancellationTokenSourcePool(maxCapacity: 1);
+        using var pool = new CancellationTokenSourcePool(maxCapacity: 1);
         using var upstream = new CancellationTokenSource();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         using var callbackEntered = new ManualResetEventSlim();
         using var releaseCallback = new ManualResetEventSlim();
         using var disposeStarted = new ManualResetEventSlim();
         CancellationTokenSource source = pool.RentLinked(upstream.Token);
-        _ = source.Token.Register(
-            static state =>
-            {
-                var signals = ((ManualResetEventSlim Entered, ManualResetEventSlim Release))state!;
-                signals.Entered.Set();
-                signals.Release.Wait();
-            },
-            (callbackEntered, releaseCallback));
+        _ = source.Token.Register(() =>
+        {
+            callbackEntered.Set();
+            releaseCallback.Wait(deadline.Token);
+        });
 
-        Task cancelTask = Task.Run(upstream.Cancel);
+        // These workers intentionally block. Dedicated threads avoid waiting for thread-pool
+        // injection while parallel tests occupy the pool's existing workers.
+        Task cancelTask = Task.Factory.StartNew(
+            upstream.Cancel, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         bool callbackWasEntered = callbackEntered.Wait(TimeSpan.FromSeconds(5));
-        Task disposeTask = Task.Run(() =>
+        Task disposeTask = Task.Factory.StartNew(() =>
         {
             disposeStarted.Set();
             source.Dispose();
-        });
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         bool disposalWasStarted = disposeStarted.Wait(TimeSpan.FromSeconds(5));
 
         try
@@ -171,9 +172,9 @@ public class CancellationTokenSourcePoolTests
         finally
         {
             releaseCallback.Set();
+            // Join even when a startup assertion fails, before disposing worker-owned signals.
+            await Task.WhenAll(cancelTask, disposeTask).WaitAsync(TimeSpan.FromSeconds(10));
         }
-
-        await Task.WhenAll(cancelTask, disposeTask).WaitAsync(TimeSpan.FromSeconds(5));
 
         CancellationTokenSource replacement = pool.Rent();
         await Assert.That(replacement).IsNotSameReferenceAs(source);
