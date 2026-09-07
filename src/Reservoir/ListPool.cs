@@ -165,7 +165,9 @@ sealed class ListPool<T>
         private readonly InstanceThreadLocalFrontTier<List<T>>.Slot? _slot;
         private ScopedPoolLease<List<T>> _lease;
 
-        internal Lease(ListPool<T> pool, List<T> list,
+        internal Lease(
+            ListPool<T> pool,
+            List<T> list,
             InstanceThreadLocalFrontTier<List<T>>.Slot slot)
         {
             _pool = pool;

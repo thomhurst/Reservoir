@@ -164,7 +164,9 @@ sealed class StringBuilderPool
         private readonly InstanceThreadLocalFrontTier<StringBuilder>.Slot? _slot;
         private ScopedPoolLease<StringBuilder> _lease;
 
-        internal Lease(StringBuilderPool pool, StringBuilder builder,
+        internal Lease(
+            StringBuilderPool pool,
+            StringBuilder builder,
             InstanceThreadLocalFrontTier<StringBuilder>.Slot slot)
         {
             _pool = pool;

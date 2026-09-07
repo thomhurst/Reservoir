@@ -182,7 +182,9 @@ sealed class QueuePool<T>
         private readonly InstanceThreadLocalFrontTier<Queue<T>>.Slot? _slot;
         private ScopedPoolLease<Queue<T>> _lease;
 
-        internal Lease(QueuePool<T> pool, Queue<T> queue,
+        internal Lease(
+            QueuePool<T> pool,
+            Queue<T> queue,
             InstanceThreadLocalFrontTier<Queue<T>>.Slot slot)
         {
             _pool = pool;

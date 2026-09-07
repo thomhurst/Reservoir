@@ -182,7 +182,9 @@ sealed class StackPool<T>
         private readonly InstanceThreadLocalFrontTier<Stack<T>>.Slot? _slot;
         private ScopedPoolLease<Stack<T>> _lease;
 
-        internal Lease(StackPool<T> pool, Stack<T> stack,
+        internal Lease(
+            StackPool<T> pool,
+            Stack<T> stack,
             InstanceThreadLocalFrontTier<Stack<T>>.Slot slot)
         {
             _pool = pool;

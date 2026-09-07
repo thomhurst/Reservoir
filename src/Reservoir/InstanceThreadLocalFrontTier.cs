@@ -30,6 +30,7 @@ internal struct InstanceThreadLocalFrontTier<T>
         return item;
     }
 
+    // Stack-only leases carry their renting thread's slot back, avoiding a second lookup.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static bool TryReturn(Slot slot, T item)
     {

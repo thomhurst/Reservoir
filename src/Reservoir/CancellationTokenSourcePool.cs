@@ -85,7 +85,8 @@ sealed class CancellationTokenSourcePool : IDisposable
     /// </summary>
     public Lease RentScoped()
     {
-        PooledCancellationTokenSource source = RentScopedValue(out TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot);
+        PooledCancellationTokenSource source = RentScopedValue(
+            out TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot);
         return new Lease(this, source, slot);
     }
 
@@ -94,7 +95,8 @@ sealed class CancellationTokenSourcePool : IDisposable
     /// </summary>
     public Lease RentScoped(out CancellationTokenSource source)
     {
-        PooledCancellationTokenSource pooledSource = RentScopedValue(out TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot);
+        PooledCancellationTokenSource pooledSource = RentScopedValue(
+            out TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot);
         source = pooledSource;
         return new Lease(this, pooledSource, slot);
     }
@@ -158,7 +160,8 @@ sealed class CancellationTokenSourcePool : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private PooledCancellationTokenSource RentScopedValue(out TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot)
+    private PooledCancellationTokenSource RentScopedValue(
+        out TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot)
     {
         ThrowIfDisposed();
         PooledCancellationTokenSource source = _scopedTier.Rent(_pool, out slot);
@@ -171,7 +174,9 @@ sealed class CancellationTokenSourcePool : IDisposable
         return ThrowDisposed();
     }
 
-    private void ReturnScoped(PooledCancellationTokenSource source, TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot)
+    private void ReturnScoped(
+        PooledCancellationTokenSource source,
+        TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot)
     {
         if (Volatile.Read(ref _isDisposed) != 0)
         {
@@ -196,7 +201,8 @@ sealed class CancellationTokenSourcePool : IDisposable
             return;
         }
 
-        if (Volatile.Read(ref _isDisposed) != 0 && TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.TryRemove(slot, source))
+        if (Volatile.Read(ref _isDisposed) != 0
+            && TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.TryRemove(slot, source))
         {
             _pool.Destroy(source);
         }
