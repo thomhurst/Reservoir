@@ -2,6 +2,10 @@
 
 Follow `.editorconfig` and existing code conventions. Use TUnit for regression tests; cover concurrency and ownership boundaries when affected.
 
+## Local workload coordination
+
+Before local benchmarks, profiling, stress runs, builds, tests, restores, or other heavy work, follow [the shared performance lock workflow](scripts/PerformanceLock.md). All four repositories reserve the same Redis `performance` key through `C:/git/Dekaf/scripts/AgentLocks.ps1`; this repository's item-lock backend is separate. Reading and editing can continue while another agent owns the reservation.
+
 ## Validation
 
 - Restore/build: `dotnet restore Reservoir.slnx`, then `dotnet build Reservoir.slnx -c Release --no-restore` (warnings as errors).
