@@ -136,33 +136,29 @@ public class ThreadLocalFastPathTests
             default,
             maxCapacity: 4,
             threadLocalFastPath: true);
-        using var stop = new CancellationTokenSource();
+        Action<CancellationToken>[] renters = Enumerable.Range(0, 4)
+            .Select<int, Action<CancellationToken>>(_ => token =>
+            {
+                for (int i = 0; i < 50_000; i++)
+                {
+                    token.ThrowIfCancellationRequested();
+                    AuditedItem item = pool.Rent();
+                    if (Volatile.Read(ref item.DestroyCount) != 0)
+                    {
+                        throw new InvalidOperationException("Rented a destroyed item.");
+                    }
 
-        Task clearing = Task.Run(() =>
+                    pool.Return(item);
+                }
+            }).ToArray();
+
+        await ConcurrentTestWorkers.RunAsync(renters, token =>
         {
-            while (!stop.IsCancellationRequested)
+            while (!token.IsCancellationRequested)
             {
                 pool.Clear();
             }
         });
-
-        Task[] renters = Enumerable.Range(0, 4).Select(_ => Task.Run(() =>
-        {
-            for (int i = 0; i < 50_000; i++)
-            {
-                AuditedItem item = pool.Rent();
-                if (Volatile.Read(ref item.DestroyCount) != 0)
-                {
-                    throw new InvalidOperationException("Rented a destroyed item.");
-                }
-
-                pool.Return(item);
-            }
-        })).ToArray();
-
-        await Task.WhenAll(renters);
-        stop.Cancel();
-        await clearing;
         pool.Clear();
 
         await Assert.That(AuditedPolicy.Items.All(item => item.DestroyCount <= 1)).IsTrue();

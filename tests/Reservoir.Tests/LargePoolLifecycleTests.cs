@@ -14,12 +14,13 @@ public class LargePoolLifecycleTests
         const int workerCount = 4;
         using var start = new Barrier(workerCount + 1);
 
-        Task[] workers = Enumerable.Range(0, workerCount).Select(_ => Task.Factory.StartNew(
-            () =>
+        Action<CancellationToken>[] workers = Enumerable.Range(0, workerCount)
+            .Select<int, Action<CancellationToken>>(_ => token =>
             {
-                start.SignalAndWait();
+                start.SignalAndWait(token);
                 for (int i = 0; i < 20_000; i++)
                 {
+                    token.ThrowIfCancellationRequested();
                     Item item;
                     try
                     {
@@ -44,34 +45,29 @@ public class LargePoolLifecycleTests
                     pool.Return(item);
                     Interlocked.Increment(ref state.Returned);
                 }
-            },
-            CancellationToken.None,
-            TaskCreationOptions.LongRunning,
-            TaskScheduler.Default)).ToArray();
+            }).ToArray();
 
-        Task clearing = Task.Factory.StartNew(
-            () =>
+        Action<CancellationToken> clearing = token =>
+        {
+            start.SignalAndWait(token);
+            for (int i = 0; i < 500; i++)
             {
-                start.SignalAndWait();
-                for (int i = 0; i < 500; i++)
-                {
-                    pool.Clear();
-                    Thread.Yield();
-                }
+                token.ThrowIfCancellationRequested();
+                pool.Clear();
+                Thread.Yield();
+            }
 
-                // Ensure at least one completed return even if the clearer was scheduled first.
-                while (Volatile.Read(ref state.Returned) == 0)
-                {
-                    Thread.Yield();
-                }
+            // Ensure at least one completed return even if the clearer was scheduled first.
+            while (Volatile.Read(ref state.Returned) == 0)
+            {
+                token.ThrowIfCancellationRequested();
+                Thread.Yield();
+            }
 
-                pool.Dispose();
-            },
-            CancellationToken.None,
-            TaskCreationOptions.LongRunning,
-            TaskScheduler.Default);
+            pool.Dispose();
+        };
 
-        await Task.WhenAll(workers.Append(clearing)).WaitAsync(TimeSpan.FromSeconds(30));
+        await ConcurrentTestWorkers.RunAsync(workers.Append(clearing));
 
         await Assert.That(state.Failures).IsEmpty();
         await Assert.That(state.Created).IsEqualTo(state.Destroyed);

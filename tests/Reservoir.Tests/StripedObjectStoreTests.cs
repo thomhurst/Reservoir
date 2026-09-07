@@ -104,50 +104,47 @@ public class StripedObjectStoreTests
             .Select(static id => new StoreItem(id))
             .ToArray();
 
-        Task[] workers = Enumerable.Range(0, workerCount)
-            .Select(workerIndex => Task.Factory.StartNew(
-                () => RunTransitionStress(
-                    store,
-                    initialItems,
-                    finalItems,
-                    failures,
-                    start,
-                    phase,
-                    workerIndex,
-                    itemsPerWorker,
-                    iterations),
-                CancellationToken.None,
-                TaskCreationOptions.LongRunning,
-                TaskScheduler.Default))
-            .ToArray();
+        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
+            .Select<int, Action<CancellationToken>>(workerIndex => token => RunTransitionStress(
+                store,
+                initialItems,
+                finalItems,
+                failures,
+                start,
+                phase,
+                workerIndex,
+                itemsPerWorker,
+                iterations,
+                token));
 
-        start.SignalAndWait();
-        var overflow = new StoreItem(-1);
-
-        for (int iteration = 0; iteration < iterations; iteration++)
+        await ConcurrentTestWorkers.RunAsync(workers.Append(token =>
         {
-            phase.SignalAndWait();
-            if (store.TryPush(overflow))
+            start.SignalAndWait(token);
+            var overflow = new StoreItem(-1);
+
+            for (int iteration = 0; iteration < iterations; iteration++)
             {
-                failures.Enqueue($"Store accepted an item past capacity in iteration {iteration}.");
-                if (store.TryPop(out StoreItem? recovered))
+                phase.SignalAndWait(token);
+                if (store.TryPush(overflow))
                 {
-                    overflow = recovered!;
+                    failures.Enqueue($"Store accepted an item past capacity in iteration {iteration}.");
+                    if (store.TryPop(out StoreItem? recovered))
+                    {
+                        overflow = recovered!;
+                    }
                 }
+
+                phase.SignalAndWait(token);
+                phase.SignalAndWait(token);
+                if (store.TryPop(out StoreItem? unexpected))
+                {
+                    failures.Enqueue($"Store retained an extra item after draining in iteration {iteration}.");
+                    overflow = unexpected!;
+                }
+
+                phase.SignalAndWait(token);
             }
-
-            phase.SignalAndWait();
-            phase.SignalAndWait();
-            if (store.TryPop(out StoreItem? unexpected))
-            {
-                failures.Enqueue($"Store retained an extra item after draining in iteration {iteration}.");
-                overflow = unexpected!;
-            }
-
-            phase.SignalAndWait();
-        }
-
-        await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30));
+        }));
 
         await Assert.That(failures).IsEmpty();
         await Assert.That(finalItems.ToHashSet().Count).IsEqualTo(capacity);
@@ -163,7 +160,8 @@ public class StripedObjectStoreTests
         Barrier phase,
         int workerIndex,
         int itemsPerWorker,
-        int iterations)
+        int iterations,
+        CancellationToken token)
     {
         var heldItems = new StoreItem[itemsPerWorker];
         Array.Copy(
@@ -172,7 +170,7 @@ public class StripedObjectStoreTests
             heldItems,
             0,
             itemsPerWorker);
-        start.SignalAndWait();
+        start.SignalAndWait(token);
 
         for (int iteration = 0; iteration < iterations; iteration++)
         {
@@ -185,18 +183,20 @@ public class StripedObjectStoreTests
 
                 while (!store.TryPush(item))
                 {
+                    token.ThrowIfCancellationRequested();
                     Thread.Yield();
                 }
             }
 
-            phase.SignalAndWait();
-            phase.SignalAndWait();
+            phase.SignalAndWait(token);
+            phase.SignalAndWait(token);
 
             for (int i = 0; i < heldItems.Length; i++)
             {
                 StoreItem? item;
                 while (!store.TryPop(out item))
                 {
+                    token.ThrowIfCancellationRequested();
                     Thread.Yield();
                 }
 
@@ -208,8 +208,8 @@ public class StripedObjectStoreTests
                 heldItems[i] = item;
             }
 
-            phase.SignalAndWait();
-            phase.SignalAndWait();
+            phase.SignalAndWait(token);
+            phase.SignalAndWait(token);
         }
 
         Array.Copy(
