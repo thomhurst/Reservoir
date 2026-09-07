@@ -10,11 +10,7 @@ namespace Reservoir;
 
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
-internal static class ThreadLocalFrontTier<T,
-#if NET5_0_OR_GREATER
-    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.NonPublicMethods)]
-#endif
-    TPolicy>
+internal static class ThreadLocalFrontTier<T, TPolicy>
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {

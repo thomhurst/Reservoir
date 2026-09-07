@@ -53,10 +53,14 @@ readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
         buffer.Length = 0;
         return true;
     }
+
+    public void Destroy(Buffer buffer) { } // No resources to release.
 }
 ```
 
-`Create()` handles a miss. `TryReset()` prepares an object for reuse or returns `false` to discard it. Discarded `IDisposable` objects are disposed automatically; implement `IPooledObjectDestroyPolicy<T>` for custom cleanup. The scoped lease guarantees return when control leaves the synchronous scope. It uses a per-pool thread-local fast path and retains one object per participating thread in addition to the bounded shared tier.
+`Create()` handles a miss. `TryReset()` prepares an object for reuse or returns `false` to discard it. `Destroy()` releases discarded objects. Every netstandard2.0 policy must implement it; modern targets provide default `IDisposable` cleanup when it is omitted. The scoped lease guarantees return when control leaves the synchronous scope. It uses a per-pool thread-local fast path and retains one object per participating thread in addition to the bounded shared tier.
+
+**Breaking policy migration:** `Destroy(T)` now belongs to `IPooledObjectPolicy<T>` on every target. Rebuild existing netstandard2.0 consumers and change explicit `IPooledObjectDestroyPolicy<T>.Destroy` implementations to `IPooledObjectPolicy<T>.Destroy`. See the [migration guide](https://thomhurst.github.io/Reservoir/docs/api/object-pools#migrate-the-destruction-contract).
 
 For performance-critical synchronous code, prefer `RentScoped(out T)` on .NET 10; its thread-local
 path is faster and avoids the ownership validation needed by repeated `lease.Value` access. On

@@ -129,28 +129,17 @@ sealed class ObjectPool<T> : IDisposable
     {
         private readonly Func<T>? _factory;
         private readonly IPooledObjectPolicy<T>? _policy;
-        private readonly Action<T>? _destroy;
 
         internal PolicyAdapter(Func<T> factory)
         {
             _factory = factory;
             _policy = null;
-            _destroy = null;
         }
 
         internal PolicyAdapter(IPooledObjectPolicy<T> policy)
         {
             _factory = null;
             _policy = policy;
-            // Resolve the destruction contract once. Keep the boxed runtime policy as the
-            // delegate target so state changes are shared with Create and TryReset.
-            _destroy = policy is IPooledObjectDestroyPolicy<T> portable
-                ? portable.Destroy
-#if NETCOREAPP3_0_OR_GREATER
-                : policy.Destroy;
-#else
-                : null;
-#endif
         }
 
         public T Create() => _policy is null ? _factory!() : _policy.Create();
@@ -159,9 +148,9 @@ sealed class ObjectPool<T> : IDisposable
 
         public void Destroy(T obj)
         {
-            if (_destroy is { } destroy)
+            if (_policy is not null)
             {
-                destroy(obj);
+                _policy.Destroy(obj);
             }
             else if (obj is IDisposable disposable)
             {

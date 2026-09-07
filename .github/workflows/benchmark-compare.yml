@@ -34,11 +34,19 @@ on:
         description: 'Runtimes to benchmark, space separated'
         required: false
         default: net10.0
+      library_asset:
+        description: 'Reservoir asset (netstandard2.0 selects the bounded destruction/runtime/factory suite)'
+        type: choice
+        default: automatic
+        options:
+          - automatic
+          - netstandard2.0
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  ReservoirTargetFramework: ${{ inputs.library_asset == 'netstandard2.0' && 'netstandard2.0' || '' }}
 
 permissions:
   contents: read
@@ -93,11 +101,13 @@ jobs:
         run: >-
           dotnet build baseline/benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj
           --configuration Release
+          -p:ReservoirTargetFramework="$ReservoirTargetFramework"
 
       - name: Build candidate
         run: >-
           dotnet build candidate/benchmarks/Reservoir.Benchmarks/Reservoir.Benchmarks.csproj
           --configuration Release
+          -p:ReservoirTargetFramework="$ReservoirTargetFramework"
 
       - name: Run benchmarks
         shell: pwsh
@@ -120,6 +130,19 @@ jobs:
             # must start inside this side's project directory or it finds both checkouts.
             Push-Location "$side/benchmarks/Reservoir.Benchmarks"
             try {
+              & dotnet run `
+                --project Reservoir.Benchmarks.csproj `
+                --configuration Release `
+                --framework net10.0 `
+                --no-build `
+                -- `
+                --filter @filters `
+                --job Dry `
+                --runtimes @runtimes `
+                --artifacts (Join-Path $artifacts "$side-dry") 2>&1 |
+                Tee-Object -FilePath (Join-Path $artifacts "$side-dry.log")
+              if ($LASTEXITCODE -ne 0) { throw "The $side Dry validation failed." }
+
               & dotnet run `
                 --project Reservoir.Benchmarks.csproj `
                 --configuration Release `
@@ -163,6 +186,7 @@ jobs:
           "## Reservoir benchmark comparison: $env:GROUP_NAME" >> $env:GITHUB_STEP_SUMMARY
           "" >> $env:GITHUB_STEP_SUMMARY
           "Baseline ``$env:BASELINE_REF`` versus candidate ``$env:CANDIDATE_REF`` on the same runner; filter ``$env:GROUP_FILTER``, job ``$env:GROUP_JOB``." >> $env:GITHUB_STEP_SUMMARY
+          "Reservoir target framework override: ``$env:ReservoirTargetFramework`` (empty selects the host asset)." >> $env:GITHUB_STEP_SUMMARY
 
           foreach ($side in 'baseline', 'candidate') {
             "" >> $env:GITHUB_STEP_SUMMARY

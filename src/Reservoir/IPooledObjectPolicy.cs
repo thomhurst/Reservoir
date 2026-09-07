@@ -21,8 +21,13 @@ interface IPooledObjectPolicy<T>
     /// </summary>
     bool TryReset(T obj);
 
-#if NETCOREAPP3_0_OR_GREATER
     /// <summary>Destroys an object that cannot be retained by the pool.</summary>
+    /// <remarks>
+    /// The netstandard2.0 contract requires an implementation. Modern targets provide a default
+    /// that disposes objects implementing <see cref="IDisposable"/>. Implement this method on a
+    /// struct policy to preserve by-reference dispatch and avoid boxing on discarded objects.
+    /// </remarks>
+#if NETCOREAPP3_0_OR_GREATER
     void Destroy(T obj)
     {
         if (obj is IDisposable disposable)
@@ -30,5 +35,7 @@ interface IPooledObjectPolicy<T>
             disposable.Dispose();
         }
     }
+#else
+    void Destroy(T obj);
 #endif
 }

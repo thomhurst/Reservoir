@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
@@ -21,11 +20,7 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-sealed class ObjectPool<T,
-#if NET5_0_OR_GREATER
-    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.NonPublicMethods)]
-#endif
-    TPolicy> : IDisposable
+sealed class ObjectPool<T, TPolicy> : IDisposable
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
@@ -43,19 +38,6 @@ sealed class ObjectPool<T,
     private static int _threadStripe;
 
     private static int s_nextThreadStripe;
-
-    private static readonly DestroyPolicy? s_destroyPolicy = CreateDestroyPolicy();
-    private delegate void DestroyPolicy(ref TPolicy policy, T obj);
-
-#if NETCOREAPP3_0_OR_GREATER
-    // A scalar readonly flag lets the JIT remove dispatch for ordinary policy implementations.
-    private static readonly bool s_hasPortableDestroyOverride = s_destroyPolicy is not null;
-#else
-    private static readonly bool s_isStaticallyDisposable
-        = typeof(IDisposable).IsAssignableFrom(typeof(T));
-
-    private static readonly bool s_mayHaveDisposableImplementations = !typeof(T).IsSealed;
-#endif
 
     private readonly ObjectWrapper[] _items;
     private readonly int _indexMask;
@@ -646,103 +628,7 @@ sealed class ObjectPool<T,
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void DisposeItem(T obj)
-    {
-#if NETCOREAPP3_0_OR_GREATER
-        if (s_hasPortableDestroyOverride)
-        {
-            s_destroyPolicy!(ref _policy, obj);
-            return;
-        }
-
-        _policy.Destroy(obj);
-#else
-        DestroyPolicy? destroyPolicy = s_destroyPolicy;
-        if (destroyPolicy is not null)
-        {
-            destroyPolicy(ref _policy, obj);
-            return;
-        }
-
-        DefaultDestroy(obj);
-#endif
-    }
-
-    private static DestroyPolicy? CreateDestroyPolicy()
-    {
-        if (!typeof(IPooledObjectDestroyPolicy<T>).IsAssignableFrom(typeof(TPolicy)))
-        {
-            return null;
-        }
-
-#if NETCOREAPP3_0_OR_GREATER
-        // An explicit portable implementation needs direct by-ref dispatch. Forwarding through
-        // a default interface method boxes the struct and loses mutations to its policy state.
-        // Keep existing concrete base implementations on their constrained call path.
-        IPooledObjectPolicy<T> policy = default(TPolicy);
-        Action<T> baseDestroy = policy.Destroy;
-        Action<T> portableDestroy = ((IPooledObjectDestroyPolicy<T>)policy).Destroy;
-        if (portableDestroy == baseDestroy)
-        {
-            return null;
-        }
-
-        // NativeAOT cannot always expose MethodInfo for a generic default interface target.
-        // Match concrete methods by delegate identity instead; this also supports explicit
-        // implementations regardless of the name emitted by the consumer's compiler.
-        foreach (MethodInfo method in typeof(TPolicy).GetMethods(
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
-        {
-            if (method.ContainsGenericParameters || method.ReturnType != typeof(void))
-            {
-                continue;
-            }
-
-            ParameterInfo[] parameters = method.GetParameters();
-            if (parameters.Length != 1 || parameters[0].ParameterType != typeof(T))
-            {
-                continue;
-            }
-
-            var candidate = (Action<T>)method.CreateDelegate(typeof(Action<T>), policy);
-            if (candidate == portableDestroy)
-            {
-                return (DestroyPolicy)method.CreateDelegate(typeof(DestroyPolicy));
-            }
-        }
-
-        return null;
-#else
-        MethodInfo method = typeof(ObjectPool<T, TPolicy>).GetMethod(
-            nameof(DestroyWithPolicy),
-            BindingFlags.NonPublic | BindingFlags.Static)!
-            .MakeGenericMethod(typeof(TPolicy));
-
-        return (DestroyPolicy)Delegate.CreateDelegate(typeof(DestroyPolicy), method);
-#endif
-    }
-
-#if !NETCOREAPP3_0_OR_GREATER
-    private static void DestroyWithPolicy<TDestroyPolicy>(
-        ref TDestroyPolicy policy,
-        T obj)
-        where TDestroyPolicy : struct, IPooledObjectDestroyPolicy<T>
-        => policy.Destroy(obj);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void DefaultDestroy(T obj)
-    {
-        if (s_isStaticallyDisposable)
-        {
-            ((IDisposable)obj).Dispose();
-            return;
-        }
-
-        if (s_mayHaveDisposableImplementations && obj is IDisposable disposable)
-        {
-            disposable.Dispose();
-        }
-    }
-#endif
+        => _policy.Destroy(obj);
 
     private void DisposeRetained(T? obj, ref Exception? firstException)
     {

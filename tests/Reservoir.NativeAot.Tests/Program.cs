@@ -12,6 +12,8 @@ internal static class Program
         ExplicitDestructionPreservesPolicyState();
         DefaultPortableDestructionSupportsNativeAot();
         RuntimeDestructionPreservesPolicyState();
+        ConstrainedDestructionPreservesCallerState();
+        InheritedDestructionSupportsNativeAot();
     }
 
     private static void CancellationTokenSourcePoolSupportsNativeAot()
@@ -65,6 +67,7 @@ internal static class Program
     private sealed class PooledItem : IDisposable
     {
         internal bool IsDestroyed { get; set; }
+        internal bool IsCustomDestroyed { get; set; }
 
         public void Dispose() => IsDestroyed = true;
     }
@@ -114,14 +117,53 @@ internal static class Program
 
     private struct ExplicitDestructionPolicy : IPooledObjectDestroyPolicy<PooledItem>
     {
-        private int _destroyCount;
+        internal int DestroyCount;
         public PooledItem Create() => new();
-        public bool TryReset(PooledItem obj) => _destroyCount != 0;
-        void IPooledObjectDestroyPolicy<PooledItem>.Destroy(PooledItem obj)
+        public bool TryReset(PooledItem obj) => DestroyCount != 0;
+        void IPooledObjectPolicy<PooledItem>.Destroy(PooledItem obj)
         {
-            _destroyCount++;
+            DestroyCount++;
             obj.IsDestroyed = true;
         }
+    }
+
+    private static void ConstrainedDestructionPreservesCallerState()
+    {
+        var policy = new ExplicitDestructionPolicy();
+        DestroyConstrained(ref policy, new PooledItem());
+        DestroyConstrained(ref policy, new PooledItem());
+        if (policy.DestroyCount != 2)
+        {
+            throw new InvalidOperationException("Constrained destruction lost caller-owned policy state.");
+        }
+    }
+
+    private static void DestroyConstrained<TPolicy>(ref TPolicy policy, PooledItem item)
+        where TPolicy : struct, IPooledObjectDestroyPolicy<PooledItem> => policy.Destroy(item);
+
+    private static void InheritedDestructionSupportsNativeAot()
+    {
+        using var generic = new ObjectPool<PooledItem, InheritedPolicy>(maxCapacity: 1);
+        using var runtime = new ObjectPool<PooledItem>(new InheritedPolicy(), 1);
+        PooledItem first = generic.Rent();
+        PooledItem second = runtime.Rent();
+        generic.Return(first);
+        runtime.Return(second);
+        if (!first.IsCustomDestroyed || !second.IsCustomDestroyed || first.IsDestroyed || second.IsDestroyed)
+        {
+            throw new InvalidOperationException("Inherited destruction was bypassed.");
+        }
+    }
+
+    private interface IInheritedPolicy : IPooledObjectDestroyPolicy<PooledItem>
+    {
+        void IPooledObjectPolicy<PooledItem>.Destroy(PooledItem obj) => obj.IsCustomDestroyed = true;
+    }
+
+    private readonly struct InheritedPolicy : IInheritedPolicy
+    {
+        public PooledItem Create() => new();
+        public bool TryReset(PooledItem obj) => false;
     }
 
     private readonly struct CustomDestructionPolicy : IPooledObjectPolicy<PooledItem>

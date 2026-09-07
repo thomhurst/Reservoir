@@ -39,10 +39,12 @@ readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
         buffer.Length = 0;
         return true;
     }
+
+    public void Destroy(Buffer buffer) { } // No resources to release.
 }
 ```
 
-`Return` transfers ownership to the pool. The reset runs before the object becomes available to another renter.
+`Return` transfers ownership to the pool. The reset runs before the object becomes available to another renter. `Destroy` releases discarded objects; it is required when targeting netstandard2.0. Use `Dispose()` there for disposable objects, or a no-op for objects with no cleanup needs.
 
 ## Scoped lease
 

@@ -14,12 +14,15 @@ public class ModernDestroyPolicyTests
         await Assert.That(direct.DisposeCount).IsEqualTo(0);
 
         var constrained = new Item();
-        DestroyConstrained(new ExplicitBasePolicy(), constrained);
-        await Assert.That(constrained.DestroyCount).IsEqualTo(1);
+        var mutable = new MutableBasePolicy();
+        DestroyConstrained(ref mutable, constrained);
+        DestroyConstrained(ref mutable, constrained);
+        await Assert.That(mutable.DestroyCount).IsEqualTo(2);
+        await Assert.That(constrained.DestroyCount).IsEqualTo(2);
         await Assert.That(constrained.DisposeCount).IsEqualTo(0);
     }
 
-    private static void DestroyConstrained<TPolicy>(TPolicy policy, Item item)
+    private static void DestroyConstrained<TPolicy>(ref TPolicy policy, Item item)
         where TPolicy : struct, IPooledObjectDestroyPolicy<Item> => policy.Destroy(item);
 
     [Test]
@@ -29,7 +32,7 @@ public class ModernDestroyPolicyTests
     {
         await Assert.That(Discard<BasePolicy>(runtime)).IsEqualTo((1, 0));
         await Assert.That(Discard<ExplicitBasePolicy>(runtime)).IsEqualTo((1, 0));
-        await Assert.That(Discard<ExplicitDerivedPolicy>(runtime)).IsEqualTo((1, 0));
+        await Assert.That(Discard<InheritedPolicy>(runtime)).IsEqualTo((1, 0));
         await Assert.That(Discard<ImplicitPolicy>(runtime)).IsEqualTo((1, 0));
         await Assert.That(Discard<DefaultBasePolicy>(runtime)).IsEqualTo((0, 1));
         await Assert.That(Discard<DefaultDerivedPolicy>(runtime)).IsEqualTo((0, 1));
@@ -76,11 +79,23 @@ public class ModernDestroyPolicyTests
         void IPooledObjectPolicy<Item>.Destroy(Item item) => item.DestroyCount++;
     }
 
-    public readonly struct ExplicitDerivedPolicy : IPooledObjectDestroyPolicy<Item>
+    public struct MutableBasePolicy : IPooledObjectDestroyPolicy<Item>
+    {
+        public int DestroyCount;
+        public Item Create() => new();
+        public bool TryReset(Item item) => false;
+        void IPooledObjectPolicy<Item>.Destroy(Item item) => item.DestroyCount = ++DestroyCount;
+    }
+
+    public interface IInheritedPolicy : IPooledObjectDestroyPolicy<Item>
+    {
+        void IPooledObjectPolicy<Item>.Destroy(Item item) => item.DestroyCount++;
+    }
+
+    public readonly struct InheritedPolicy : IInheritedPolicy
     {
         public Item Create() => new();
         public bool TryReset(Item item) => false;
-        void IPooledObjectDestroyPolicy<Item>.Destroy(Item item) => item.DestroyCount++;
     }
 
     public readonly struct ImplicitPolicy : IPooledObjectDestroyPolicy<Item>

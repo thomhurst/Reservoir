@@ -395,6 +395,8 @@ public class ObjectLifecycleTests
         public DisposableItem Create() => new();
 
         public bool TryReset(DisposableItem obj) => true;
+
+        public void Destroy(DisposableItem obj) => obj.Dispose();
     }
 
     private readonly struct ThrowingPolicy(Exception exception)
@@ -403,6 +405,8 @@ public class ObjectLifecycleTests
         public DisposableItem Create() => new();
 
         public bool TryReset(DisposableItem obj) => throw exception;
+
+        public void Destroy(DisposableItem obj) => obj.Dispose();
     }
 
     private readonly struct CustomDestructionPolicy
@@ -431,6 +435,8 @@ public class ObjectLifecycleTests
         public object Create() => new DisposableItem();
 
         public bool TryReset(object obj) => true;
+
+        public void Destroy(object obj) => (obj as IDisposable)?.Dispose();
     }
 
     private readonly struct RejectingObjectPolicy : IPooledObjectPolicy<object>
@@ -438,12 +444,16 @@ public class ObjectLifecycleTests
         public object Create() => new DisposableItem();
 
         public bool TryReset(object obj) => false;
+
+        public void Destroy(object obj) => (obj as IDisposable)?.Dispose();
     }
 
     private readonly struct BlockingPolicy(BlockingPolicyState state)
         : IPooledObjectPolicy<DisposableItem>
     {
         public DisposableItem Create() => new();
+
+        public void Destroy(DisposableItem obj) => obj.Dispose();
 
         public bool TryReset(DisposableItem obj)
         {

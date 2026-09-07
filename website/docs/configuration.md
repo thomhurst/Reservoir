@@ -36,6 +36,6 @@ Returned instances are inspected before clearing. Runtimes with capacity inspect
 - Use `Clear()` to release retained resources while keeping a core pool open.
 - Use `Dispose()` when a dedicated core pool's lifetime ends.
 - Return `false` from `TryReset()` to reject a specific object.
-- Implement `IPooledObjectDestroyPolicy<T>` when cleanup is not `IDisposable.Dispose()`.
+- Implement `IPooledObjectPolicy<T>.Destroy` for cleanup. It is required on netstandard2.0; modern targets default to `IDisposable.Dispose()` when applicable.
 
 Shared collection pools are intended to live for the process lifetime. The shared cancellation-token-source pool treats disposal as a clear operation so one caller cannot close it globally.

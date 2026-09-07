@@ -274,6 +274,10 @@ public class PooledLeaseTests
     {
         public PooledItem Create() => new();
 
+        public void Destroy(PooledItem obj)
+        {
+        }
+
         public bool TryReset(PooledItem obj)
         {
             obj.ResetCount++;

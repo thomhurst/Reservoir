@@ -16,11 +16,7 @@ namespace Reservoir;
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
 public
-ref struct PooledLease<T,
-#if NET5_0_OR_GREATER
-    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.NonPublicMethods)]
-#endif
-    TPolicy>
+ref struct PooledLease<T, TPolicy>
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {

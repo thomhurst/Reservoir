@@ -14,7 +14,11 @@ public class DestroyPolicyBenchmarks
     private readonly ObjectPool<Item, DefaultDestroyPolicy> _default = new(maxCapacity: 1);
 
     [GlobalSetup]
-    public void Setup() => _warm.Return(_warm.Rent());
+    public void Setup()
+    {
+        BenchmarkAsset.Verify();
+        _warm.Return(_warm.Rent());
+    }
 
     [Benchmark]
     public Item WarmGeneric()
@@ -72,5 +76,8 @@ public class DestroyPolicyBenchmarks
     {
         public Item Create() => new();
         public bool TryReset(Item item) => false;
+#if RESERVOIR_NETSTANDARD
+        public void Destroy(Item item) => item.Dispose();
+#endif
     }
 }
