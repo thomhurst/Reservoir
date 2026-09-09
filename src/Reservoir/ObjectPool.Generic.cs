@@ -37,6 +37,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [ThreadStatic]
     private static int _threadStripe;
 
+    // One-based remote-slot hint shared by pools of this closed type. Cache only affinity,
+    // never retained objects or pool references, and validate against each pool's capacity.
+    [ThreadStatic]
+    private static int _lastRentIndex;
+
     private static int s_nextThreadStripe;
 
     private readonly ObjectWrapper[] _items;
@@ -343,6 +348,20 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.NoInlining)]
     private T RentSlow(int startIndex)
     {
+        int hint = _lastRentIndex - 1;
+        if ((uint)hint < (uint)MaximumRetained && hint != startIndex)
+        {
+            ref T? hintedSlot = ref GetSlot(hint);
+            T? hintedItem = Volatile.Read(ref hintedSlot);
+            if (hintedItem is not null
+                && ReferenceEquals(
+                    Interlocked.CompareExchange(ref hintedSlot, null, hintedItem),
+                    hintedItem))
+            {
+                return hintedItem;
+            }
+        }
+
         ObjectWrapper[] items = _items;
         int startSlot = FirstSlotOffset + startIndex * CacheLineSlotStride;
         // Scan physical indices in two contiguous ranges. The home slot was already tried;
@@ -356,6 +375,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
                     Interlocked.CompareExchange(ref slot, null, item),
                     item))
             {
+                _lastRentIndex = (index - FirstSlotOffset) / CacheLineSlotStride + 1;
                 return item;
             }
         }
@@ -369,6 +389,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
                     Interlocked.CompareExchange(ref slot, null, item),
                     item))
             {
+                _lastRentIndex = (index - FirstSlotOffset) / CacheLineSlotStride + 1;
                 return item;
             }
         }
