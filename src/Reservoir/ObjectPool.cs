@@ -68,7 +68,8 @@ sealed class ObjectPool<T> : IDisposable
             throw new ArgumentNullException(nameof(factory));
         }
 #endif
-        _pool = new ObjectPool<T, PolicyAdapter>(new PolicyAdapter(factory), maxCapacity);
+        _pool = new ObjectPool<T, PolicyAdapter>(
+            new PolicyAdapter(factory), maxCapacity, threadLocalFastPath: false, skipReset: true);
     }
 
     /// <summary>Gets the default maximum number of objects retained by the shared tier.</summary>
