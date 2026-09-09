@@ -200,5 +200,6 @@ public class NestedScopedLeaseTests
     {
         public Marker Create() => new();
         public bool TryReset(Marker obj) => true;
+        public void Destroy(Marker obj) { }
     }
 }

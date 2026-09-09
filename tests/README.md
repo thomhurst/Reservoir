@@ -17,6 +17,17 @@ This is selected compatibility coverage, not a claim that every .NET Standard 2.
 
 `Reservoir.Package.Consumer` compiles a netstandard2.0 fixture against the packed package. `Reservoir.Package.Tests` loads that already compiled fixture with the net8.0 and net10.0 package assets. The tests verify implicit and explicit base-interface cleanup, mutable state through generic/runtime pools and direct constrained calls, inherited modern defaults, and the single declaring interface for `Destroy`. Package validation also checks API compatibility between the package's target frameworks. This covers consumers rebuilt for the unified contract; old netstandard2.0 binaries require the documented breaking migration.
 
+The package suite also opens `RESERVOIR_PACKAGE_PATH` and checks that all three runtime assemblies and XML documentation files are present, with no obsolete `contentFiles/` or `buildTransitive/` entries. Run the package checks locally after the solution build:
+
+```powershell
+$version = ./build/Get-PackageVersion.ps1
+$packageSource = Join-Path $PWD 'artifacts/packages'
+dotnet pack src/Reservoir/Reservoir.csproj -c Release -o $packageSource -p:PackageVersion=$version -p:Version=$version
+dotnet build tests/Reservoir.Package.Consumer/Reservoir.Package.Consumer.csproj -c Release -p:ReservoirPackageVersion=$version -p:RestoreAdditionalProjectSources=$packageSource
+$env:RESERVOIR_PACKAGE_PATH = Join-Path $packageSource "Reservoir.$version.nupkg"
+dotnet test tests/Reservoir.Package.Tests/Reservoir.Package.Tests.csproj -c Release -p:ReservoirPackageVersion=$version -p:RestoreAdditionalProjectSources=$packageSource
+```
+
 From the repository root on Windows:
 
 ```powershell
