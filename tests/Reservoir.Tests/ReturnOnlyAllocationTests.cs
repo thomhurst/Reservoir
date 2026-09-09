@@ -65,5 +65,6 @@ public class ReturnOnlyAllocationTests
     {
         public Item Create() => new();
         public bool TryReset(Item obj) => true;
+        public void Destroy(Item obj) { }
     }
 }
