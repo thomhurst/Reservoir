@@ -42,7 +42,9 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private readonly ObjectWrapper[] _items;
     private readonly int _indexMask;
     private readonly bool _threadLocalFastPath;
+#if NET10_0_OR_GREATER
     private readonly bool _skipReset;
+#endif
     private readonly StripedObjectStore<T>? _largeStore;
     private TrackedInstanceThreadLocalFrontTier<T> _scopedTier;
     private TPolicy _policy;
@@ -122,6 +124,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         _threadLocalFastPath = threadLocalFastPath;
     }
 
+#if NET10_0_OR_GREATER
     // Factory-backed pools have no reset callback. Preserve lifecycle checks while avoiding
     // the guarded reset call on every return, including returns carried by scoped leases.
     internal ObjectPool(TPolicy policy, int maxCapacity, bool threadLocalFastPath, bool skipReset)
@@ -129,6 +132,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     {
         _skipReset = skipReset;
     }
+#endif
 
     /// <summary>Gets the default maximum number of objects retained by the shared tier.</summary>
     public static int DefaultMaximumRetained => Math.Max(32, 2 * Environment.ProcessorCount);
@@ -428,12 +432,14 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool TryResetItem(T obj)
     {
+#if NET10_0_OR_GREATER
         // Only the runtime adapter can use factory mode. Other struct policies fold this
         // type test away and keep their existing return path without another field read.
         if (typeof(TPolicy) == typeof(ObjectPool<T>.PolicyAdapter) && _skipReset)
         {
             return true;
         }
+#endif
 
         // The type test folds to a constant per instantiation, so marked policies reset inline
         // while unmarked policies keep the out-of-line destroy-on-throw wrapper.
