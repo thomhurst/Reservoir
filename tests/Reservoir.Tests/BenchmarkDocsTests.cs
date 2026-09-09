@@ -2,6 +2,8 @@ using System.Diagnostics;
 
 namespace Reservoir.Tests;
 
+// Each case starts PowerShell; simultaneous cold starts can exhaust hosted runners.
+[NotInParallel(nameof(BenchmarkDocsTests))]
 public class BenchmarkDocsTests
 {
     [Test]

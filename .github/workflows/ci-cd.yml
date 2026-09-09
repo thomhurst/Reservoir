@@ -121,13 +121,9 @@ jobs:
           -p:ReservoirPackageVersion=${{ steps.version.outputs.version }}
           -p:RestoreAdditionalProjectSources=${{ github.workspace }}/artifacts/packages
 
-      - name: Test package contents
-        shell: pwsh
-        run: >-
-          ./build/Test-PackageContents.ps1
-          -PackagePath artifacts/packages/Reservoir.${{ steps.version.outputs.version }}.nupkg
-
-      - name: Execute netstandard consumers against modern package assets
+      - name: Test package contents and runtime compatibility
+        env:
+          RESERVOIR_PACKAGE_PATH: ${{ github.workspace }}/artifacts/packages/Reservoir.${{ steps.version.outputs.version }}.nupkg
         run: >-
           dotnet test tests/Reservoir.Package.Tests/Reservoir.Package.Tests.csproj
           --configuration Release
