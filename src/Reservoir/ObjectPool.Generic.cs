@@ -42,6 +42,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private readonly ObjectWrapper[] _items;
     private readonly int _indexMask;
     private readonly bool _threadLocalFastPath;
+    private readonly bool _skipReset;
     private readonly StripedObjectStore<T>? _largeStore;
     private TrackedInstanceThreadLocalFrontTier<T> _scopedTier;
     private TPolicy _policy;
@@ -119,6 +120,14 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         : this(policy, maxCapacity)
     {
         _threadLocalFastPath = threadLocalFastPath;
+    }
+
+    // Factory-backed pools have no reset callback. Preserve lifecycle checks while avoiding
+    // the guarded reset call on every return, including returns carried by scoped leases.
+    internal ObjectPool(TPolicy policy, int maxCapacity, bool threadLocalFastPath, bool skipReset)
+        : this(policy, maxCapacity, threadLocalFastPath)
+    {
+        _skipReset = skipReset;
     }
 
     /// <summary>Gets the default maximum number of objects retained by the shared tier.</summary>
@@ -419,15 +428,44 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool TryResetItem(T obj)
     {
+        // Only the runtime adapter can use factory mode. Other struct policies fold this
+        // type test away and keep their existing return path without another field read.
+        if (typeof(TPolicy) == typeof(ObjectPool<T>.PolicyAdapter) && _skipReset)
+        {
+            return true;
+        }
+
         // The type test folds to a constant per instantiation, so marked policies reset inline
-        // while unmarked policies keep the out-of-line destroy-on-throw wrapper. The runtime
-        // adapter guards its own callbacks, allowing its factory-only reset to remain a no-op.
-        if (default(TPolicy) is INonThrowingResetPolicy or IHandlesResetFailure)
+        // while unmarked policies keep the out-of-line destroy-on-throw wrapper.
+        if (default(TPolicy) is INonThrowingResetPolicy)
         {
             return _policy.TryReset(obj);
         }
 
-        return PooledObjectPolicyReset.TryReset(ref _policy, obj);
+        return TryResetItemGuarded(obj);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool TryResetItemGuarded(T obj)
+    {
+        try
+        {
+            return _policy.TryReset(obj);
+        }
+        catch (Exception resetException)
+        {
+            try
+            {
+                DisposeItem(obj);
+            }
+            catch (Exception destroyException)
+            {
+                throw new AggregateException(
+                    "Reset and destruction both failed.", resetException, destroyException);
+            }
+
+            throw;
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

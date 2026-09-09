@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Runtime.CompilerServices;
 
 namespace Reservoir;
 
@@ -69,7 +68,8 @@ sealed class ObjectPool<T> : IDisposable
             throw new ArgumentNullException(nameof(factory));
         }
 #endif
-        _pool = new ObjectPool<T, PolicyAdapter>(new PolicyAdapter(factory), maxCapacity);
+        _pool = new ObjectPool<T, PolicyAdapter>(
+            new PolicyAdapter(factory), maxCapacity, threadLocalFastPath: false, skipReset: true);
     }
 
     /// <summary>Gets the default maximum number of objects retained by the shared tier.</summary>
@@ -126,7 +126,7 @@ sealed class ObjectPool<T> : IDisposable
     /// </summary>
     public void Dispose() => _pool.Dispose();
 
-    internal readonly struct PolicyAdapter : IPooledObjectDestroyPolicy<T>, IHandlesResetFailure
+    internal readonly struct PolicyAdapter : IPooledObjectDestroyPolicy<T>
     {
         private readonly Func<T>? _factory;
         private readonly IPooledObjectPolicy<T>? _policy;
@@ -145,16 +145,7 @@ sealed class ObjectPool<T> : IDisposable
 
         public T Create() => _policy is null ? _factory!() : _policy.Create();
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryReset(T obj)
-        {
-            if (_policy is { } policy)
-            {
-                return PooledObjectPolicyReset.TryReset(ref policy, obj);
-            }
-
-            return true;
-        }
+        public bool TryReset(T obj) => _policy?.TryReset(obj) ?? true;
 
         public void Destroy(T obj)
         {
