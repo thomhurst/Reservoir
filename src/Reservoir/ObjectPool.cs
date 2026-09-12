@@ -48,7 +48,13 @@ sealed class ObjectPool<T> : IDisposable
             throw new ArgumentNullException(nameof(policy));
         }
 #endif
+#if NET10_0_OR_GREATER
+        _pool = new ObjectPool<T, PolicyAdapter>(new PolicyAdapter(policy), maxCapacity,
+            threadLocalFastPath: false, skipReset: false,
+            resetDoesNotThrow: policy is INonThrowingResetPolicy);
+#else
         _pool = new ObjectPool<T, PolicyAdapter>(new PolicyAdapter(policy), maxCapacity);
+#endif
     }
 
     /// <summary>Initializes a pool backed by a factory and default capacity.</summary>

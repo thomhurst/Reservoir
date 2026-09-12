@@ -44,6 +44,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private readonly bool _threadLocalFastPath;
 #if NET10_0_OR_GREATER
     private readonly bool _skipReset;
+    private readonly bool _resetDoesNotThrow;
 #endif
     private readonly StripedObjectStore<T>? _largeStore;
     private TrackedInstanceThreadLocalFrontTier<T> _scopedTier;
@@ -127,10 +128,12 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 #if NET10_0_OR_GREATER
     // Factory-backed pools have no reset callback. Preserve lifecycle checks while avoiding
     // the guarded reset call on every return, including returns carried by scoped leases.
-    internal ObjectPool(TPolicy policy, int maxCapacity, bool threadLocalFastPath, bool skipReset)
+    internal ObjectPool(TPolicy policy, int maxCapacity, bool threadLocalFastPath, bool skipReset,
+        bool resetDoesNotThrow = false)
         : this(policy, maxCapacity, threadLocalFastPath)
     {
         _skipReset = skipReset;
+        _resetDoesNotThrow = resetDoesNotThrow;
     }
 #endif
 
@@ -435,9 +438,17 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 #if NET10_0_OR_GREATER
         // Only the runtime adapter can use factory mode. Other struct policies fold this
         // type test away and keep their existing return path without another field read.
-        if (typeof(TPolicy) == typeof(ObjectPool<T>.PolicyAdapter) && _skipReset)
+        if (typeof(TPolicy) == typeof(ObjectPool<T>.PolicyAdapter))
         {
-            return true;
+            if (_skipReset)
+            {
+                return true;
+            }
+
+            if (_resetDoesNotThrow)
+            {
+                return _policy.TryReset(obj);
+            }
         }
 #endif
 
