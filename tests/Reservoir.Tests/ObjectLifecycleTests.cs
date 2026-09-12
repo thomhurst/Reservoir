@@ -250,6 +250,9 @@ public class ObjectLifecycleTests
 
         await Assert.That(retained.All(item => item.DisposeCount == 0)).IsTrue();
         pool.Clear();
+
+        await Assert.That(retained.All(item => item.DisposeCount == 1)).IsTrue();
+
         pool.Clear();
 
         await Assert.That(retained.All(item => item.DisposeCount == 1)).IsTrue();
