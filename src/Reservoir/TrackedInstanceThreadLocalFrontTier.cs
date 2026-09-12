@@ -318,42 +318,40 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         return existing;
     }
 
-    // The factory publishes each slot before ThreadLocal.Value can return it. Published links
+    // The missing-value path publishes each slot before returning it. Published links
     // never change, so one head reference is a stable snapshot even as other threads register.
     // Retain exited-thread slots just as trackAllValues did, without allocating a Values list.
-    private sealed class SlotRegistry : ThreadLocal<Slot>
+    private sealed class SlotRegistry : ThreadLocal<Slot?>
     {
-        private readonly RegistrationState _state;
+        private Slot? _head;
 
         internal SlotRegistry()
-            : this(new RegistrationState())
+            : base(trackAllValues: false)
         {
         }
 
-        private SlotRegistry(RegistrationState state)
-            : base(state.CreateSlot, trackAllValues: false)
+        internal new Slot Value
         {
-            _state = state;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => base.Value ?? CreateSlot();
         }
 
-        internal Slot? Head => Volatile.Read(ref _state.Head);
-    }
+        internal Slot? Head => Volatile.Read(ref _head);
 
-    private sealed class RegistrationState
-    {
-        internal Slot? Head;
-
-        internal Slot CreateSlot()
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private Slot CreateSlot()
         {
             var created = new PaddedSlot();
             Slot? head;
             do
             {
-                head = Volatile.Read(ref Head);
+                head = Volatile.Read(ref _head);
                 created.NextTracked = head;
             }
-            while (!ReferenceEquals(Interlocked.CompareExchange(ref Head, created, head), head));
+            while (!ReferenceEquals(Interlocked.CompareExchange(ref _head, created, head), head));
 
+            // Publish the stable link before a renter can use the thread's slot.
+            base.Value = created;
             return created;
         }
     }
