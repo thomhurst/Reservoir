@@ -184,15 +184,24 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             // both passes guarantees no slot is taken from without its gate raised first. A slot
             // created after the snapshot is missed, which matches the existing behavior of a
             // return racing Clear.
-            T?[] capturedItems;
+            CaptureBuffer inlineItems = default;
+            scoped Span<T?> capturedItems;
+            int capturedCount;
             lock (slots)
             {
                 var snapshot = slots.Values;
                 // Reserve the capture buffer before raising gates. Each Clear owns its buffer,
                 // so callbacks may reenter Clear or clear another pool after we release locks.
-                int count = snapshot.Count;
-                capturedItems = new T?[count];
-                for (int i = 0; i < count; i++)
+                capturedCount = snapshot.Count;
+                if (capturedCount <= 8)
+                {
+                    capturedItems = inlineItems;
+                }
+                else
+                {
+                    capturedItems = new T?[capturedCount];
+                }
+                for (int i = 0; i < capturedCount; i++)
                 {
                     Slot slot = snapshot[i];
                     // Serialized clears make this the gate's only writer; odd marks in-progress.
@@ -204,7 +213,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
                 // gate and reconciles through the slot lock instead.
                 Interlocked.MemoryBarrierProcessWide();
 
-                for (int i = 0; i < count; i++)
+                for (int i = 0; i < capturedCount; i++)
                 {
                     Slot slot = snapshot[i];
                     T? item;
@@ -234,8 +243,9 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
 
             // Gate reconciliation is complete. Never invoke user cleanup while holding either
             // the collection lock or a slot lock: callbacks can wait for other pool operations.
-            foreach (T? item in capturedItems)
+            for (int i = 0; i < capturedCount; i++)
             {
+                T? item = capturedItems[i];
                 if (item is null)
                 {
                     continue;
@@ -309,6 +319,16 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         created.Dispose();
         return existing;
     }
+
+#if NETCOREAPP3_0_OR_GREATER
+    // Keep up to eight capture references on the stack;
+    // larger snapshots use an ordinary array owned by this Clear call.
+    [InlineArray(8)]
+    private struct CaptureBuffer
+    {
+        private T? _element0;
+    }
+#endif
 
     // Ownership versions and nested lease states belong to the renting thread. Clear only
     // touches the retained-item fields below, leaving outstanding leases valid. The leading
