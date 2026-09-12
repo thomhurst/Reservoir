@@ -437,23 +437,20 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 #if NET10_0_OR_GREATER
         // The runtime adapter captures factory mode and the nonthrowing marker at construction.
         // Other struct policies fold this test away without another field read.
-        if (typeof(TPolicy) == typeof(ObjectPool<T>.PolicyAdapter))
+        bool runtimeAdapter = typeof(TPolicy) == typeof(ObjectPool<T>.PolicyAdapter);
+        if (runtimeAdapter && _skipReset)
         {
-            if (_skipReset)
-            {
-                return true;
-            }
-
-            if (_resetDoesNotThrow)
-            {
-                return _policy.TryReset(obj);
-            }
+            return true;
         }
 #endif
 
         // The type test folds to a constant per instantiation, so marked policies reset inline
         // while unmarked policies keep the out-of-line destroy-on-throw wrapper.
-        if (default(TPolicy) is INonThrowingResetPolicy)
+        if (default(TPolicy) is INonThrowingResetPolicy
+#if NET10_0_OR_GREATER
+            || (runtimeAdapter && _resetDoesNotThrow)
+#endif
+        )
         {
             return _policy.TryReset(obj);
         }
