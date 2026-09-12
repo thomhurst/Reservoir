@@ -4,6 +4,9 @@
 using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+#if NET10_0_OR_GREATER
+using System.Runtime.CompilerServices;
+#endif
 
 namespace Reservoir;
 
@@ -116,6 +119,9 @@ sealed class ObjectPool<T> : IDisposable
     }
 
     /// <summary>Resets and returns an object. Objects exceeding capacity are discarded.</summary>
+#if NET10_0_OR_GREATER
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
     public void Return(T obj) => _pool.Return(obj);
 
     /// <summary>
