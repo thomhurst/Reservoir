@@ -25,8 +25,11 @@ internal ref struct ScopedPoolLease<T>
 
     internal ScopedPoolLease(T value, ScopedPoolLeaseState primary)
     {
-        _state = primary.IsAvailable ? primary : ScopedPoolLeaseStateCache.FindAvailable(primary);
-        _token = _state.AcquireAvailable();
+        ScopedPoolLeaseState state = primary.IsAvailable
+            ? primary
+            : ScopedPoolLeaseStateCache.FindAvailable(primary);
+        _token = state.AcquireAvailable();
+        _state = state;
         _value = value;
     }
 
