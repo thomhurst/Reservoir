@@ -3,6 +3,31 @@ namespace Reservoir.Tests;
 public class NestedScopedLeaseTests
 {
     [Test]
+    public async Task FailedAcquisitionPreservesOwnerAcrossVersionWrap()
+    {
+        var state = new PaddedScopedPoolLeaseState();
+        typeof(ScopedPoolLeaseState)
+            .GetField("_version", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(state, long.MaxValue - 1);
+
+        bool acquiredBeforeWrap = state.TryAcquire(out long beforeWrap);
+        bool acquiredWhileOwned = state.TryAcquire(out _);
+        state.ValidateOwnership(beforeWrap);
+        bool releasedBeforeWrap = state.TryRelease(beforeWrap);
+        bool acquiredAfterWrap = state.TryAcquire(out long afterWrap);
+        bool staleReleased = state.TryRelease(beforeWrap);
+        state.ValidateOwnership(afterWrap);
+        bool releasedAfterWrap = state.TryRelease(afterWrap);
+
+        await Assert.That(acquiredBeforeWrap && acquiredAfterWrap).IsTrue();
+        await Assert.That(acquiredWhileOwned).IsFalse();
+        await Assert.That(beforeWrap).IsEqualTo(long.MaxValue);
+        await Assert.That(afterWrap).IsEqualTo(long.MinValue + 1);
+        await Assert.That(staleReleased).IsFalse();
+        await Assert.That(releasedBeforeWrap && releasedAfterWrap && state.IsAvailable).IsTrue();
+    }
+
+    [Test]
     public async Task VersionWrapPreservesAvailabilityAndOwnership()
     {
         var state = new PaddedScopedPoolLeaseState();

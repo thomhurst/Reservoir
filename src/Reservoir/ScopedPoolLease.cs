@@ -25,10 +25,14 @@ internal ref struct ScopedPoolLease<T>
 
     internal ScopedPoolLease(T value, ScopedPoolLeaseState primary)
     {
-        ScopedPoolLeaseState state = primary.IsAvailable
-            ? primary
-            : ScopedPoolLeaseStateCache.FindAvailable(primary);
-        _token = state.AcquireAvailable();
+        ScopedPoolLeaseState state = primary;
+        if (!state.TryAcquire(out long token))
+        {
+            state = ScopedPoolLeaseStateCache.FindAvailable(primary);
+            token = state.AcquireAvailable();
+        }
+
+        _token = token;
         _state = state;
         _value = value;
     }
@@ -76,12 +80,12 @@ internal static class ScopedPoolLeaseStateCache<T>
     internal static ScopedPoolLeaseState Acquire(out long token)
     {
         ScopedPoolLeaseState state = _state ?? Initialize();
-        if (!state.IsAvailable)
+        if (!state.TryAcquire(out token))
         {
             state = ScopedPoolLeaseStateCache.FindAvailable(state);
+            token = state.AcquireAvailable();
         }
 
-        token = state.AcquireAvailable();
         return state;
     }
 
@@ -162,6 +166,21 @@ internal class ScopedPoolLeaseState : CacheLinePadded
     internal ScopedPoolLeaseState? Next { get; set; }
 
     internal bool IsAvailable => (_version & 1) == 0;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryAcquire(out long token)
+    {
+        long version = _version;
+        if ((version & 1) != 0)
+        {
+            token = 0;
+            return false;
+        }
+
+        token = version + 1;
+        _version = token;
+        return true;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal long AcquireAvailable()
