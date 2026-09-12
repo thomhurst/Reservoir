@@ -547,9 +547,10 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             return;
         }
 
-        for (int i = 0; i < MaximumRetained; i++)
+        ObjectWrapper[] items = _items;
+        for (int i = FirstSlotOffset; i < items.Length; i += CacheLineSlotStride)
         {
-            ref T? slot = ref GetSlot(i);
+            ref T? slot = ref items[i].Element;
             if (Volatile.Read(ref slot) is not null)
             {
                 DisposeRetained(

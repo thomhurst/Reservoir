@@ -252,9 +252,14 @@ public class ObjectLifecycleTests
     }
 
     [Test]
-    public async Task LargePoolClearDisposesEveryRetainedItem()
+    [Arguments(1)]
+    [Arguments(3)]
+    [Arguments(8)]
+    [Arguments(63)]
+    [Arguments(64)]
+    [Arguments(65)]
+    public async Task ClearDisposesEveryRetainedItem(int capacity)
     {
-        const int capacity = 65;
         var pool = new ObjectPool<DisposableItem, DisposablePolicy>(capacity);
         var retained = new DisposableItem[capacity];
 
@@ -268,6 +273,7 @@ public class ObjectLifecycleTests
             pool.Return(item);
         }
 
+        await Assert.That(retained.All(item => item.DisposeCount == 0)).IsTrue();
         pool.Clear();
 
         await Assert.That(retained.All(item => item.DisposeCount == 1)).IsTrue();
