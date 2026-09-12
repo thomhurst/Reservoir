@@ -32,7 +32,8 @@ public class SharedScopedRentalTests
         replacementTracked.Dispose();
         pool.Dispose();
 
-        await Assert.That(activeOwnersSurvivedClear && replacementsStillOwned).IsTrue();
+        await Assert.That(activeOwnersSurvivedClear).IsTrue();
+        await Assert.That(replacementsStillOwned).IsTrue();
         await Assert.That(trackedItem).IsNotSameReferenceAs(sharedItem);
         await Assert.That(idleItem.DestroyCount).IsEqualTo(1);
         await Assert.That(trackedItem.DestroyCount).IsEqualTo(1);
