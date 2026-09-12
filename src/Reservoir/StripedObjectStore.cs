@@ -252,14 +252,23 @@ internal sealed class StripedObjectStore<T>
 
     private static int GetIndex(long head) => (int)head;
 
-    // A stripe is the unit of contention, so its hot fields get their own cache lines through the
-    // base-class leading pad and the allocated subclass's trailing pad; see CacheLinePadded.
-    private class Stripe : CacheLinePadded
+    // Keep direct-slot exchanges off the cache lines written by overflow-node operations.
+    // An inheritance boundary preserves the separator even when the runtime groups references.
+    private class FastItemStripe : CacheLinePadded
+    {
+        internal T? FastItem;
+
+#pragma warning disable CS0169 // The field is only there to occupy space.
+        private readonly CacheLinePad _separator;
+#pragma warning restore CS0169
+    }
+
+    // Leading and trailing pads also isolate this stripe from neighboring stripe objects.
+    private class Stripe : FastItemStripe
     {
         internal readonly Node[] Nodes;
         internal long AvailableHead;
         internal long FreeHead;
-        internal T? FastItem;
 
         internal Stripe(int capacity)
         {
