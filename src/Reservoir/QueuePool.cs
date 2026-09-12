@@ -189,7 +189,7 @@ sealed class QueuePool<T>
         {
             _pool = pool;
             _slot = slot;
-            _lease = new ScopedPoolLease<Queue<T>>(queue);
+            _lease = new ScopedPoolLease<Queue<T>>(queue, slot);
         }
 
         /// <summary>Gets the rented queue while this lease owns it.</summary>

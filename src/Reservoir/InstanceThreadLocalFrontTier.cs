@@ -64,9 +64,10 @@ internal struct InstanceThreadLocalFrontTier<T>
         return existing;
     }
 
-    // The base-class leading pad and the allocated subclass's trailing pad keep each thread's
-    // slot on its own cache lines; see CacheLinePadded.
-    internal class Slot : CacheLinePadded
+    // The slot also owns the primary lease version, avoiding a separate thread-static lookup.
+    // Nested rentals use the existing state ring. The leading and trailing pads still isolate
+    // each thread's writes; see CacheLinePadded.
+    internal class Slot : ScopedPoolLeaseState
     {
         internal T? Item;
     }

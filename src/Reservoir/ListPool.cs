@@ -172,7 +172,7 @@ sealed class ListPool<T>
         {
             _pool = pool;
             _slot = slot;
-            _lease = new ScopedPoolLease<List<T>>(list);
+            _lease = new ScopedPoolLease<List<T>>(list, slot);
         }
 
         /// <summary>Gets the rented list while this lease owns it.</summary>

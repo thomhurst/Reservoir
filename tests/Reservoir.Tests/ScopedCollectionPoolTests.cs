@@ -6,6 +6,158 @@ namespace Reservoir.Tests;
 public class ScopedCollectionPoolTests
 {
     [Test]
+    public async Task DeepScopedCopiesCannotReleaseReplacementOrAnotherPoolsRental()
+    {
+        var pool = new ListPool<int>();
+        var otherPool = new ListPool<int>();
+        ListPool<int>.Lease first = pool.RentScoped(out List<int> firstItem);
+        ListPool<int>.Lease second = pool.RentScoped(out List<int> secondItem);
+        ListPool<int>.Lease third = pool.RentScoped(out List<int> thirdItem);
+        ListPool<int>.Lease fourth = pool.RentScoped();
+        ListPool<int>.Lease fifth = pool.RentScoped(out List<int> fifthItem);
+        ListPool<int>.Lease other = otherPool.RentScoped(out List<int> otherItem);
+        ListPool<int>.Lease stalePrimary = first;
+        ListPool<int>.Lease staleNested = fourth;
+
+        fourth.Dispose();
+        first.Dispose();
+        ListPool<int>.Lease primaryReplacement = pool.RentScoped();
+        ListPool<int>.Lease nestedReplacement = pool.RentScoped();
+        stalePrimary.Dispose();
+        staleNested.Dispose();
+
+        bool stalePrimaryThrows = false;
+        bool staleNestedThrows = false;
+        try
+        {
+            _ = stalePrimary.Value;
+        }
+        catch (ObjectDisposedException)
+        {
+            stalePrimaryThrows = true;
+        }
+
+        try
+        {
+            _ = staleNested.Value;
+        }
+        catch (ObjectDisposedException)
+        {
+            staleNestedThrows = true;
+        }
+
+        List<int>[] owned = [second.Value, third.Value, fifth.Value, other.Value,
+            primaryReplacement.Value, nestedReplacement.Value];
+        bool activeValuesPreserved = ReferenceEquals(second.Value, secondItem)
+            && ReferenceEquals(third.Value, thirdItem)
+            && ReferenceEquals(fifth.Value, fifthItem)
+            && ReferenceEquals(other.Value, otherItem);
+
+        second.Dispose();
+        other.Dispose();
+        nestedReplacement.Dispose();
+        fifth.Dispose();
+        primaryReplacement.Dispose();
+        third.Dispose();
+
+        await Assert.That(owned.Distinct().Count()).IsEqualTo(owned.Length);
+        await Assert.That(stalePrimaryThrows && staleNestedThrows && activeValuesPreserved).IsTrue();
+        // The first slot was occupied by the fourth rental when the primary returned.
+        // Both released objects remain available through the slot and shared fallback.
+        await Assert.That(owned.Contains(firstItem)).IsTrue();
+    }
+
+    [Test]
+    [Arguments(2)]
+    [Arguments(32)]
+    [Arguments(64)]
+    public async Task WarmDeepCollectionLeasesAllocateNothing(int depth)
+    {
+        var pool = new ListPool<int>(maxRetainedCapacity: 16, maxCapacity: 64);
+        var active = new HashSet<List<int>>(64);
+        for (int i = 0; i < 100; i++)
+        {
+            RentNested(pool, active, depth);
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++)
+        {
+            RentNested(pool, active, depth);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        await Assert.That(allocated).IsEqualTo(0);
+        await Assert.That(active.Count).IsEqualTo(0);
+    }
+
+    private static void RentNested(ListPool<int> pool, HashSet<List<int>> active, int depth)
+    {
+        using ListPool<int>.Lease lease = pool.RentScoped(out List<int> item);
+        if (!active.Add(item))
+        {
+            throw new InvalidOperationException("Two active collection leases own the same list.");
+        }
+
+        item.Add(depth);
+        if (depth > 1)
+        {
+            RentNested(pool, active, depth - 1);
+        }
+
+        if (!ReferenceEquals(lease.Value, item) || item.Count != 1 || item[0] != depth)
+        {
+            throw new InvalidOperationException("Nested rental invalidated an active collection lease.");
+        }
+
+        active.Remove(item);
+    }
+
+    [Test]
+    public async Task NestedCollectionStateKeepsPoolsAndThreadsIndependent()
+    {
+        var firstPool = new ListPool<int>(maxRetainedCapacity: 16, maxCapacity: 64);
+        var secondPool = new ListPool<int>(maxRetainedCapacity: 16, maxCapacity: 64);
+        var active = new ConcurrentDictionary<List<int>, byte>();
+        Task[] workers = Enumerable.Range(0, 4).Select(_ => Task.Run(() =>
+        {
+            for (int i = 0; i < 100; i++)
+            {
+                RentAcrossPools(firstPool, secondPool, active, 32);
+            }
+        })).ToArray();
+
+        await Task.WhenAll(workers);
+        await Assert.That(active.Count).IsEqualTo(0);
+    }
+
+    private static void RentAcrossPools(
+        ListPool<int> firstPool,
+        ListPool<int> secondPool,
+        ConcurrentDictionary<List<int>, byte> active,
+        int depth)
+    {
+        using ListPool<int>.Lease lease = firstPool.RentScoped();
+        List<int> item = lease.Value;
+        if (!active.TryAdd(item, 0))
+        {
+            throw new InvalidOperationException("Concurrent collection leases own the same list.");
+        }
+
+        item.Add(depth);
+        if (depth > 1)
+        {
+            RentAcrossPools(secondPool, firstPool, active, depth - 1);
+        }
+
+        if (!ReferenceEquals(lease.Value, item) || item.Count != 1 || item[0] != depth
+            || !active.TryRemove(item, out _))
+        {
+            throw new InvalidOperationException("Nested collection rental invalidated an active lease.");
+        }
+    }
+
+    [Test]
     public async Task ScopedPoolsResetAndReuseEverySpecializedType()
     {
         var listPool = new ListPool<int>();

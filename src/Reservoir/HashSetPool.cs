@@ -231,7 +231,7 @@ sealed class HashSetPool<T>
         {
             _pool = pool;
             _slot = slot;
-            _lease = new ScopedPoolLease<HashSet<T>>(set);
+            _lease = new ScopedPoolLease<HashSet<T>>(set, slot);
         }
 
         /// <summary>Gets the rented hash set while this lease owns it.</summary>

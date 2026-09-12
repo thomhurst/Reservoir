@@ -171,7 +171,7 @@ sealed class StringBuilderPool
         {
             _pool = pool;
             _slot = slot;
-            _lease = new ScopedPoolLease<StringBuilder>(builder);
+            _lease = new ScopedPoolLease<StringBuilder>(builder, slot);
         }
 
         /// <summary>Gets the rented builder while this lease owns it.</summary>

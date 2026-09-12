@@ -227,7 +227,7 @@ sealed class DictionaryPool<TKey, TValue>
         {
             _pool = pool;
             _slot = slot;
-            _lease = new ScopedPoolLease<Dictionary<TKey, TValue>>(dictionary);
+            _lease = new ScopedPoolLease<Dictionary<TKey, TValue>>(dictionary, slot);
         }
 
         /// <summary>Gets the rented dictionary while this lease owns it.</summary>
