@@ -135,8 +135,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         return TryReturn(slot, item);
     }
 
-    // A lease-carried slot is always the returning thread's own slot because leases are
-    // stack-only, so plain reads and writes stay safe; only Clear races via Interlocked.
+    // A lease-carried slot belongs to the returning thread; only Clear races with publication.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static bool TryReturn(Slot slot, T item)
     {
@@ -145,7 +144,18 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             return false;
         }
 
-        slot.Item = item;
+#if NETCOREAPP3_0_OR_GREATER
+        if (s_asymmetricClear)
+        {
+            slot.Item = item;
+            return true;
+        }
+#endif
+
+        // Publish before the caller's disposed-state recheck. Without a store/load fence,
+        // that recheck can see an open pool while Dispose's exchange misses a buffered store.
+        // The asymmetric path gets the corresponding ordering from Clear's process-wide barrier.
+        Interlocked.Exchange(ref slot.Item, item);
         return true;
     }
 
