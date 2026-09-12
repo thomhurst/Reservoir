@@ -222,9 +222,12 @@ public class ObjectLifecycleTests
     }
 
     [Test]
-    public async Task ClearDisposesScopedItemsFromEveryParticipatingThread()
+    [Arguments(1)]
+    [Arguments(4)]
+    [Arguments(9)]
+    [Arguments(16)]
+    public async Task ClearDisposesScopedItemsFromEveryParticipatingThread(int threadCount)
     {
-        const int threadCount = 4;
         var pool = new ObjectPool<DisposableItem, DisposablePolicy>(maxCapacity: 1);
         var retained = new DisposableItem[threadCount];
         var threads = new Thread[threadCount];
@@ -245,6 +248,8 @@ public class ObjectLifecycleTests
             thread.Join();
         }
 
+        await Assert.That(retained.All(item => item.DisposeCount == 0)).IsTrue();
+        pool.Clear();
         pool.Clear();
 
         await Assert.That(retained.All(item => item.DisposeCount == 1)).IsTrue();

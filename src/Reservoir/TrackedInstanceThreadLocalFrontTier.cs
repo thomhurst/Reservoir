@@ -190,9 +190,11 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
                 var snapshot = slots.Values;
                 // Reserve the capture buffer before raising gates. Each Clear owns its buffer,
                 // so callbacks may reenter Clear or clear another pool after we release locks.
-                capturedItems = new T?[snapshot.Count];
-                foreach (Slot slot in snapshot)
+                int count = snapshot.Count;
+                capturedItems = new T?[count];
+                for (int i = 0; i < count; i++)
                 {
+                    Slot slot = snapshot[i];
                     // Serialized clears make this the gate's only writer; odd marks in-progress.
                     Volatile.Write(ref slot.Gate, unchecked(slot.Gate + 1));
                 }
@@ -202,9 +204,9 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
                 // gate and reconciles through the slot lock instead.
                 Interlocked.MemoryBarrierProcessWide();
 
-                int index = 0;
-                foreach (Slot slot in snapshot)
+                for (int i = 0; i < count; i++)
                 {
+                    Slot slot = snapshot[i];
                     T? item;
                     lock (slot)
                     {
@@ -226,7 +228,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
                         Volatile.Write(ref slot.Gate, unchecked(slot.Gate + 1));
                     }
 
-                    capturedItems[index++] = item;
+                    capturedItems[i] = item;
                 }
             }
 
@@ -258,8 +260,11 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         }
 #endif
 
-        foreach (Slot slot in slots.Values)
+        var retainedSlots = slots.Values;
+        int retainedCount = retainedSlots.Count;
+        for (int i = 0; i < retainedCount; i++)
         {
+            Slot slot = retainedSlots[i];
             T? item = Interlocked.Exchange(ref slot.Item, null);
             if (item is null)
             {
