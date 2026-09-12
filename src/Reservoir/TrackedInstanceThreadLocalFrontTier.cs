@@ -260,11 +260,8 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         }
 #endif
 
-        var retainedSlots = slots.Values;
-        int retainedCount = retainedSlots.Count;
-        for (int i = 0; i < retainedCount; i++)
+        foreach (Slot slot in slots.Values)
         {
-            Slot slot = retainedSlots[i];
             T? item = Interlocked.Exchange(ref slot.Item, null);
             if (item is null)
             {
