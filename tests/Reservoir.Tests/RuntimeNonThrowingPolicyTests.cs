@@ -67,7 +67,7 @@ public class RuntimeNonThrowingPolicyTests
             DuringReset = () =>
             {
                 entered.Set();
-                resume.Wait(TimeSpan.FromSeconds(10));
+                resume.Wait();
             }
         };
         using var pool = new ObjectPool<Item>(policy, maxCapacity: 1);
