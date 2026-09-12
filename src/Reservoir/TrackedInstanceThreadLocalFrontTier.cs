@@ -176,6 +176,8 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             // created after the snapshot is missed, which matches the existing behavior of a
             // return racing Clear.
             T?[]? capturedItems = null;
+            CaptureBuffer inlineItems = default;
+            scoped Span<T?> captured = default;
             int capturedCount = 0;
             try
             {
@@ -185,7 +187,15 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
                     // Reserve the capture buffer before raising gates. Each Clear owns its buffer,
                     // so callbacks may reenter Clear or clear another pool after we release locks.
                     capturedCount = snapshot.Count;
-                    capturedItems = ArrayPool<T?>.Shared.Rent(capturedCount);
+                    if (capturedCount <= 8)
+                    {
+                        captured = inlineItems;
+                    }
+                    else
+                    {
+                        capturedItems = ArrayPool<T?>.Shared.Rent(capturedCount);
+                        captured = capturedItems;
+                    }
                     foreach (Slot slot in snapshot)
                     {
                         // Serialized clears make this the gate's only writer; odd marks in-progress.
@@ -221,7 +231,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
                             Volatile.Write(ref slot.Gate, unchecked(slot.Gate + 1));
                         }
 
-                        capturedItems[index++] = item;
+                        captured[index++] = item;
                     }
                 }
 
@@ -229,7 +239,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
                 // the collection lock or a slot lock: callbacks can wait for other pool operations.
                 for (int i = 0; i < capturedCount; i++)
                 {
-                    T? item = capturedItems[i];
+                    T? item = captured[i];
                     if (item is null)
                     {
                         continue;
@@ -309,6 +319,16 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         created.Dispose();
         return existing;
     }
+
+#if NETCOREAPP3_0_OR_GREATER
+    // Most clears have few registered threads. Keep their capture references on the stack;
+    // larger snapshots rent a separate array so reentrant cleanup always owns its storage.
+    [InlineArray(8)]
+    private struct CaptureBuffer
+    {
+        private T? _element0;
+    }
+#endif
 
     // Ownership versions and nested lease states belong to the renting thread. Clear only
     // touches the retained-item fields below, leaving outstanding leases valid. The leading

@@ -31,19 +31,25 @@ public class TrackedTierCollectionTests
     }
 
     [Test]
-    [Arguments(false)]
-    [Arguments(true)]
-    public async Task DestroyedItemsAreCollectibleAfterCleanupThrows(bool scoped)
+    [Arguments(false, 1)]
+    [Arguments(true, 1)]
+    [Arguments(false, 8)]
+    [Arguments(true, 8)]
+    [Arguments(false, 9)]
+    [Arguments(true, 9)]
+    public async Task DestroyedItemsAreCollectibleAfterCleanupThrows(bool scoped, int workerCount)
     {
         var state = new State { Failure = new InvalidOperationException("Cleanup failed.") };
         using var pool = new ObjectPool<Item, Policy>(new Policy(state), 1, threadLocalFastPath: !scoped);
-        WeakReference<Item> item = Seed(pool, scoped);
+        var items = new WeakReference<Item>[workerCount];
+        await ConcurrentTestWorkers.RunAsync(Enumerable.Range(0, workerCount)
+            .Select<int, Action<CancellationToken>>(index => _ => items[index] = Seed(pool, scoped)));
 
         await Assert.That(() => pool.Clear()).Throws<InvalidOperationException>();
 
-        bool alive = CollectAndCheck(item);
+        bool alive = items.Any(CollectAndCheck);
         GC.KeepAlive(pool);
-        await Assert.That(state.Destroyed).IsEqualTo(1);
+        await Assert.That(state.Destroyed).IsEqualTo(workerCount);
         await Assert.That(alive).IsFalse();
     }
 
