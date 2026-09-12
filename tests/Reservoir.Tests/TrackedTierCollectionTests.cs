@@ -33,6 +33,23 @@ public class TrackedTierCollectionTests
     [Test]
     [Arguments(false)]
     [Arguments(true)]
+    public async Task DestroyedItemsAreCollectibleAfterCleanupThrows(bool scoped)
+    {
+        var state = new State { Failure = new InvalidOperationException("Cleanup failed.") };
+        using var pool = new ObjectPool<Item, Policy>(new Policy(state), 1, threadLocalFastPath: !scoped);
+        WeakReference<Item> item = Seed(pool, scoped);
+
+        await Assert.That(() => pool.Clear()).Throws<InvalidOperationException>();
+
+        bool alive = CollectAndCheck(item);
+        GC.KeepAlive(pool);
+        await Assert.That(state.Destroyed).IsEqualTo(1);
+        await Assert.That(alive).IsFalse();
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
     public async Task DestroyedScopedSourcesAreCollectibleWhilePoolRemainsAlive(bool dispose)
     {
         var pool = new CancellationTokenSourcePool(1);
@@ -250,12 +267,20 @@ public class TrackedTierCollectionTests
     private sealed class State
     {
         internal int Destroyed;
+        internal Exception? Failure;
     }
 
     private readonly struct Policy(State state) : IPooledObjectDestroyPolicy<Item>
     {
         public Item Create() => new();
         public bool TryReset(Item item) => true;
-        public void Destroy(Item item) => Interlocked.Increment(ref state.Destroyed);
+        public void Destroy(Item item)
+        {
+            Interlocked.Increment(ref state.Destroyed);
+            if (state.Failure is { } failure)
+            {
+                throw failure;
+            }
+        }
     }
 }
