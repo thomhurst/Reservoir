@@ -114,6 +114,50 @@ public class ScopedCollectionPoolTests
     }
 
     [Test]
+    public async Task NestedCollectionStateKeepsPoolsAndThreadsIndependent()
+    {
+        var firstPool = new ListPool<int>(maxRetainedCapacity: 16, maxCapacity: 64);
+        var secondPool = new ListPool<int>(maxRetainedCapacity: 16, maxCapacity: 64);
+        var active = new ConcurrentDictionary<List<int>, byte>();
+        Task[] workers = Enumerable.Range(0, 4).Select(_ => Task.Run(() =>
+        {
+            for (int i = 0; i < 100; i++)
+            {
+                RentAcrossPools(firstPool, secondPool, active, 32);
+            }
+        })).ToArray();
+
+        await Task.WhenAll(workers);
+        await Assert.That(active.Count).IsEqualTo(0);
+    }
+
+    private static void RentAcrossPools(
+        ListPool<int> firstPool,
+        ListPool<int> secondPool,
+        ConcurrentDictionary<List<int>, byte> active,
+        int depth)
+    {
+        using ListPool<int>.Lease lease = firstPool.RentScoped();
+        List<int> item = lease.Value;
+        if (!active.TryAdd(item, 0))
+        {
+            throw new InvalidOperationException("Concurrent collection leases own the same list.");
+        }
+
+        item.Add(depth);
+        if (depth > 1)
+        {
+            RentAcrossPools(secondPool, firstPool, active, depth - 1);
+        }
+
+        if (!ReferenceEquals(lease.Value, item) || item.Count != 1 || item[0] != depth
+            || !active.TryRemove(item, out _))
+        {
+            throw new InvalidOperationException("Nested collection rental invalidated an active lease.");
+        }
+    }
+
+    [Test]
     public async Task ScopedPoolsResetAndReuseEverySpecializedType()
     {
         var listPool = new ListPool<int>();
