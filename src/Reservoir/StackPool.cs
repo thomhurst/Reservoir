@@ -189,7 +189,7 @@ sealed class StackPool<T>
         {
             _pool = pool;
             _slot = slot;
-            _lease = new ScopedPoolLease<Stack<T>>(stack);
+            _lease = new ScopedPoolLease<Stack<T>>(stack, slot);
         }
 
         /// <summary>Gets the rented stack while this lease owns it.</summary>

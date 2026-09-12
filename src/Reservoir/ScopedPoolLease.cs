@@ -23,6 +23,13 @@ internal ref struct ScopedPoolLease<T>
         _value = value;
     }
 
+    internal ScopedPoolLease(T value, ScopedPoolLeaseState primary)
+    {
+        _state = primary.IsAvailable ? primary : ScopedPoolLeaseStateCache.FindAvailable(primary);
+        _token = _state.AcquireAvailable();
+        _value = value;
+    }
+
     internal readonly T Value
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
