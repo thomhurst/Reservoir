@@ -54,6 +54,8 @@ public class StripedObjectStoreTests
     }
 
     [Test]
+    [Arguments(8, 1)]
+    [Arguments(65, 8)]
     [Arguments(65, 4)]
     [Arguments(320, 20)]
     public async Task PushPopPreservesItemsAcrossFullAndEmptyTransitions(

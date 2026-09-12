@@ -114,27 +114,38 @@ internal sealed class StripedObjectStore<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool TryPush(T item)
     {
-        int stripeIndex = GetStartStripe();
+        int start = GetStartStripe();
+        return TryPushAt(start, item) || TryPushSlow(start, item);
+    }
 
-        for (int i = 0; i < _stripes.Length; i++)
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool TryPushSlow(int stripeIndex, T item)
+    {
+        for (int i = 1; i < _stripes.Length; i++)
         {
-            Stripe stripe = _stripes[stripeIndex];
-            // Test before the exchange so an occupied direct slot costs a shared read instead of
-            // a failed locked operation that steals the line from the stripe's other users.
-            if ((Volatile.Read(ref stripe.FastItem) is null
-                    && Interlocked.CompareExchange(ref stripe.FastItem, item, null) is null)
-                || TryPush(stripe, item))
-            {
-                return true;
-            }
-
             if (++stripeIndex == _stripes.Length)
             {
                 stripeIndex = 0;
             }
+
+            if (TryPushAt(stripeIndex, item))
+            {
+                return true;
+            }
         }
 
         return false;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool TryPushAt(int index, T item)
+    {
+        Stripe stripe = _stripes[index];
+        // Test before the exchange so an occupied direct slot costs a shared read instead of
+        // a failed locked operation that steals the line from the stripe's other users.
+        return (Volatile.Read(ref stripe.FastItem) is null
+                && Interlocked.CompareExchange(ref stripe.FastItem, item, null) is null)
+            || TryPush(stripe, item);
     }
 
     private static bool TryPop(Stripe stripe, out T? item)
