@@ -26,7 +26,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         RuntimeInformation.ProcessArchitecture is Architecture.X86 or Architecture.X64;
 #endif
 
-    private ThreadLocal<Slot>? _slots;
+    private SlotRegistry? _slots;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal T Rent<TPolicy>(ObjectPool<T, TPolicy> fallback)
@@ -170,7 +170,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     internal void Clear<TPolicy>(ObjectPool<T, TPolicy> fallback)
         where TPolicy : struct, IPooledObjectPolicy<T>
     {
-        ThreadLocal<Slot>? slots = Volatile.Read(ref _slots);
+        SlotRegistry? slots = Volatile.Read(ref _slots);
         if (slots is null)
         {
             return;
@@ -184,14 +184,28 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             // both passes guarantees no slot is taken from without its gate raised first. A slot
             // created after the snapshot is missed, which matches the existing behavior of a
             // return racing Clear.
-            T?[] capturedItems;
+            CaptureBuffer inlineItems = default;
+            scoped Span<T?> capturedItems;
+            int capturedCount;
             lock (slots)
             {
-                var snapshot = slots.Values;
+                Slot? snapshot = slots.Head;
                 // Reserve the capture buffer before raising gates. Each Clear owns its buffer,
                 // so callbacks may reenter Clear or clear another pool after we release locks.
-                capturedItems = new T?[snapshot.Count];
-                foreach (Slot slot in snapshot)
+                capturedCount = 0;
+                for (Slot? slot = snapshot; slot is not null; slot = slot.NextTracked)
+                {
+                    capturedCount++;
+                }
+                if (capturedCount <= 8)
+                {
+                    capturedItems = inlineItems;
+                }
+                else
+                {
+                    capturedItems = new T?[capturedCount];
+                }
+                for (Slot? slot = snapshot; slot is not null; slot = slot.NextTracked)
                 {
                     // Serialized clears make this the gate's only writer; odd marks in-progress.
                     Volatile.Write(ref slot.Gate, unchecked(slot.Gate + 1));
@@ -203,7 +217,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
                 Interlocked.MemoryBarrierProcessWide();
 
                 int index = 0;
-                foreach (Slot slot in snapshot)
+                for (Slot? slot = snapshot; slot is not null; slot = slot.NextTracked)
                 {
                     T? item;
                     lock (slot)
@@ -232,8 +246,9 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
 
             // Gate reconciliation is complete. Never invoke user cleanup while holding either
             // the collection lock or a slot lock: callbacks can wait for other pool operations.
-            foreach (T? item in capturedItems)
+            for (int i = 0; i < capturedCount; i++)
             {
+                T? item = capturedItems[i];
                 if (item is null)
                 {
                     continue;
@@ -258,7 +273,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         }
 #endif
 
-        foreach (Slot slot in slots.Values)
+        for (Slot? slot = slots.Head; slot is not null; slot = slot.NextTracked)
         {
             T? item = Interlocked.Exchange(ref slot.Item, null);
             if (item is null)
@@ -285,17 +300,15 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private Slot GetSlot()
     {
-        ThreadLocal<Slot>? slots = Volatile.Read(ref _slots);
+        SlotRegistry? slots = Volatile.Read(ref _slots);
         return (slots ?? InitializeSlots()).Value!;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private ThreadLocal<Slot> InitializeSlots()
+    private SlotRegistry InitializeSlots()
     {
-        var created = new ThreadLocal<Slot>(
-            static () => new PaddedSlot(),
-            trackAllValues: true);
-        ThreadLocal<Slot>? existing = Interlocked.CompareExchange(ref _slots, created, null);
+        var created = new SlotRegistry();
+        SlotRegistry? existing = Interlocked.CompareExchange(ref _slots, created, null);
         if (existing is null)
         {
             return created;
@@ -305,11 +318,63 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         return existing;
     }
 
+    // The factory publishes each slot before ThreadLocal.Value can return it. Published links
+    // never change, so one head reference is a stable snapshot even as other threads register.
+    // Retain exited-thread slots just as trackAllValues did, without allocating a Values list.
+    private sealed class SlotRegistry : ThreadLocal<Slot>
+    {
+        private readonly RegistrationState _state;
+
+        internal SlotRegistry()
+            : this(new RegistrationState())
+        {
+        }
+
+        private SlotRegistry(RegistrationState state)
+            : base(state.CreateSlot, trackAllValues: false)
+        {
+            _state = state;
+        }
+
+        internal Slot? Head => Volatile.Read(ref _state.Head);
+    }
+
+    private sealed class RegistrationState
+    {
+        internal Slot? Head;
+
+        internal Slot CreateSlot()
+        {
+            var created = new PaddedSlot();
+            Slot? head;
+            do
+            {
+                head = Volatile.Read(ref Head);
+                created.NextTracked = head;
+            }
+            while (!ReferenceEquals(Interlocked.CompareExchange(ref Head, created, head), head));
+
+            return created;
+        }
+    }
+
+#if NETCOREAPP3_0_OR_GREATER
+    // Keep up to eight capture references on the stack;
+    // larger snapshots use an ordinary array owned by this Clear call.
+    [InlineArray(8)]
+    private struct CaptureBuffer
+    {
+        private T? _element0;
+    }
+#endif
+
     // Ownership versions and nested lease states belong to the renting thread. Clear only
     // touches the retained-item fields below, leaving outstanding leases valid. The leading
     // and trailing pads keep each slot on its own cache lines; see CacheLinePadded.
     internal class Slot : ScopedPoolLeaseState
     {
+        // Written only before registry publication; separate from the nested-lease state ring.
+        internal Slot? NextTracked;
         internal T? Item;
         // True once the owning thread has rented from this pool. Written and read only by the
         // owning thread, so plain accesses are safe; Clear never needs it because it drains

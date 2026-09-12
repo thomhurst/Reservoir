@@ -31,6 +31,29 @@ public class TrackedTierCollectionTests
     }
 
     [Test]
+    [Arguments(false, 1)]
+    [Arguments(true, 1)]
+    [Arguments(false, 8)]
+    [Arguments(true, 8)]
+    [Arguments(false, 9)]
+    [Arguments(true, 9)]
+    public async Task DestroyedItemsAreCollectibleAfterCleanupThrows(bool scoped, int workerCount)
+    {
+        var state = new State { Failure = new InvalidOperationException("Cleanup failed.") };
+        using var pool = new ObjectPool<Item, Policy>(new Policy(state), 1, threadLocalFastPath: !scoped);
+        var items = new WeakReference<Item>[workerCount];
+        await ConcurrentTestWorkers.RunAsync(Enumerable.Range(0, workerCount)
+            .Select<int, Action<CancellationToken>>(index => _ => items[index] = Seed(pool, scoped)));
+
+        await Assert.That(() => pool.Clear()).Throws<InvalidOperationException>();
+
+        bool alive = items.Any(CollectAndCheck);
+        GC.KeepAlive(pool);
+        await Assert.That(state.Destroyed).IsEqualTo(workerCount);
+        await Assert.That(alive).IsFalse();
+    }
+
+    [Test]
     [Arguments(false)]
     [Arguments(true)]
     public async Task DestroyedScopedSourcesAreCollectibleWhilePoolRemainsAlive(bool dispose)
@@ -107,6 +130,53 @@ public class TrackedTierCollectionTests
             pool.Dispose();
         }));
 
+        await Assert.That(state.Failures).IsEqualTo(0);
+        await Assert.That(state.Destroyed).IsEqualTo(state.Created);
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task ConcurrentSlotRegistrationAndClearPreserveOwnership(bool scoped)
+    {
+        const int workerCount = 16;
+        var state = new RaceState();
+        using var pool = new ObjectPool<RaceItem, RacePolicy>(new RacePolicy(state), 4, threadLocalFastPath: !scoped);
+        using var start = new Barrier(workerCount + 1);
+        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
+            .Select<int, Action<CancellationToken>>(_ => token =>
+            {
+                start.SignalAndWait(token);
+                for (int i = 0; i < 128; i++)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (scoped)
+                    {
+                        using PooledLease<RaceItem, RacePolicy> lease = pool.RentScoped();
+                        Use(lease.Value, state);
+                    }
+                    else
+                    {
+                        RaceItem item = pool.Rent();
+                        Use(item, state);
+                        pool.Return(item);
+                    }
+                }
+            });
+
+        await ConcurrentTestWorkers.RunAsync(workers, background: token =>
+        {
+            start.SignalAndWait(token);
+            while (true)
+            {
+                token.ThrowIfCancellationRequested();
+                pool.Clear();
+            }
+        });
+
+        // All registering threads have exited; their retained slots must still be drained.
+        pool.Clear();
+        pool.Dispose();
         await Assert.That(state.Failures).IsEqualTo(0);
         await Assert.That(state.Destroyed).IsEqualTo(state.Created);
     }
@@ -250,12 +320,20 @@ public class TrackedTierCollectionTests
     private sealed class State
     {
         internal int Destroyed;
+        internal Exception? Failure;
     }
 
     private readonly struct Policy(State state) : IPooledObjectDestroyPolicy<Item>
     {
         public Item Create() => new();
         public bool TryReset(Item item) => true;
-        public void Destroy(Item item) => Interlocked.Increment(ref state.Destroyed);
+        public void Destroy(Item item)
+        {
+            Interlocked.Increment(ref state.Destroyed);
+            if (state.Failure is { } failure)
+            {
+                throw failure;
+            }
+        }
     }
 }
