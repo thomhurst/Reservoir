@@ -7,7 +7,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 #if NETCOREAPP3_0_OR_GREATER
-using System.Buffers;
 using System.Runtime.InteropServices;
 #endif
 using System.Threading;
@@ -185,92 +184,79 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             // both passes guarantees no slot is taken from without its gate raised first. A slot
             // created after the snapshot is missed, which matches the existing behavior of a
             // return racing Clear.
-            T?[]? capturedItems = null;
             CaptureBuffer inlineItems = default;
-            scoped Span<T?> captured = default;
-            int capturedCount = 0;
-            try
+            scoped Span<T?> captured;
+            int capturedCount;
+            lock (slots)
             {
-                lock (slots)
+                var snapshot = slots.Values;
+                // Reserve the capture buffer before raising gates. Each Clear owns its buffer,
+                // so callbacks may reenter Clear or clear another pool after we release locks.
+                capturedCount = snapshot.Count;
+                if (capturedCount <= 8)
                 {
-                    var snapshot = slots.Values;
-                    // Reserve the capture buffer before raising gates. Each Clear owns its buffer,
-                    // so callbacks may reenter Clear or clear another pool after we release locks.
-                    capturedCount = snapshot.Count;
-                    if (capturedCount <= 8)
+                    captured = inlineItems;
+                }
+                else
+                {
+                    captured = new T?[capturedCount];
+                }
+                foreach (Slot slot in snapshot)
+                {
+                    // Serialized clears make this the gate's only writer; odd marks in-progress.
+                    Volatile.Write(ref slot.Gate, unchecked(slot.Gate + 1));
+                }
+
+                // Drain every core: a renter whose take retired before this barrier has its
+                // null-store visible to the exchanges below; a later take observes its raised
+                // gate and reconciles through the slot lock instead.
+                Interlocked.MemoryBarrierProcessWide();
+
+                int index = 0;
+                foreach (Slot slot in snapshot)
+                {
+                    T? item;
+                    lock (slot)
                     {
-                        captured = inlineItems;
-                    }
-                    else
-                    {
-                        capturedItems = ArrayPool<T?>.Shared.Rent(capturedCount);
-                        captured = capturedItems;
-                    }
-                    foreach (Slot slot in snapshot)
-                    {
-                        // Serialized clears make this the gate's only writer; odd marks in-progress.
+                        item = Interlocked.Exchange(ref slot.Item, null);
+                        if (item is not null)
+                        {
+                            if (slot.LastTaken is { } lastTaken)
+                            {
+                                lastTaken.SetTarget(item);
+                            }
+                            else
+                            {
+                                slot.LastTaken = new WeakReference<T>(item);
+                            }
+                        }
+
+                        // Back to even only after this slot's take, so a renter that straddled
+                        // it sees a changed generation and reconciles.
                         Volatile.Write(ref slot.Gate, unchecked(slot.Gate + 1));
                     }
 
-                    // Drain every core: a renter whose take retired before this barrier has its
-                    // null-store visible to the exchanges below; a later take observes its raised
-                    // gate and reconciles through the slot lock instead.
-                    Interlocked.MemoryBarrierProcessWide();
-
-                    int index = 0;
-                    foreach (Slot slot in snapshot)
-                    {
-                        T? item;
-                        lock (slot)
-                        {
-                            item = Interlocked.Exchange(ref slot.Item, null);
-                            if (item is not null)
-                            {
-                                if (slot.LastTaken is { } lastTaken)
-                                {
-                                    lastTaken.SetTarget(item);
-                                }
-                                else
-                                {
-                                    slot.LastTaken = new WeakReference<T>(item);
-                                }
-                            }
-
-                            // Back to even only after this slot's take, so a renter that straddled
-                            // it sees a changed generation and reconciles.
-                            Volatile.Write(ref slot.Gate, unchecked(slot.Gate + 1));
-                        }
-
-                        captured[index++] = item;
-                    }
-                }
-
-                // Gate reconciliation is complete. Never invoke user cleanup while holding either
-                // the collection lock or a slot lock: callbacks can wait for other pool operations.
-                for (int i = 0; i < capturedCount; i++)
-                {
-                    T? item = captured[i];
-                    if (item is null)
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        fallback.Destroy(item);
-                    }
-                    catch (Exception exception)
-                    {
-                        firstException ??= exception;
-                    }
+                    captured[index++] = item;
                 }
             }
-            finally
+
+            // Gate reconciliation is complete. Never invoke user cleanup while holding either
+            // the collection lock or a slot lock: callbacks can wait for other pool operations.
+            for (int i = 0; i < capturedCount; i++)
             {
-                if (capturedItems is not null)
+                T? item = captured[i];
+                if (item is null)
                 {
-                    // Release every captured reference, including when user cleanup throws.
-                    ArrayPool<T?>.Shared.Return(capturedItems, clearArray: true);
+                    continue;
+                }
+
+                try
+                {
+                    fallback.Destroy(item);
+                }
+                catch (Exception exception)
+                {
+                    firstException ??= exception;
                 }
             }
 
@@ -331,8 +317,8 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     }
 
 #if NETCOREAPP3_0_OR_GREATER
-    // Most clears have few registered threads. Keep their capture references on the stack;
-    // larger snapshots rent a separate array so reentrant cleanup always owns its storage.
+    // Keep up to eight capture references on the stack;
+    // larger snapshots allocate a separate array so reentrant cleanup always owns its storage.
     [InlineArray(8)]
     private struct CaptureBuffer
     {
