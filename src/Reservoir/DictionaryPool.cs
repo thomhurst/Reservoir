@@ -185,15 +185,14 @@ sealed class DictionaryPool<TKey, TValue>
             // Without a readable capacity the retention bound cannot be enforced, so discard.
             if (!CollectionCapacity<Dictionary<TKey, TValue>>.IsAvailable
                 || CollectionCapacity<Dictionary<TKey, TValue>>.Get(obj) > maximumRetainedCapacity)
-            {
-                return false;
-            }
+#elif NET10_0_OR_GREATER
+            if (obj.Capacity > maximumRetainedCapacity)
 #else
             if (obj.EnsureCapacity(0) > maximumRetainedCapacity)
+#endif
             {
                 return false;
             }
-#endif
 
             obj.Clear();
             return true;

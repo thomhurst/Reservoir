@@ -188,21 +188,17 @@ sealed class HashSetPool<T>
             }
 
             if (CollectionCapacity<HashSet<T>>.Get(obj) > maximumRetainedCapacity)
-            {
-                return false;
-            }
-
-            obj.Clear();
-            return true;
+#elif NET10_0_OR_GREATER
+            if (obj.Capacity > maximumRetainedCapacity)
 #else
             if (obj.EnsureCapacity(0) > maximumRetainedCapacity)
+#endif
             {
                 return false;
             }
 
             obj.Clear();
             return true;
-#endif
         }
 
         public bool TryReset(HashSet<T> obj)

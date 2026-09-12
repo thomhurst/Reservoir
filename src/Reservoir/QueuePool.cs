@@ -145,21 +145,17 @@ sealed class QueuePool<T>
             }
 
             if (CollectionCapacity<Queue<T>>.Get(obj) > maximumRetainedCapacity)
-            {
-                return false;
-            }
-
-            obj.Clear();
-            return true;
+#elif NET10_0_OR_GREATER
+            if (obj.Capacity > maximumRetainedCapacity)
 #else
             if (obj.EnsureCapacity(0) > maximumRetainedCapacity)
+#endif
             {
                 return false;
             }
 
             obj.Clear();
             return true;
-#endif
         }
 
         public bool TryReset(Queue<T> obj) => Reset(obj, maxRetainedCapacity);
