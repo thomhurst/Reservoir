@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Reflection;
 
 namespace Reservoir.Tests;
 
@@ -85,7 +86,11 @@ public class StripedObjectStoreTests
     }
 
     [Test]
-    public async Task ConcurrentPushPopStressPreservesOwnershipAcrossFullAndEmptyTransitions()
+    [Arguments(0)]
+    [Arguments(int.MaxValue - 64)]
+    [Arguments(-64)]
+    public async Task ConcurrentPushPopStressPreservesOwnershipAcrossFullAndEmptyTransitions(
+        int initialVersion)
     {
         const int workerCount = 8;
         const int itemsPerWorker = 8;
@@ -96,6 +101,7 @@ public class StripedObjectStoreTests
         const int iterations = 1_000;
 #endif
         var store = new StripedObjectStore<StoreItem>(capacity);
+        SeedHeadVersions(store, initialVersion);
         var failures = new ConcurrentQueue<string>();
         using var start = new Barrier(workerCount + 1);
         using var phase = new Barrier(workerCount + 1);
@@ -149,6 +155,24 @@ public class StripedObjectStoreTests
         await Assert.That(failures).IsEmpty();
         await Assert.That(finalItems.ToHashSet().Count).IsEqualTo(capacity);
         await Assert.That(finalItems).IsEquivalentTo(initialItems);
+    }
+
+    private static void SeedHeadVersions(StripedObjectStore<StoreItem> store, int version)
+    {
+        // Start near both signed and unsigned version boundaries without billions of operations.
+        // Preserve the initialized node indices and change versions before publishing to workers.
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var stripes = (Array)typeof(StripedObjectStore<StoreItem>)
+            .GetField("_stripes", flags)!.GetValue(store)!;
+        foreach (object stripe in stripes)
+        {
+            foreach (string name in new[] { "AvailableHead", "FreeHead" })
+            {
+                FieldInfo field = stripe.GetType().GetField(name, flags)!;
+                long head = (long)field.GetValue(stripe)!;
+                field.SetValue(stripe, ((long)version << 32) | (uint)head);
+            }
+        }
     }
 
     private static void RunTransitionStress(

@@ -248,7 +248,9 @@ internal sealed class StripedObjectStore<T>
         => ((long)version << 32) | (uint)index;
 
     private static long NextHead(long observedHead, int index)
-        => PackHead(unchecked((int)(observedHead >> 32) + 1), index);
+        // The left shift keeps the low 32 version bits, including wraparound, without
+        // narrowing to int and widening back to long on every node exchange.
+        => (((observedHead >> 32) + 1) << 32) | (uint)index;
 
     private static int GetIndex(long head) => (int)head;
 
