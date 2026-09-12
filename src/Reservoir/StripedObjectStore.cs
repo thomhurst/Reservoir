@@ -139,28 +139,31 @@ internal sealed class StripedObjectStore<T>
 
     private static bool TryPop(Stripe stripe, out T? item)
     {
-        if (!TryTakeNode(ref stripe.AvailableHead, stripe.Nodes, out int nodeIndex))
+        Node[] nodes = stripe.Nodes;
+        if (!TryTakeNode(ref stripe.AvailableHead, nodes, out int nodeIndex))
         {
             item = null;
             return false;
         }
 
         // Winning the available-head CAS owns this node until free-head publication.
-        item = stripe.Nodes[nodeIndex].Item;
-        stripe.Nodes[nodeIndex].Item = null;
-        PublishNode(ref stripe.FreeHead, stripe.Nodes, nodeIndex);
+        ref Node node = ref nodes[nodeIndex];
+        item = node.Item;
+        node.Item = null;
+        PublishNode(ref stripe.FreeHead, nodes, nodeIndex);
         return item is not null;
     }
 
     private static bool TryPush(Stripe stripe, T item)
     {
-        if (!TryTakeNode(ref stripe.FreeHead, stripe.Nodes, out int nodeIndex))
+        Node[] nodes = stripe.Nodes;
+        if (!TryTakeNode(ref stripe.FreeHead, nodes, out int nodeIndex))
         {
             return false;
         }
 
-        Volatile.Write(ref stripe.Nodes[nodeIndex].Item, item);
-        PublishNode(ref stripe.AvailableHead, stripe.Nodes, nodeIndex);
+        Volatile.Write(ref nodes[nodeIndex].Item, item);
+        PublishNode(ref stripe.AvailableHead, nodes, nodeIndex);
         return true;
     }
 
