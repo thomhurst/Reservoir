@@ -613,16 +613,24 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         int threadStripe = _threadStripe;
         if (threadStripe == 0)
         {
-            do
-            {
-                threadStripe = Interlocked.Increment(ref s_nextThreadStripe);
-            }
-            while (threadStripe == 0);
-
-            _threadStripe = threadStripe;
+            threadStripe = InitializeThreadStripe();
         }
 
         return GetAffinityIndex(unchecked((uint)(threadStripe - 1)));
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int InitializeThreadStripe()
+    {
+        int threadStripe;
+        do
+        {
+            threadStripe = Interlocked.Increment(ref s_nextThreadStripe);
+        }
+        while (threadStripe == 0);
+
+        _threadStripe = threadStripe;
+        return threadStripe;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
