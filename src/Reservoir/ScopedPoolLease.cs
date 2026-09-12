@@ -26,13 +26,14 @@ internal ref struct ScopedPoolLease<T>
     internal ScopedPoolLease(T value, ScopedPoolLeaseState primary)
     {
         ScopedPoolLeaseState state = primary;
-        if (!state.TryAcquire(out long token))
+        long version = state.Version;
+        if ((version & 1) != 0)
         {
             state = ScopedPoolLeaseStateCache.FindAvailable(primary);
-            token = state.AcquireAvailable();
+            version = state.Version;
         }
 
-        _token = token;
+        _token = state.AcquireAvailable(version);
         _state = state;
         _value = value;
     }
@@ -80,12 +81,14 @@ internal static class ScopedPoolLeaseStateCache<T>
     internal static ScopedPoolLeaseState Acquire(out long token)
     {
         ScopedPoolLeaseState state = _state ?? Initialize();
-        if (!state.TryAcquire(out token))
+        long version = state.Version;
+        if ((version & 1) != 0)
         {
             state = ScopedPoolLeaseStateCache.FindAvailable(state);
-            token = state.AcquireAvailable();
+            version = state.Version;
         }
 
+        token = state.AcquireAvailable(version);
         return state;
     }
 
@@ -167,27 +170,17 @@ internal class ScopedPoolLeaseState : CacheLinePadded
 
     internal bool IsAvailable => (_version & 1) == 0;
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryAcquire(out long token)
-    {
-        long version = _version;
-        if ((version & 1) != 0)
-        {
-            token = 0;
-            return false;
-        }
-
-        token = version + 1;
-        _version = token;
-        return true;
-    }
+    internal long Version => _version;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal long AcquireAvailable()
+    internal long AcquireAvailable() => AcquireAvailable(_version);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal long AcquireAvailable(long version)
     {
         // Selection and acquisition run synchronously on the owning thread.
-        Debug.Assert(IsAvailable);
-        long token = _version + 1;
+        Debug.Assert(version == _version && IsAvailable);
+        long token = version + 1;
         _version = token;
         return token;
     }

@@ -3,28 +3,30 @@ namespace Reservoir.Tests;
 public class NestedScopedLeaseTests
 {
     [Test]
-    public async Task FailedAcquisitionPreservesOwnerAcrossVersionWrap()
+    public async Task NestedAcquisitionPreservesOwnerAcrossVersionWrap()
     {
         var state = new PaddedScopedPoolLeaseState();
         typeof(ScopedPoolLeaseState)
             .GetField("_version", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
             .SetValue(state, long.MaxValue - 1);
 
-        bool acquiredBeforeWrap = state.TryAcquire(out long beforeWrap);
-        bool acquiredWhileOwned = state.TryAcquire(out _);
-        state.ValidateOwnership(beforeWrap);
-        bool releasedBeforeWrap = state.TryRelease(beforeWrap);
-        bool acquiredAfterWrap = state.TryAcquire(out long afterWrap);
-        bool staleReleased = state.TryRelease(beforeWrap);
-        state.ValidateOwnership(afterWrap);
-        bool releasedAfterWrap = state.TryRelease(afterWrap);
+        var first = new ScopedPoolLease<Marker>(new Marker(), state);
+        long beforeWrap = state.Version;
+        var nested = new ScopedPoolLease<Marker>(new Marker(), state);
+        _ = first.Value;
+        bool releasedBeforeWrap = first.TryRelease(out _);
+        var current = new ScopedPoolLease<Marker>(new Marker(), state);
+        long afterWrap = state.Version;
+        bool staleReleased = first.TryRelease(out _);
+        _ = nested.Value;
+        _ = current.Value;
+        bool nestedReleased = nested.TryRelease(out _);
+        bool releasedAfterWrap = current.TryRelease(out _);
 
-        await Assert.That(acquiredBeforeWrap && acquiredAfterWrap).IsTrue();
-        await Assert.That(acquiredWhileOwned).IsFalse();
         await Assert.That(beforeWrap).IsEqualTo(long.MaxValue);
         await Assert.That(afterWrap).IsEqualTo(long.MinValue + 1);
         await Assert.That(staleReleased).IsFalse();
-        await Assert.That(releasedBeforeWrap && releasedAfterWrap && state.IsAvailable).IsTrue();
+        await Assert.That(releasedBeforeWrap && nestedReleased && releasedAfterWrap && state.IsAvailable).IsTrue();
     }
 
     [Test]
