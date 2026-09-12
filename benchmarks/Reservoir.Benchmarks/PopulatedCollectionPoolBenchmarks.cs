@@ -1,3 +1,4 @@
+using System.Text;
 using BenchmarkDotNet.Attributes;
 
 namespace Reservoir.Benchmarks;
@@ -10,7 +11,10 @@ public class PopulatedCollectionPoolBenchmarks
     private readonly HashSetPool<int> _sets = new();
     private readonly QueuePool<int> _queues = new();
     private readonly StackPool<int> _stacks = new();
+    private readonly ListPool<int> _lists = new();
+    private readonly StringBuilderPool _builders = new();
     private int _value = 42;
+    private string _text = "value";
 
     [GlobalSetup]
     public void Warm()
@@ -19,10 +23,14 @@ public class PopulatedCollectionPoolBenchmarks
         _ = HashSet();
         _ = Queue();
         _ = Stack();
+        _ = List();
+        _ = StringBuilder();
         _ = DictionaryScoped();
         _ = HashSetScoped();
         _ = QueueScoped();
         _ = StackScoped();
+        _ = ListScoped();
+        _ = StringBuilderScoped();
     }
 
     [Benchmark]
@@ -66,6 +74,26 @@ public class PopulatedCollectionPoolBenchmarks
     }
 
     [Benchmark]
+    public int List()
+    {
+        List<int> item = _lists.Rent();
+        item.Add(_value);
+        int result = item.Count;
+        _lists.Return(item);
+        return result;
+    }
+
+    [Benchmark]
+    public int StringBuilder()
+    {
+        StringBuilder item = _builders.Rent();
+        item.Append(_text);
+        int result = item.Length;
+        _builders.Return(item);
+        return result;
+    }
+
+    [Benchmark]
     public int DictionaryScoped()
     {
         using DictionaryPool<int, int>.Lease lease = _dictionaries.RentScoped(out Dictionary<int, int> item);
@@ -95,5 +123,21 @@ public class PopulatedCollectionPoolBenchmarks
         using StackPool<int>.Lease lease = _stacks.RentScoped(out Stack<int> item);
         item.Push(_value);
         return item.Count;
+    }
+
+    [Benchmark]
+    public int ListScoped()
+    {
+        using ListPool<int>.Lease lease = _lists.RentScoped(out List<int> item);
+        item.Add(_value);
+        return item.Count;
+    }
+
+    [Benchmark]
+    public int StringBuilderScoped()
+    {
+        using StringBuilderPool.Lease lease = _builders.RentScoped(out StringBuilder item);
+        item.Append(_text);
+        return item.Length;
     }
 }
