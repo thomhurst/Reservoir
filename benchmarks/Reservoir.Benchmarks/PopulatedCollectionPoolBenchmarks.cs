@@ -19,18 +19,19 @@ public class PopulatedCollectionPoolBenchmarks
     [GlobalSetup]
     public void Warm()
     {
-        _ = Dictionary();
-        _ = HashSet();
-        _ = Queue();
-        _ = Stack();
-        _ = List();
-        _ = StringBuilder();
         _ = DictionaryScoped();
         _ = HashSetScoped();
         _ = QueueScoped();
         _ = StackScoped();
         _ = ListScoped();
         _ = StringBuilderScoped();
+        // Populate the shared stores after the scoped slots retain their own objects.
+        _ = Dictionary();
+        _ = HashSet();
+        _ = Queue();
+        _ = Stack();
+        _ = List();
+        _ = StringBuilder();
     }
 
     [Benchmark]
