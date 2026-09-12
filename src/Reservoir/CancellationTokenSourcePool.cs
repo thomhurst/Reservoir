@@ -309,7 +309,7 @@ sealed class CancellationTokenSourcePool : IDisposable
         {
             _pool = pool;
             _slot = slot;
-            _lease = new ScopedPoolLease<PooledCancellationTokenSource>(source);
+            _lease = new ScopedPoolLease<PooledCancellationTokenSource>(source, slot);
         }
 
         /// <summary>Gets the rented source while this lease owns it.</summary>

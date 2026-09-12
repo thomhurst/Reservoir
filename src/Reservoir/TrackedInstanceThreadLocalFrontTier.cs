@@ -295,9 +295,10 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         return existing;
     }
 
-    // The base-class leading pad and the allocated subclass's trailing pad keep each thread's
-    // slot on its own cache lines; see CacheLinePadded.
-    internal class Slot : CacheLinePadded
+    // Ownership versions and nested lease states belong to the renting thread. Clear only
+    // touches the retained-item fields below, leaving outstanding leases valid. The leading
+    // and trailing pads keep each slot on its own cache lines; see CacheLinePadded.
+    internal class Slot : ScopedPoolLeaseState
     {
         internal T? Item;
         // True once the owning thread has rented from this pool. Written and read only by the

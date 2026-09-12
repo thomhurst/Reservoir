@@ -31,7 +31,7 @@ ref struct PooledLease<T, TPolicy>
     {
         _pool = pool;
         _slot = slot;
-        _lease = new ScopedPoolLease<T>(value);
+        _lease = new ScopedPoolLease<T>(value, slot);
     }
 
     /// <summary>Gets the rented object while this lease owns it.</summary>
@@ -68,7 +68,7 @@ ref struct PooledLease<T>
     {
         _pool = pool;
         _slot = slot;
-        _lease = new ScopedPoolLease<T>(value);
+        _lease = new ScopedPoolLease<T>(value, slot);
     }
 
     /// <summary>Gets the rented object while this lease owns it.</summary>

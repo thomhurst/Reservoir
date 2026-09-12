@@ -5,6 +5,41 @@ namespace Reservoir.Tests;
 public class SharedScopedRentalTests
 {
     [Test]
+    public async Task ClearPreservesIndependentTrackedAndSharedLeaseOwners()
+    {
+        using var pool = new ObjectPool<Item, Policy>(maxCapacity: 2);
+        var tracked = pool.RentScoped(out Item trackedItem);
+        var shared = pool.RentScopedShared(out Item sharedItem);
+        var staleTracked = tracked;
+        var staleShared = shared;
+        var nested = pool.RentScoped(out Item idleItem);
+        nested.Dispose();
+
+        pool.Clear();
+        bool activeOwnersSurvivedClear = ReferenceEquals(tracked.Value, trackedItem)
+            && ReferenceEquals(shared.Value, sharedItem)
+            && trackedItem.DestroyCount == 0 && sharedItem.DestroyCount == 0;
+        tracked.Dispose();
+        shared.Dispose();
+
+        var replacementTracked = pool.RentScoped();
+        var replacementShared = pool.RentScopedShared();
+        staleTracked.Dispose();
+        staleShared.Dispose();
+        bool replacementsStillOwned = ReferenceEquals(replacementTracked.Value, trackedItem)
+            && ReferenceEquals(replacementShared.Value, sharedItem);
+        replacementShared.Dispose();
+        replacementTracked.Dispose();
+        pool.Dispose();
+
+        await Assert.That(activeOwnersSurvivedClear && replacementsStillOwned).IsTrue();
+        await Assert.That(trackedItem).IsNotSameReferenceAs(sharedItem);
+        await Assert.That(idleItem.DestroyCount).IsEqualTo(1);
+        await Assert.That(trackedItem.DestroyCount).IsEqualTo(1);
+        await Assert.That(sharedItem.DestroyCount).IsEqualTo(1);
+    }
+
+    [Test]
     [Arguments(false)]
     [Arguments(true)]
     public async Task StaleCopiesCannotReturnLaterRentals(bool manualTls)
