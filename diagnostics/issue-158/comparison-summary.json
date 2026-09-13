@@ -1,0 +1,959 @@
+[
+  {
+    "baseline_version": "1.4.0",
+    "candidate_version": "1.9.0",
+    "workflow_run": "https://github.com/thomhurst/Reservoir/actions/runs/34780086623/attempts/1",
+    "results": [
+      {
+        "phase": "A-baseline",
+        "method": "SingleRentReturn",
+        "mean_ns": 15.807246171511137,
+        "error_999_ns": 0.059527065043141064,
+        "stddev_ns": 0.08148132540509545,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 8,
+            "mean_ns": 15.917108818888664
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 15.776799069510567
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 15.740037586953905
+          }
+        ]
+      },
+      {
+        "phase": "A-baseline",
+        "method": "NestedRentReturn",
+        "mean_ns": 37.729681985882614,
+        "error_999_ns": 0.38135892075388234,
+        "stddev_ns": 0.5220084392798989,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 8,
+            "mean_ns": 37.48159757256508
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 37.26056829757161
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 38.41931515269809
+          }
+        ]
+      },
+      {
+        "phase": "A-baseline",
+        "method": "SingleContext",
+        "mean_ns": 101.1884076480682,
+        "error_999_ns": 2.081189446981215,
+        "stddev_ns": 2.8487558463738916,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 99.40510369009442
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 105.01556211047702
+          },
+          {
+            "index": 3,
+            "samples": 8,
+            "mean_ns": 98.8890758305788
+          }
+        ]
+      },
+      {
+        "phase": "A-baseline",
+        "method": "NestedContext",
+        "mean_ns": 230.86069783797632,
+        "error_999_ns": 7.726290314876155,
+        "stddev_ns": 10.575834284193393,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 240.64726140764026
+          },
+          {
+            "index": 2,
+            "samples": 8,
+            "mean_ns": 235.55961978435516
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 216.89731476042004
+          }
+        ]
+      },
+      {
+        "phase": "B-candidate",
+        "method": "SingleRentReturn",
+        "mean_ns": 19.17854775874703,
+        "error_999_ns": 2.382809215471356,
+        "stddev_ns": 3.340366010667596,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 10,
+            "mean_ns": 23.451709875464438
+          },
+          {
+            "index": 2,
+            "samples": 8,
+            "mean_ns": 16.598225992172956
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 16.724209199349087
+          }
+        ]
+      },
+      {
+        "phase": "B-candidate",
+        "method": "NestedRentReturn",
+        "mean_ns": 38.802340247801375,
+        "error_999_ns": 0.26291424275756875,
+        "stddev_ns": 0.3770637820110487,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 10,
+            "mean_ns": 38.769304633140564
+          },
+          {
+            "index": 2,
+            "samples": 8,
+            "mean_ns": 38.379527159035206
+          },
+          {
+            "index": 3,
+            "samples": 10,
+            "mean_ns": 39.17362633347511
+          }
+        ]
+      },
+      {
+        "phase": "B-candidate",
+        "method": "SingleContext",
+        "mean_ns": 104.92281879760601,
+        "error_999_ns": 1.029645058807282,
+        "stddev_ns": 1.4434186904935733,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 105.1818649040328
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 103.07758947875764
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 106.50900201002757
+          }
+        ]
+      },
+      {
+        "phase": "B-candidate",
+        "method": "NestedContext",
+        "mean_ns": 249.94537692599826,
+        "error_999_ns": 5.1842338155662455,
+        "stddev_ns": 7.267572374838854,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 8,
+            "mean_ns": 253.81121242046356
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 256.69311385684546
+          },
+          {
+            "index": 3,
+            "samples": 10,
+            "mean_ns": 240.77974529266356
+          }
+        ]
+      },
+      {
+        "phase": "C-baseline",
+        "method": "SingleRentReturn",
+        "mean_ns": 15.816041071500097,
+        "error_999_ns": 0.06549737176777916,
+        "stddev_ns": 0.09393438123211575,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 15.745643777979744
+          },
+          {
+            "index": 2,
+            "samples": 10,
+            "mean_ns": 15.767411434650421
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 15.940471294853422
+          }
+        ]
+      },
+      {
+        "phase": "C-baseline",
+        "method": "NestedRentReturn",
+        "mean_ns": 37.932262608638176,
+        "error_999_ns": 0.6627094219367702,
+        "stddev_ns": 0.9071242134769852,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 37.46320898003049
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 39.134039256307815
+          },
+          {
+            "index": 3,
+            "samples": 8,
+            "mean_ns": 37.10794921219349
+          }
+        ]
+      },
+      {
+        "phase": "C-baseline",
+        "method": "SingleContext",
+        "mean_ns": 102.18196657299995,
+        "error_999_ns": 1.582095680930124,
+        "stddev_ns": 2.1655906083466006,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 102.6020181245274
+          },
+          {
+            "index": 2,
+            "samples": 8,
+            "mean_ns": 104.71274979412556
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 99.51232993602753
+          }
+        ]
+      },
+      {
+        "phase": "C-baseline",
+        "method": "NestedContext",
+        "mean_ns": 220.0853839273806,
+        "error_999_ns": 10.617684128302743,
+        "stddev_ns": 14.88451150176175,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 240.67090574900308
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 211.26194506221347
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 208.32330097092523
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "baseline_version": "1.4.0",
+    "candidate_version": "1.9.0",
+    "workflow_run": "https://github.com/thomhurst/Reservoir/actions/runs/34780086623/attempts/2",
+    "results": [
+      {
+        "phase": "A-baseline",
+        "method": "SingleRentReturn",
+        "mean_ns": 15.93283392548561,
+        "error_999_ns": 0.09923246183578885,
+        "stddev_ns": 0.13247249752829393,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 8,
+            "mean_ns": 15.767711281776428
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 15.951803866359922
+          },
+          {
+            "index": 3,
+            "samples": 8,
+            "mean_ns": 16.076615385711193
+          }
+        ]
+      },
+      {
+        "phase": "A-baseline",
+        "method": "NestedRentReturn",
+        "mean_ns": 37.38066166877746,
+        "error_999_ns": 0.15517838546027846,
+        "stddev_ns": 0.20715870496440114,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 37.12764570448134
+          },
+          {
+            "index": 2,
+            "samples": 8,
+            "mean_ns": 37.464316591620445
+          },
+          {
+            "index": 3,
+            "samples": 8,
+            "mean_ns": 37.58164970576763
+          }
+        ]
+      },
+      {
+        "phase": "A-baseline",
+        "method": "SingleContext",
+        "mean_ns": 103.5331969526079,
+        "error_999_ns": 1.7050097044354988,
+        "stddev_ns": 2.3901856798166343,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 106.81039211485121
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 101.46746587753296
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 102.32173286543951
+          }
+        ]
+      },
+      {
+        "phase": "A-baseline",
+        "method": "NestedContext",
+        "mean_ns": 259.27571635410703,
+        "error_999_ns": 18.020949241273193,
+        "stddev_ns": 26.41487591352868,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 10,
+            "mean_ns": 242.74097142219543
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 238.006463792589
+          },
+          {
+            "index": 3,
+            "samples": 10,
+            "mean_ns": 294.9527885913849
+          }
+        ]
+      },
+      {
+        "phase": "B-candidate",
+        "method": "SingleRentReturn",
+        "mean_ns": 16.688468743253637,
+        "error_999_ns": 0.0918385922384114,
+        "stddev_ns": 0.12874489068990178,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 10,
+            "mean_ns": 16.603963974118233
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 16.61393352349599
+          },
+          {
+            "index": 3,
+            "samples": 8,
+            "mean_ns": 16.877951826900244
+          }
+        ]
+      },
+      {
+        "phase": "B-candidate",
+        "method": "NestedRentReturn",
+        "mean_ns": 38.91748434084433,
+        "error_999_ns": 0.4086953163446484,
+        "stddev_ns": 0.5729338020738889,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 38.49958110517926
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 38.56172165605757
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 39.691150261296166
+          }
+        ]
+      },
+      {
+        "phase": "B-candidate",
+        "method": "SingleContext",
+        "mean_ns": 108.70301373941558,
+        "error_999_ns": 1.3061958074767626,
+        "stddev_ns": 1.8733071515958604,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 106.5006267229716
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 111.07070442040761
+          },
+          {
+            "index": 3,
+            "samples": 10,
+            "mean_ns": 108.55424044132232
+          }
+        ]
+      },
+      {
+        "phase": "B-candidate",
+        "method": "NestedContext",
+        "mean_ns": 240.5743018962719,
+        "error_999_ns": 3.438675611720825,
+        "stddev_ns": 4.820543357195157,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 8,
+            "mean_ns": 247.57483506202698
+          },
+          {
+            "index": 2,
+            "samples": 10,
+            "mean_ns": 239.0795461654663
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 236.0124454498291
+          }
+        ]
+      },
+      {
+        "phase": "C-baseline",
+        "method": "SingleRentReturn",
+        "mean_ns": 15.769293380004388,
+        "error_999_ns": 0.04884186185243294,
+        "stddev_ns": 0.06846947467311845,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 15.734594305356344
+          },
+          {
+            "index": 2,
+            "samples": 8,
+            "mean_ns": 15.747567668557167
+          },
+          {
+            "index": 3,
+            "samples": 10,
+            "mean_ns": 15.817903116345406
+          }
+        ]
+      },
+      {
+        "phase": "C-baseline",
+        "method": "NestedRentReturn",
+        "mean_ns": 37.236366628454284,
+        "error_999_ns": 0.11657957188634403,
+        "stddev_ns": 0.15957544732927217,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 37.05700180596776
+          },
+          {
+            "index": 2,
+            "samples": 8,
+            "mean_ns": 37.430888161063194
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 37.24282342195511
+          }
+        ]
+      },
+      {
+        "phase": "C-baseline",
+        "method": "SingleContext",
+        "mean_ns": 101.68552772204082,
+        "error_999_ns": 0.40632685457205897,
+        "stddev_ns": 0.5696135491760259,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 101.55074985822041
+          },
+          {
+            "index": 2,
+            "samples": 10,
+            "mean_ns": 102.33542885780335
+          },
+          {
+            "index": 3,
+            "samples": 8,
+            "mean_ns": 101.02477639913559
+          }
+        ]
+      },
+      {
+        "phase": "C-baseline",
+        "method": "NestedContext",
+        "mean_ns": 228.39035420947604,
+        "error_999_ns": 9.33743679656569,
+        "stddev_ns": 13.089783394947549,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 242.1560411453247
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 231.7618693775601
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 211.25315210554334
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "baseline_version": "1.4.0",
+    "candidate_version": "1.6.10",
+    "workflow_run": "https://github.com/thomhurst/Reservoir/actions/runs/34781306080/attempts/1",
+    "results": [
+      {
+        "phase": "A-baseline",
+        "method": "SingleRentReturn",
+        "mean_ns": 15.807984368159222,
+        "error_999_ns": 0.10491335649409615,
+        "stddev_ns": 0.14360659867307235,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 15.8833283815119
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 15.764214542176989
+          },
+          {
+            "index": 3,
+            "samples": 8,
+            "mean_ns": 15.772463407367468
+          }
+        ]
+      },
+      {
+        "phase": "A-baseline",
+        "method": "NestedRentReturn",
+        "mean_ns": 38.367763491777275,
+        "error_999_ns": 0.8788747301783164,
+        "stddev_ns": 1.2030137522835296,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 36.92564466264513
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 39.75430493222343
+          },
+          {
+            "index": 3,
+            "samples": 8,
+            "mean_ns": 38.430288054049015
+          }
+        ]
+      },
+      {
+        "phase": "A-baseline",
+        "method": "SingleContext",
+        "mean_ns": 102.77158924085754,
+        "error_999_ns": 1.3782234238353943,
+        "stddev_ns": 1.9766070152645994,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 10,
+            "mean_ns": 104.8889939546585
+          },
+          {
+            "index": 2,
+            "samples": 10,
+            "mean_ns": 102.85357966423035
+          },
+          {
+            "index": 3,
+            "samples": 8,
+            "mean_ns": 100.0223453193903
+          }
+        ]
+      },
+      {
+        "phase": "A-baseline",
+        "method": "NestedContext",
+        "mean_ns": 223.5410934942109,
+        "error_999_ns": 10.852927436934937,
+        "stddev_ns": 15.564945521173586,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 10,
+            "mean_ns": 243.6124252796173
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 216.28797080781726
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 208.49273641904196
+          }
+        ]
+      },
+      {
+        "phase": "B-candidate",
+        "method": "SingleRentReturn",
+        "mean_ns": 16.351115522384642,
+        "error_999_ns": 0.12911046000892093,
+        "stddev_ns": 0.17235877028539212,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 16.231916742192375
+          },
+          {
+            "index": 2,
+            "samples": 8,
+            "mean_ns": 16.240114890038967
+          },
+          {
+            "index": 3,
+            "samples": 8,
+            "mean_ns": 16.596214782446623
+          }
+        ]
+      },
+      {
+        "phase": "B-candidate",
+        "method": "NestedRentReturn",
+        "mean_ns": 38.2398989968575,
+        "error_999_ns": 0.30780042755006887,
+        "stddev_ns": 0.4213207350111826,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 37.82037268744575
+          },
+          {
+            "index": 2,
+            "samples": 8,
+            "mean_ns": 38.799635611474514
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 38.161881648831894
+          }
+        ]
+      },
+      {
+        "phase": "B-candidate",
+        "method": "SingleContext",
+        "mean_ns": 104.472603475606,
+        "error_999_ns": 0.48101626895717087,
+        "stddev_ns": 0.6743176855998656,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 105.33480879995558
+          },
+          {
+            "index": 2,
+            "samples": 8,
+            "mean_ns": 104.38729698956013
+          },
+          {
+            "index": 3,
+            "samples": 10,
+            "mean_ns": 103.76486387252808
+          }
+        ]
+      },
+      {
+        "phase": "B-candidate",
+        "method": "NestedContext",
+        "mean_ns": 263.40441090485143,
+        "error_999_ns": 6.1682338082125465,
+        "stddev_ns": 9.041317883322307,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 252.02531793382434
+          },
+          {
+            "index": 2,
+            "samples": 10,
+            "mean_ns": 263.0938901424408
+          },
+          {
+            "index": 3,
+            "samples": 10,
+            "mean_ns": 273.95611534118655
+          }
+        ]
+      },
+      {
+        "phase": "C-baseline",
+        "method": "SingleRentReturn",
+        "mean_ns": 15.845226044654845,
+        "error_999_ns": 0.06459120830577354,
+        "stddev_ns": 0.08622741514561642,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 8,
+            "mean_ns": 15.722995761781931
+          },
+          {
+            "index": 2,
+            "samples": 8,
+            "mean_ns": 15.900824148207903
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 15.90445464849472
+          }
+        ]
+      },
+      {
+        "phase": "C-baseline",
+        "method": "NestedRentReturn",
+        "mean_ns": 37.43961562642029,
+        "error_999_ns": 0.05267949200441655,
+        "stddev_ns": 0.0755513595660244,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 10,
+            "mean_ns": 37.34713882803917
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 37.49194377660751
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 37.490039474434326
+          }
+        ]
+      },
+      {
+        "phase": "C-baseline",
+        "method": "SingleContext",
+        "mean_ns": 101.94216198170626,
+        "error_999_ns": 0.7920928845409059,
+        "stddev_ns": 1.1104036914213038,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 9,
+            "mean_ns": 100.40499764680862
+          },
+          {
+            "index": 2,
+            "samples": 10,
+            "mean_ns": 102.77012685537338
+          },
+          {
+            "index": 3,
+            "samples": 8,
+            "mean_ns": 102.63651576638222
+          }
+        ]
+      },
+      {
+        "phase": "C-baseline",
+        "method": "NestedContext",
+        "mean_ns": 223.84513208695822,
+        "error_999_ns": 13.326879687165151,
+        "stddev_ns": 19.113014207763193,
+        "allocated": 0,
+        "gen0": 0,
+        "launches": [
+          {
+            "index": 1,
+            "samples": 10,
+            "mean_ns": 210.60394752025604
+          },
+          {
+            "index": 2,
+            "samples": 9,
+            "mean_ns": 211.30226707458496
+          },
+          {
+            "index": 3,
+            "samples": 9,
+            "mean_ns": 251.10042439566718
+          }
+        ]
+      }
+    ]
+  }
+]

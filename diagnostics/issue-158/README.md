@@ -2,6 +2,8 @@
 
 Task-scoped diagnostic harness for Reservoir package comparisons. This branch is an experiment, not a production optimization.
 
+See [findings.md](findings.md) for the completed Ubuntu investigation and links to full artifacts. All 36 measured cases allocate 0 B/op. The 1.6.10 checkpoint already shows costs before the nested reset exception handler; a stable 1.9.0 nested-context regression remains unconfirmed.
+
 The first harness commit (`41e04e46dda350f0eb616e158cb3104d3173aba8`) compares 1.4.0 with 1.9.0. Two Ubuntu repetitions retain inconsistent nested-context direction but small pool/single-context slowdowns. The current workflow compares 1.4.0 with the 1.6.10 checkpoint to determine whether those costs predate nested reset exception handling. Benchmark source and settings are identical.
 
 The workflow builds Kevlar once from `801416a0e6f800b643cacacc402b45a42da48ad8` with exactly Reservoir 1.4.0. It then builds separate BenchmarkDotNet executables against exact Reservoir versions, passing package selection into each generated build. Setup checks loaded versions and records assembly SHA-256 hashes.
