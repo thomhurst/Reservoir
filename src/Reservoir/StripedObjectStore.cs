@@ -169,16 +169,18 @@ internal sealed class StripedObjectStore<T>
         while (true)
         {
             long observedHead = Volatile.Read(ref head);
-            nodeIndex = GetIndex(observedHead);
-            if (nodeIndex == EmptyIndex)
+            int observedIndex = GetIndex(observedHead);
+            if (observedIndex == EmptyIndex)
             {
+                nodeIndex = EmptyIndex;
                 return false;
             }
 
-            int nextIndex = Volatile.Read(ref nodes[nodeIndex].Next);
+            int nextIndex = Volatile.Read(ref nodes[observedIndex].Next);
             long updatedHead = NextHead(observedHead, nextIndex);
             if (Interlocked.CompareExchange(ref head, updatedHead, observedHead) == observedHead)
             {
+                nodeIndex = observedIndex;
                 return true;
             }
         }
