@@ -57,7 +57,8 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             if (item is not null)
             {
                 Volatile.Write(ref slot.Item, null);
-                if ((Volatile.Read(ref slot.Gate) == gate && (gate & 1) == 0)
+                // Either a changed generation or an odd generation requires reconciliation.
+                if (((Volatile.Read(ref slot.Gate) ^ gate) | (gate & 1)) == 0
                     || (item = ReconcileRacedTake(slot, item!)) is not null)
                 {
                     return item;

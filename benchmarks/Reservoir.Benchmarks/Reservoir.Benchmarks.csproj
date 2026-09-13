@@ -30,5 +30,6 @@
   <!-- A bounded portable suite measures destruction and the affected runtime/factory paths. -->
   <ItemGroup Condition="'$(ReservoirTargetFramework)' == 'netstandard2.0'">
     <Compile Include="Program.cs;DestroyPolicyBenchmarks.cs;RuntimeObjectPoolBenchmarks.cs;TrackedReturnBenchmarks.cs" />
+    <Compile Include="ObjectPoolBenchmarks.cs;ObjectPoolCapacityScalingBenchmarks.cs;BenchmarkWorkerGroup.cs" />
   </ItemGroup>
 </Project>
