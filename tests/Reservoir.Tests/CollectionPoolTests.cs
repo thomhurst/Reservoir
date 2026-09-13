@@ -114,11 +114,13 @@ public class CollectionPoolTests
     }
 
     [Test]
-    public async Task StringBuilderPoolClearsAndReusesBuilder()
+    [Arguments(0)]
+    [Arguments(1)]
+    public async Task StringBuilderPoolClearsAndReusesBuilder(int length)
     {
         var pool = new StringBuilderPool(maxRetainedCapacity: 16, maxCapacity: 1);
         StringBuilder expected = pool.Rent();
-        expected.Append("value");
+        expected.Append('x', length);
 
         pool.Return(expected);
         StringBuilder actual = pool.Rent();
