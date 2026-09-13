@@ -601,7 +601,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         // Preserve full-pool semantics: discard the newly returned object when
         // it has not already been rented or displaced by another thread.
         T? observed = Interlocked.CompareExchange(
-            ref GetSlot(startIndex),
+            ref items[startSlot].Element,
             displaced,
             returned);
         DisposeItem(ReferenceEquals(observed, returned) ? returned : displaced);
