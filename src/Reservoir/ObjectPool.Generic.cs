@@ -460,17 +460,17 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
         catch (Exception resetException)
         {
-            DestroyAfterResetFailure(obj, resetException);
+            DestroyAfterResetFailure(ref _policy, obj, resetException);
             throw;
         }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private void DestroyAfterResetFailure(T obj, Exception resetException)
+    private static void DestroyAfterResetFailure(ref TPolicy policy, T obj, Exception resetException)
     {
         try
         {
-            DisposeItem(obj);
+            policy.Destroy(obj);
         }
         catch (Exception destroyException)
         {
