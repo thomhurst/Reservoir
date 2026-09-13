@@ -5,6 +5,9 @@ namespace Reservoir.Tests;
 public class LargePoolLifecycleTests
 {
     [Test]
+    [Arguments(1)]
+    [Arguments(8)]
+    [Arguments(64)]
     [Arguments(65)]
     [Arguments(4096)]
     public async Task ConcurrentClearAndDisposeDestroyEachItemExactlyOnce(int capacity)

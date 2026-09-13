@@ -549,9 +549,13 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
         for (int i = 0; i < MaximumRetained; i++)
         {
-            DisposeRetained(
-                Interlocked.Exchange(ref GetSlot(i), null),
-                ref firstException);
+            ref T? slot = ref GetSlot(i);
+            if (Volatile.Read(ref slot) is not null)
+            {
+                DisposeRetained(
+                    Interlocked.Exchange(ref slot, null),
+                    ref firstException);
+            }
         }
 
         if (firstException is not null)
