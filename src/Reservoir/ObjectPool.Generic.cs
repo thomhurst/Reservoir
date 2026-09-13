@@ -617,21 +617,29 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         uint threadStripeHash = _threadStripeHash;
         if (threadStripeHash == 0)
         {
-            int threadStripe;
-            do
-            {
-                threadStripe = Interlocked.Increment(ref s_nextThreadStripe);
-            }
-            while (threadStripe == 0);
-
-            // The odd multiplier maps every nonzero ordinal to a nonzero hash, so zero
-            // remains the uninitialized sentinel even after the counter wraps.
-            threadStripeHash = unchecked((uint)threadStripe * StripeHashMultiplier);
-            _threadStripeHash = threadStripeHash;
+            threadStripeHash = InitializeThreadStripeHash();
         }
 
         // Recover the original zero-based hash without multiplying on every rent/return.
         return GetIndexFromHash(unchecked(threadStripeHash - StripeHashMultiplier));
+    }
+
+    // Keep one-time initialization outside callers that inline the warm affinity lookup.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static uint InitializeThreadStripeHash()
+    {
+        int threadStripe;
+        do
+        {
+            threadStripe = Interlocked.Increment(ref s_nextThreadStripe);
+        }
+        while (threadStripe == 0);
+
+        // The odd multiplier maps every nonzero ordinal to a nonzero hash, so zero
+        // remains the uninitialized sentinel even after the counter wraps.
+        uint threadStripeHash = unchecked((uint)threadStripe * StripeHashMultiplier);
+        _threadStripeHash = threadStripeHash;
+        return threadStripeHash;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
