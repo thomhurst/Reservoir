@@ -8,7 +8,7 @@ public class ObjectPoolCapacityScalingBenchmarks
     private ObjectPool<Payload, PayloadPolicy>? _pool;
     private ObjectPool<Payload, SingletonPolicy>? _emptyPool;
 
-    [Params(32, 64, 65, 256, 4096, 65536)]
+    [Params(1, 32, 64, 65, 256, 4096, 65536)]
     public int Capacity { get; set; }
 
     [GlobalSetup]
@@ -42,6 +42,10 @@ public class ObjectPoolCapacityScalingBenchmarks
         public Payload Create() => new();
 
         public bool TryReset(Payload obj) => true;
+
+        public void Destroy(Payload obj)
+        {
+        }
     }
 
     public readonly struct SingletonPolicy : IPooledObjectPolicy<Payload>
@@ -51,6 +55,10 @@ public class ObjectPoolCapacityScalingBenchmarks
         public Payload Create() => Singleton;
 
         public bool TryReset(Payload obj) => true;
+
+        public void Destroy(Payload obj)
+        {
+        }
     }
 }
 
@@ -60,7 +68,7 @@ public class ObjectPoolBurstBenchmarks
     private ObjectPool<Payload, PayloadPolicy>? _pool;
     private Payload[]? _items;
 
-    [Params(32, 64, 65, 256, 4096, 65536)]
+    [Params(1, 32, 64, 65, 256, 4096, 65536)]
     public int Capacity { get; set; }
 
     [GlobalSetup]
@@ -103,6 +111,10 @@ public class ObjectPoolBurstBenchmarks
         public Payload Create() => new();
 
         public bool TryReset(Payload obj) => true;
+
+        public void Destroy(Payload obj)
+        {
+        }
     }
 }
 

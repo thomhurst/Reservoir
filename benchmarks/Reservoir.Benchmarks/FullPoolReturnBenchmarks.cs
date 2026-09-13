@@ -15,7 +15,7 @@ public class FullPoolReturnBenchmarks
 
     private BenchmarkWorkerGroup? _workers;
 
-    [Params(32, 4096)]
+    [Params(1, 32, 64, 4096)]
     public int Capacity { get; set; }
 
     [Params(1, 4)]

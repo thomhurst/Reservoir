@@ -645,19 +645,33 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int GetStartIndex()
     {
+        // A zero mask denotes a single slot, which needs no per-thread affinity.
+        if (_indexMask == 0)
+        {
+            return 0;
+        }
+
         int threadStripe = _threadStripe;
         if (threadStripe == 0)
         {
-            do
-            {
-                threadStripe = Interlocked.Increment(ref s_nextThreadStripe);
-            }
-            while (threadStripe == 0);
-
-            _threadStripe = threadStripe;
+            threadStripe = InitializeThreadStripe();
         }
 
         return GetAffinityIndex(unchecked((uint)(threadStripe - 1)));
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int InitializeThreadStripe()
+    {
+        int threadStripe;
+        do
+        {
+            threadStripe = Interlocked.Increment(ref s_nextThreadStripe);
+        }
+        while (threadStripe == 0);
+
+        _threadStripe = threadStripe;
+        return threadStripe;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
