@@ -11,7 +11,7 @@ public class ObjectPoolContentionBenchmarks
 
     private BenchmarkWorkerGroup? _workers;
 
-    [Params(1, 4, 8, 16, 32)]
+    [Params(1, 4)]
     public int WorkerCount { get; set; }
 
     [Params(32, 256)]
