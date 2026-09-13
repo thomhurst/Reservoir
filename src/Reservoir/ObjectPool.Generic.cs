@@ -35,7 +35,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
     // Cache only scalar affinity; retained objects remain enumerable in the shared array.
     [ThreadStatic]
+#if NETCOREAPP3_0_OR_GREATER
     private static ulong _threadStripeState;
+#else
+    private static int _threadStripe;
+#endif
 
     private static int s_nextThreadStripe;
 
@@ -611,6 +615,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         DisposeItem(ReferenceEquals(observed, returned) ? returned : displaced);
     }
 
+#if NETCOREAPP3_0_OR_GREATER
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int GetStartIndex()
     {
@@ -653,6 +658,36 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             ? (int)(mixedStripe & (uint)_indexMask)
             : (int)(((ulong)mixedStripe * (uint)MaximumRetained) >> 32);
     }
+
+#else
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int GetStartIndex()
+    {
+        int threadStripe = _threadStripe;
+        if (threadStripe == 0)
+        {
+            do
+            {
+                threadStripe = Interlocked.Increment(ref s_nextThreadStripe);
+            }
+            while (threadStripe == 0);
+
+            _threadStripe = threadStripe;
+        }
+
+        return GetAffinityIndex(unchecked((uint)(threadStripe - 1)));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int GetAffinityIndex(uint threadStripe)
+    {
+        uint mixedStripe = threadStripe * StripeHashMultiplier;
+        // Preserve masking for powers of two; scale other hashes without integer division.
+        return _indexMask >= 0
+            ? (int)(mixedStripe & (uint)_indexMask)
+            : (int)(((ulong)mixedStripe * (uint)MaximumRetained) >> 32);
+    }
+#endif
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ref T? GetSlot(int index)
