@@ -168,6 +168,25 @@ internal sealed class StripedObjectStore<T>
 
     private static int TakeNode(ref long head, Node[] nodes)
     {
+        long observedHead = Volatile.Read(ref head);
+        int nodeIndex = GetIndex(observedHead);
+        if (nodeIndex == EmptyIndex)
+        {
+            return EmptyIndex;
+        }
+
+        int nextIndex = Volatile.Read(ref nodes[nodeIndex].Next);
+        if (Interlocked.CompareExchange(ref head, NextHead(observedHead, nextIndex), observedHead) == observedHead)
+        {
+            return nodeIndex;
+        }
+
+        return RetryTakeNode(ref head, nodes);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int RetryTakeNode(ref long head, Node[] nodes)
+    {
         while (true)
         {
             long observedHead = Volatile.Read(ref head);
