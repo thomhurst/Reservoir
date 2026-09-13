@@ -26,7 +26,7 @@ jobs:
           path: baseline
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 7a7e425f2424ce62284bb05d12fa51013818516a
+          ref: 4e7412c754e1e3c8ee351a15fb21ca036bb729e9
           path: candidate
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

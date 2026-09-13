@@ -2,7 +2,7 @@
 
 ## Source fix validation
 
-This branch validates baseline `8c06265ee370951fd11fa002c7c7299ed9575cc3` against candidate `7a7e425f2424ce62284bb05d12fa51013818516a`. `.github/workflows/issue-158-fix.yml` builds both libraries from their full source checkouts with identical SDK/framework/version settings. The generated BDN executables receive the selected DLL reference. The fixed Kevlar DLL remains built against 1.4.0. A-B-A phases each contain three launches and identical disassembly settings.
+This branch validates baseline `8c06265ee370951fd11fa002c7c7299ed9575cc3` against candidate `4e7412c754e1e3c8ee351a15fb21ca036bb729e9`. `.github/workflows/issue-158-fix.yml` builds both libraries from their full source checkouts with identical SDK/framework/version settings. The generated BDN executables receive the selected DLL reference. The fixed Kevlar DLL remains built against 1.4.0. A-B-A phases each contain three launches and identical disassembly settings.
 
 Eight cases cover the original pool/context workloads and protected warm/nested manual TLS and scoped paths at capacity 128. The existing repository comparison workflow separately covers capacity 32 and scoped depth scaling. The candidate joins manual TLS misses with the existing shared-store fallback, avoiding a duplicate inline lookup while preserving the scoped fallback. No performance claim is accepted until both comparisons pass.
 
