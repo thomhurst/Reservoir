@@ -164,6 +164,7 @@ internal sealed class StripedObjectStore<T>
         return true;
     }
 
+    [MethodImpl(MethodImplOptions.NoInlining)]
     private static bool TryTakeNode(ref long head, Node[] nodes, out int nodeIndex)
     {
         long observedHead = Volatile.Read(ref head);
@@ -204,6 +205,7 @@ internal sealed class StripedObjectStore<T>
         }
     }
 
+    [MethodImpl(MethodImplOptions.NoInlining)]
     private static void PublishNode(ref long head, Node[] nodes, int nodeIndex)
     {
         long observedHead = Volatile.Read(ref head);
