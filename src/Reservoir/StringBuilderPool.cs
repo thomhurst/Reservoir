@@ -143,7 +143,10 @@ sealed class StringBuilderPool
                 return false;
             }
 
-            obj.Length = 0;
+            if (obj.Length != 0)
+            {
+                obj.Length = 0;
+            }
             return true;
         }
 
