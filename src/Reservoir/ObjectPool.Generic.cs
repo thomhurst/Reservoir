@@ -548,14 +548,32 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
 
         ObjectWrapper[] items = _items;
-        for (int i = FirstSlotOffset; i < items.Length; i += CacheLineSlotStride)
+        // Sampling only selects the traversal strategy. Exchanges still own every removed item.
+        bool dense = MaximumRetained >= 4
+            && Volatile.Read(ref items[FirstSlotOffset].Element) is not null
+            && Volatile.Read(ref items[FirstSlotOffset + CacheLineSlotStride].Element) is not null
+            && Volatile.Read(ref items[FirstSlotOffset + 2 * CacheLineSlotStride].Element) is not null
+            && Volatile.Read(ref items[FirstSlotOffset + 3 * CacheLineSlotStride].Element) is not null;
+        if (dense)
         {
-            ref T? slot = ref items[i].Element;
-            if (Volatile.Read(ref slot) is not null)
+            for (int i = FirstSlotOffset; i < items.Length; i += CacheLineSlotStride)
             {
                 DisposeRetained(
-                    Interlocked.Exchange(ref slot, null),
+                    Interlocked.Exchange(ref items[i].Element, null),
                     ref firstException);
+            }
+        }
+        else
+        {
+            for (int i = FirstSlotOffset; i < items.Length; i += CacheLineSlotStride)
+            {
+                ref T? slot = ref items[i].Element;
+                if (Volatile.Read(ref slot) is not null)
+                {
+                    DisposeRetained(
+                        Interlocked.Exchange(ref slot, null),
+                        ref firstException);
+                }
             }
         }
 
