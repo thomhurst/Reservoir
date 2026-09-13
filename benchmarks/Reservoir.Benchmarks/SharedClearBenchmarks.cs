@@ -39,6 +39,17 @@ public class SharedClearBenchmarks
     }
 
     [Benchmark]
+    public void HalfOccupiedClear()
+    {
+        for (int i = 0; i < _items.Length / 2; i++)
+        {
+            _pool.Return(_items[i]);
+        }
+
+        _pool.Clear();
+    }
+
+    [Benchmark]
     public void RefillAndClear()
     {
         // Includes return costs. Preallocated payloads and no-op cleanup isolate storage work.
