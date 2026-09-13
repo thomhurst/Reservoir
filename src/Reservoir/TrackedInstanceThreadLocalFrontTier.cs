@@ -82,6 +82,15 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         }
 #endif
 
+        return RentFallback(fallback, slot);
+    }
+
+    // Keep the shared-store scan out of callers that inline the thread-local hit path.
+    // In particular, manual Rent already has its own shared path when TLS is disabled.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T RentFallback<TPolicy>(ObjectPool<T, TPolicy> fallback, Slot slot)
+        where TPolicy : struct, IPooledObjectPolicy<T>
+    {
         // A hit proves a prior return stored here, which the Rents gate already allowed, so
         // the flag only needs to be raised on the miss path; the hit path stays write-free.
         if (!slot.Rents)
