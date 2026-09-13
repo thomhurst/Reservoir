@@ -448,19 +448,19 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             return _policy.TryReset(obj);
         }
 
-        return TryResetItemGuarded(obj);
+        return TryResetItemGuarded(ref _policy, obj);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private bool TryResetItemGuarded(T obj)
+    private static bool TryResetItemGuarded(ref TPolicy policy, T obj)
     {
         try
         {
-            return _policy.TryReset(obj);
+            return policy.TryReset(obj);
         }
         catch (Exception resetException)
         {
-            DestroyAfterResetFailure(ref _policy, obj, resetException);
+            DestroyAfterResetFailure(ref policy, obj, resetException);
             throw;
         }
     }
