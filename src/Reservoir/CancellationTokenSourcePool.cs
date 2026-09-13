@@ -248,7 +248,11 @@ sealed class CancellationTokenSourcePool : IDisposable
     [DebuggerNonUserCode]
     internal sealed class PooledCancellationTokenSource : CancellationTokenSource
     {
-        private static readonly Action<object?> s_cancelUpstream = static state => ((CancellationTokenSource)state!).Cancel();
+        // Initialize the delegate only when linking, without adding initialization to pool creation.
+        private static class UpstreamCallback
+        {
+            internal static readonly Action<object?> Cancel = static state => ((CancellationTokenSource)state!).Cancel();
+        }
 
         private readonly CancellationTokenSourcePool _owner;
         private CancellationTokenRegistration _upstreamRegistration;
@@ -262,11 +266,11 @@ sealed class CancellationTokenSourcePool : IDisposable
         {
 #if NETCOREAPP3_0_OR_GREATER
             _upstreamRegistration = upstreamToken.UnsafeRegister(
-                s_cancelUpstream,
+                UpstreamCallback.Cancel,
                 this);
 #else
             _upstreamRegistration = upstreamToken.Register(
-                s_cancelUpstream,
+                UpstreamCallback.Cancel,
                 this,
                 useSynchronizationContext: false);
 #endif
