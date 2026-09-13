@@ -167,6 +167,22 @@ internal sealed class StripedObjectStore<T>
     private static bool TryTakeNode(ref long head, Node[] nodes, out int nodeIndex)
     {
         long observedHead = Volatile.Read(ref head);
+        nodeIndex = GetIndex(observedHead);
+        if (nodeIndex == EmptyIndex)
+        {
+            return false;
+        }
+
+        int nextIndex = Volatile.Read(ref nodes[nodeIndex].Next);
+        long actualHead = Interlocked.CompareExchange(ref head, NextHead(observedHead, nextIndex), observedHead);
+        return actualHead == observedHead
+            || RetryTakeNode(ref head, nodes, actualHead, out nodeIndex);
+    }
+
+    // Keep retry bookkeeping off the first successful acquisition.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool RetryTakeNode(ref long head, Node[] nodes, long observedHead, out int nodeIndex)
+    {
         while (true)
         {
             nodeIndex = GetIndex(observedHead);
@@ -191,6 +207,17 @@ internal sealed class StripedObjectStore<T>
     private static void PublishNode(ref long head, Node[] nodes, int nodeIndex)
     {
         long observedHead = Volatile.Read(ref head);
+        Volatile.Write(ref nodes[nodeIndex].Next, GetIndex(observedHead));
+        long actualHead = Interlocked.CompareExchange(ref head, NextHead(observedHead, nodeIndex), observedHead);
+        if (actualHead != observedHead)
+        {
+            RetryPublishNode(ref head, nodes, nodeIndex, actualHead);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void RetryPublishNode(ref long head, Node[] nodes, int nodeIndex, long observedHead)
+    {
         while (true)
         {
             Volatile.Write(ref nodes[nodeIndex].Next, GetIndex(observedHead));
