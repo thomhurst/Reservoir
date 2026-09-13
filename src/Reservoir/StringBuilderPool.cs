@@ -143,7 +143,14 @@ sealed class StringBuilderPool
                 return false;
             }
 
+#if NET8_0
+            if (obj.Length != 0)
+            {
+                obj.Length = 0;
+            }
+#else
             obj.Clear();
+#endif
             return true;
         }
 

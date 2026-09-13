@@ -35,7 +35,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
     // Cache only scalar affinity; retained objects remain enumerable in the shared array.
     [ThreadStatic]
-#if NETCOREAPP3_0_OR_GREATER
+#if NET8_0
     private static ulong _threadStripeState;
 #else
     private static int _threadStripe;
@@ -175,7 +175,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
         if (largeStore is null)
         {
+#if NET8_0
+            startIndex = GetRentStartIndex();
+#else
             startIndex = GetStartIndex();
+#endif
             ref T? startSlot = ref GetSlot(startIndex);
             T? observed = Volatile.Read(ref startSlot);
             // A failed CAS is a permitted pool miss; RentSlow scans the remaining slots.
@@ -615,7 +619,10 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         DisposeItem(ReferenceEquals(observed, returned) ? returned : displaced);
     }
 
-#if NETCOREAPP3_0_OR_GREATER
+#if NET8_0
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private int GetRentStartIndex() => GetStartIndex();
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int GetStartIndex()
     {
