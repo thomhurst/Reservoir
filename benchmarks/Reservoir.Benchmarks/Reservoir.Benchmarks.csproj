@@ -31,5 +31,6 @@
   <ItemGroup Condition="'$(ReservoirTargetFramework)' == 'netstandard2.0'">
     <Compile Include="Program.cs;DestroyPolicyBenchmarks.cs;RuntimeObjectPoolBenchmarks.cs;TrackedReturnBenchmarks.cs" />
     <Compile Include="ObjectPoolBenchmarks.cs;ObjectPoolCapacityScalingBenchmarks.cs;BenchmarkWorkerGroup.cs" />
+    <Compile Include="ObjectPoolContentionBenchmarks.cs" />
   </ItemGroup>
 </Project>

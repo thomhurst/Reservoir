@@ -8,18 +8,20 @@ namespace Reservoir.Benchmarks;
 public class ObjectPoolContentionBenchmarks
 {
     private const int OperationsPerInvocation = 327_680;
-    private const int PoolCapacity = 32;
 
     private BenchmarkWorkerGroup? _workers;
 
     [Params(1, 4, 8, 16, 32)]
     public int WorkerCount { get; set; }
 
+    [Params(32, 256)]
+    public int Capacity { get; set; }
+
     [GlobalSetup(Target = nameof(Reservoir))]
     public void SetupReservoir()
     {
-        var pool = new ObjectPool<Payload, PayloadPolicy>(maxCapacity: PoolCapacity);
-        WarmReservoirPool(pool);
+        var pool = new ObjectPool<Payload, PayloadPolicy>(maxCapacity: Capacity);
+        WarmReservoirPool(pool, Capacity);
         int operationsPerWorker = OperationsPerInvocation / WorkerCount;
         _workers = new BenchmarkWorkerGroup(
             WorkerCount,
@@ -31,9 +33,9 @@ public class ObjectPoolContentionBenchmarks
     {
         var pool = new ObjectPool<Payload, PayloadPolicy>(
             default,
-            PoolCapacity,
+            Capacity,
             threadLocalFastPath: true);
-        WarmReservoirPool(pool);
+        WarmReservoirPool(pool, Capacity);
         int operationsPerWorker = OperationsPerInvocation / WorkerCount;
         _workers = new BenchmarkWorkerGroup(
             WorkerCount,
@@ -45,8 +47,8 @@ public class ObjectPoolContentionBenchmarks
     {
         var pool = new DefaultObjectPool<Payload>(
             new DefaultPooledObjectPolicy<Payload>(),
-            PoolCapacity);
-        WarmMicrosoftPool(pool);
+            Capacity);
+        WarmMicrosoftPool(pool, Capacity);
         int operationsPerWorker = OperationsPerInvocation / WorkerCount;
         _workers = new BenchmarkWorkerGroup(
             WorkerCount,
@@ -57,7 +59,7 @@ public class ObjectPoolContentionBenchmarks
     public void SetupConcurrentBag()
     {
         var bag = new ConcurrentBag<Payload>();
-        for (int i = 0; i < PoolCapacity; i++)
+        for (int i = 0; i < Capacity; i++)
         {
             bag.Add(new Payload());
         }
@@ -83,9 +85,9 @@ public class ObjectPoolContentionBenchmarks
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
     public void ConcurrentBag() => _workers!.Run();
 
-    private static void WarmReservoirPool(ObjectPool<Payload, PayloadPolicy> pool)
+    private static void WarmReservoirPool(ObjectPool<Payload, PayloadPolicy> pool, int capacity)
     {
-        var items = new Payload[PoolCapacity];
+        var items = new Payload[capacity];
 
         for (int i = 0; i < items.Length; i++)
         {
@@ -98,9 +100,9 @@ public class ObjectPoolContentionBenchmarks
         }
     }
 
-    private static void WarmMicrosoftPool(DefaultObjectPool<Payload> pool)
+    private static void WarmMicrosoftPool(DefaultObjectPool<Payload> pool, int capacity)
     {
-        var items = new Payload[PoolCapacity];
+        var items = new Payload[capacity];
 
         for (int i = 0; i < items.Length; i++)
         {
@@ -160,5 +162,9 @@ public class ObjectPoolContentionBenchmarks
         public Payload Create() => new();
 
         public bool TryReset(Payload obj) => true;
+
+        public void Destroy(Payload obj)
+        {
+        }
     }
 }
