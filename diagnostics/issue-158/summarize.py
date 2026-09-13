@@ -1,6 +1,7 @@
 """Validate the bounded A-B-A run and retain individual launch means."""
 
 import json
+import os
 import re
 import statistics
 import sys
@@ -10,7 +11,7 @@ from pathlib import Path
 root = Path(sys.argv[1])
 versions = {"baseline": "baseline", "candidate": "candidate"}
 phases = ("A-baseline", "B-candidate", "C-baseline")
-expected = {"SingleRentReturn", "NestedRentReturn", "SingleContext", "NestedContext", "ManualTls", "NestedManualTls", "Scoped", "NestedScoped"}
+expected = set(os.environ.get("DIAG_CASES", "SingleRentReturn,NestedRentReturn,SingleContext,NestedContext,ManualTls,NestedManualTls,Scoped,NestedScoped").split(','))
 rows = []
 kevlar_hashes = set()
 reservoir_hashes = defaultdict(set)
@@ -18,7 +19,7 @@ for phase in phases:
     reports = list((root / phase).rglob("*-report-full-compressed.json"))
     assert len(reports) == 1, (phase, reports)
     benchmarks = json.loads(reports[0].read_text(encoding="utf-8-sig"))["Benchmarks"]
-    assert len(benchmarks) == 8 and {b["Method"] for b in benchmarks} == expected
+    assert len(benchmarks) == len(expected) and {b["Method"] for b in benchmarks} == expected
     log = (root / f"{phase}.log").read_text(encoding="utf-8-sig")
     kevlar_hashes.update(re.findall(r"Loaded Kevlar, .*?SHA256=([A-F0-9]+)", log))
     version = versions["candidate"] if phase == "B-candidate" else versions["baseline"]

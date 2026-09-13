@@ -18,7 +18,8 @@ job = job.WithId(phase)
 var summaries = BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly)
     .Run(args, DefaultConfig.Instance.AddJob(job));
 var reports = summaries.SelectMany(summary => summary.Reports).ToArray();
-if (reports.Length != 8 || reports.Any(report => !report.Success || report.ResultStatistics is null))
+int expectedCount = Environment.GetEnvironmentVariable("DIAG_CASES")?.Split(',').Length ?? 8;
+if (reports.Length != expectedCount || reports.Any(report => !report.Success || report.ResultStatistics is null))
 {
-    throw new InvalidOperationException("Expected eight successful benchmark results.");
+    throw new InvalidOperationException($"Expected {expectedCount} successful benchmark results.");
 }

@@ -8,6 +8,8 @@ Eight cases cover the original pool/context workloads and protected warm/nested 
 
 The material below records the preceding package investigation.
 
+The fix workflow supports `suite=protected` for a focused A-B-A repetition of `NestedManualTls`, `NestedScoped`, `Scoped`, and `SingleContext`. The benchmark methods and measurement settings are unchanged. `DIAG_CASES` selects and validates the exact expected methods; all three launches and both baseline controls remain required.
+
 Task-scoped diagnostic harness for Reservoir package comparisons. This branch is an experiment, not a production optimization.
 
 See [findings.md](findings.md) for the completed Ubuntu investigation and links to full artifacts. All 36 measured cases allocate 0 B/op. The 1.6.10 checkpoint already shows costs before the nested reset exception handler; a stable 1.9.0 nested-context regression remains unconfirmed.

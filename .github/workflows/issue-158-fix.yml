@@ -1,9 +1,13 @@
 name: Issue 158 fix validation
 
 on:
-  push:
-    branches: [issue-158-fix-bench]
   workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Full comparison or focused protected-path repetition'
+        type: choice
+        default: full
+        options: [full, protected]
 
 permissions:
   contents: read
@@ -16,6 +20,7 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_NOLOGO: '1'
       DOTNET_TieredPGO: '1'
+      DIAG_CASES: ${{ inputs.suite == 'protected' && 'NestedManualTls,NestedScoped,Scoped,SingleContext' || 'SingleRentReturn,NestedRentReturn,SingleContext,NestedContext,ManualTls,NestedManualTls,Scoped,NestedScoped' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -75,6 +80,7 @@ jobs:
           $root = $PWD.Path
           $evidence = (Resolve-Path evidence).Path
           Set-Location harness/diagnostics/issue-158
+          $filters = ($env:DIAG_CASES -split ',') | ForEach-Object { "PoolContextProbe.$_" }
           foreach ($phase in 'dry-baseline', 'dry-candidate', 'A-baseline', 'B-candidate', 'C-baseline') {
             $side = if ($phase -in 'dry-candidate', 'B-candidate') { 'candidate' } else { 'baseline' }
             $env:RESERVOIR_DLL = Join-Path $root "$side/src/Reservoir/bin/Release/net10.0/Reservoir.dll"
@@ -82,7 +88,7 @@ jobs:
             $env:DIAG_DRY = if ($phase.StartsWith('dry')) { '1' } else { '0' }
             $output = Join-Path $evidence $phase
             Write-Host "Starting $phase at $([DateTime]::UtcNow.ToString('O'))"
-            dotnet bin/Release/net10.0/Probe.dll --filter '*' --exporters json --join --disasm --disasmDepth 8 --artifacts $output --noOverwrite *> "$output.log"
+            dotnet bin/Release/net10.0/Probe.dll --filter $filters --exporters json --join --disasm --disasmDepth 8 --artifacts $output --noOverwrite *> "$output.log"
             if ($LASTEXITCODE -ne 0) { Get-Content "$output.log" -Tail 100; exit 1 }
             Get-ChildItem $output -Recurse -Filter '*-report-github.md' | ForEach-Object { Get-Content $_ }
           }
