@@ -548,15 +548,22 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
 
 #if NET8_0
-        ObjectWrapper[] items = _items;
-        for (int i = FirstSlotOffset; i < items.Length; i += CacheLineSlotStride)
+        if (MaximumRetained == 1)
         {
-            ref T? slot = ref items[i].Element;
+            ref T? slot = ref GetSlot(0);
+            if (Volatile.Read(ref slot) is not null)
+            {
+                DisposeRetained(Interlocked.Exchange(ref slot, null), ref firstException);
+            }
+        }
+        else
+        {
+            ClearSmallStore(ref firstException);
+        }
 #else
         for (int i = 0; i < MaximumRetained; i++)
         {
             ref T? slot = ref GetSlot(i);
-#endif
             if (Volatile.Read(ref slot) is not null)
             {
                 DisposeRetained(
@@ -564,12 +571,29 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
                     ref firstException);
             }
         }
+#endif
 
         if (firstException is not null)
         {
             ExceptionDispatchInfo.Capture(firstException).Throw();
         }
     }
+
+#if NET8_0
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void ClearSmallStore(ref Exception? firstException)
+    {
+        ObjectWrapper[] items = _items;
+        for (int i = FirstSlotOffset; i < items.Length; i += CacheLineSlotStride)
+        {
+            ref T? slot = ref items[i].Element;
+            if (Volatile.Read(ref slot) is not null)
+            {
+                DisposeRetained(Interlocked.Exchange(ref slot, null), ref firstException);
+            }
+        }
+    }
+#endif
 
     /// <summary>
     /// Permanently closes the pool and disposes all retained disposable objects. Objects returned
