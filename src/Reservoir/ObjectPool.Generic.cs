@@ -466,13 +466,18 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             }
             catch (Exception destroyException)
             {
-                throw new AggregateException(
-                    "Reset and destruction both failed.", resetException, destroyException);
+                throw CreateResetDestroyException(resetException, destroyException);
             }
 
             throw;
         }
     }
+
+    // Exception construction needs scratch registers even when the handler never runs.
+    // Keep those allocations out of the guarded reset method's normal stack frame.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static AggregateException CreateResetDestroyException(Exception resetException, Exception destroyException)
+        => new("Reset and destruction both failed.", resetException, destroyException);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void ReturnWithoutReset(T obj)
