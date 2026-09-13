@@ -28,7 +28,7 @@ public class SmallPoolScanTests
     {
         using var pool = new ObjectPool<Item, Policy>(maxCapacity: capacity);
         FieldInfo affinity = typeof(ObjectPool<Item, Policy>)
-            .GetField("_threadStripe", BindingFlags.NonPublic | BindingFlags.Static)!;
+            .GetField("_threadStripeHash", BindingFlags.NonPublic | BindingFlags.Static)!;
         object? previous = affinity.GetValue(null);
         uint ordinal = 0;
         while (pool.GetAffinityIndex(ordinal) != home)
@@ -36,7 +36,7 @@ public class SmallPoolScanTests
             ordinal++;
         }
 
-        affinity.SetValue(null, checked((int)ordinal + 1));
+        affinity.SetValue(null, unchecked((ordinal + 1) * 2_654_435_769u));
         try
         {
             var items = new Item[capacity + 1];

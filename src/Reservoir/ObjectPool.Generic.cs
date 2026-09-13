@@ -35,7 +35,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
     // Cache only scalar affinity; retained objects remain enumerable in the shared array.
     [ThreadStatic]
-    private static int _threadStripe;
+    private static uint _threadStripeHash;
 
     private static int s_nextThreadStripe;
 
@@ -614,25 +614,33 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int GetStartIndex()
     {
-        int threadStripe = _threadStripe;
-        if (threadStripe == 0)
+        uint threadStripeHash = _threadStripeHash;
+        if (threadStripeHash == 0)
         {
+            int threadStripe;
             do
             {
                 threadStripe = Interlocked.Increment(ref s_nextThreadStripe);
             }
             while (threadStripe == 0);
 
-            _threadStripe = threadStripe;
+            // The odd multiplier maps every nonzero ordinal to a nonzero hash, so zero
+            // remains the uninitialized sentinel even after the counter wraps.
+            threadStripeHash = unchecked((uint)threadStripe * StripeHashMultiplier);
+            _threadStripeHash = threadStripeHash;
         }
 
-        return GetAffinityIndex(unchecked((uint)(threadStripe - 1)));
+        // Recover the original zero-based hash without multiplying on every rent/return.
+        return GetIndexFromHash(unchecked(threadStripeHash - StripeHashMultiplier));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal int GetAffinityIndex(uint threadStripe)
+        => GetIndexFromHash(unchecked(threadStripe * StripeHashMultiplier));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int GetIndexFromHash(uint mixedStripe)
     {
-        uint mixedStripe = threadStripe * StripeHashMultiplier;
         // Preserve masking for powers of two; scale other hashes without integer division.
         return _indexMask >= 0
             ? (int)(mixedStripe & (uint)_indexMask)
