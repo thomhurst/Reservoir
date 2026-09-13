@@ -168,8 +168,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         StripedObjectStore<T>? largeStore = _largeStore;
         if (largeStore is not null)
         {
-            _ = largeStore.TryPop(out T? item);
-            return item ?? CreateItem();
+            return RentFromLargeStore(largeStore);
         }
 
         int startIndex = GetStartIndex();
@@ -185,6 +184,14 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
 
         return RentSlow(startIndex);
+    }
+
+    // The small-store caller does not need the striped traversal and creation fallback inline.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private T RentFromLargeStore(StripedObjectStore<T> largeStore)
+    {
+        _ = largeStore.TryPop(out T? item);
+        return item ?? CreateItem();
     }
 
     /// <summary>
