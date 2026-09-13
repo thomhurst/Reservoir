@@ -460,17 +460,22 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
         catch (Exception resetException)
         {
-            try
-            {
-                DisposeItem(obj);
-            }
-            catch (Exception destroyException)
-            {
-                throw new AggregateException(
-                    "Reset and destruction both failed.", resetException, destroyException);
-            }
-
+            DestroyAfterResetFailure(obj, resetException);
             throw;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void DestroyAfterResetFailure(T obj, Exception resetException)
+    {
+        try
+        {
+            DisposeItem(obj);
+        }
+        catch (Exception destroyException)
+        {
+            throw new AggregateException(
+                "Reset and destruction both failed.", resetException, destroyException);
         }
     }
 
