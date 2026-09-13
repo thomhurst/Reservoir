@@ -166,9 +166,9 @@ internal sealed class StripedObjectStore<T>
 
     private static bool TryTakeNode(ref long head, Node[] nodes, out int nodeIndex)
     {
+        long observedHead = Volatile.Read(ref head);
         while (true)
         {
-            long observedHead = Volatile.Read(ref head);
             nodeIndex = GetIndex(observedHead);
             if (nodeIndex == EmptyIndex)
             {
@@ -177,24 +177,31 @@ internal sealed class StripedObjectStore<T>
 
             int nextIndex = Volatile.Read(ref nodes[nodeIndex].Next);
             long updatedHead = NextHead(observedHead, nextIndex);
-            if (Interlocked.CompareExchange(ref head, updatedHead, observedHead) == observedHead)
+            long actualHead = Interlocked.CompareExchange(ref head, updatedHead, observedHead);
+            if (actualHead == observedHead)
             {
                 return true;
             }
+
+            // The failed CAS already acquired the head needed for the next attempt.
+            observedHead = actualHead;
         }
     }
 
     private static void PublishNode(ref long head, Node[] nodes, int nodeIndex)
     {
+        long observedHead = Volatile.Read(ref head);
         while (true)
         {
-            long observedHead = Volatile.Read(ref head);
             Volatile.Write(ref nodes[nodeIndex].Next, GetIndex(observedHead));
             long updatedHead = NextHead(observedHead, nodeIndex);
-            if (Interlocked.CompareExchange(ref head, updatedHead, observedHead) == observedHead)
+            long actualHead = Interlocked.CompareExchange(ref head, updatedHead, observedHead);
+            if (actualHead == observedHead)
             {
                 return;
             }
+
+            observedHead = actualHead;
         }
     }
 
