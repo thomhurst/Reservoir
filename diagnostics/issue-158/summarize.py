@@ -8,6 +8,8 @@ from collections import defaultdict
 from pathlib import Path
 
 root = Path(sys.argv[1])
+versions_path = root / "versions.json"
+versions = json.loads(versions_path.read_text(encoding="utf-8-sig")) if versions_path.exists() else {"baseline": "1.4.0", "candidate": "1.9.0"}
 phases = ("A-baseline", "B-candidate", "C-baseline")
 expected = {"SingleRentReturn", "NestedRentReturn", "SingleContext", "NestedContext"}
 rows = []
@@ -20,7 +22,7 @@ for phase in phases:
     assert len(benchmarks) == 4 and {b["Method"] for b in benchmarks} == expected
     log = (root / f"{phase}.log").read_text(encoding="utf-8-sig")
     kevlar_hashes.update(re.findall(r"Loaded Kevlar, .*?SHA256=([A-F0-9]+)", log))
-    version = "1.9.0" if phase == "B-candidate" else "1.4.0"
+    version = versions["candidate"] if phase == "B-candidate" else versions["baseline"]
     hashes = re.findall(r"Loaded Reservoir, .*?SHA256=([A-F0-9]+)", log)
     assert hashes, phase
     reservoir_hashes[version].update(hashes)
@@ -46,7 +48,7 @@ for phase in phases:
         })
 assert len(kevlar_hashes) == 1, kevlar_hashes
 assert all(len(hashes) == 1 for hashes in reservoir_hashes.values()), reservoir_hashes
-assert reservoir_hashes["1.4.0"] != reservoir_hashes["1.9.0"]
+assert reservoir_hashes[versions["baseline"]] != reservoir_hashes[versions["candidate"]]
 (root / "summary.json").write_text(json.dumps(rows, indent=2) + "\n")
 print("| Method | A Mean ± error (ns) | B Mean ± error (ns) | C Mean ± error (ns) | B/A | B/C | C/A | Allocated A/B/C |")
 print("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |")

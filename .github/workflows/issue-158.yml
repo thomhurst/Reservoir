@@ -17,6 +17,7 @@ jobs:
       DOTNET_NOLOGO: '1'
       DOTNET_TieredPGO: '1'
       KEVLAR_SHA: 801416a0e6f800b643cacacc402b45a42da48ad8
+      CANDIDATE_VERSION: '1.6.10'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -34,6 +35,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory evidence | Out-Null
+          Copy-Item reservoir/diagnostics/issue-158/prior-evidence evidence -Recurse
           $packages = Join-Path $PWD 'kevlar/Directory.Packages.props'
           [xml] $xml = Get-Content $packages
           $package = $xml.Project.ItemGroup.PackageVersion | Where-Object Include -eq 'Reservoir'
@@ -63,15 +65,19 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $evidence = (Resolve-Path evidence).Path
           Set-Location reservoir/diagnostics/issue-158
-          foreach ($phase in 'dry-1.4.0', 'dry-1.9.0', 'A-baseline', 'B-candidate', 'C-baseline') {
+          @{ baseline = '1.4.0'; candidate = $env:CANDIDATE_VERSION } | ConvertTo-Json > (Join-Path $evidence 'versions.json')
+          foreach ($phase in 'dry-baseline', 'dry-candidate', 'A-baseline', 'B-candidate', 'C-baseline') {
             $env:DIAG_PHASE = $phase
             $env:DIAG_DRY = if ($phase.StartsWith('dry')) { '1' } else { '0' }
-            $env:DIAG_VERSION = if ($phase -in 'dry-1.9.0', 'B-candidate') { '1.9.0' } else { '1.4.0' }
+            $env:DIAG_VERSION = if ($phase -in 'dry-candidate', 'B-candidate') { $env:CANDIDATE_VERSION } else { '1.4.0' }
             $output = Join-Path $evidence $phase
             Write-Host "Starting $phase at $([DateTime]::UtcNow.ToString('O'))"
             dotnet bin/Release/net10.0/Probe.dll --filter '*' --exporters json --join --disasm --disasmDepth 8 --artifacts $output --noOverwrite *> "$output.log"
             if ($LASTEXITCODE -ne 0) { Get-Content "$output.log" -Tail 100; exit 1 }
             Get-ChildItem $output -Recurse -Filter '*-report-github.md' | ForEach-Object { Get-Content $_ }
+          }
+          foreach ($version in '1.4.0', $env:CANDIDATE_VERSION) {
+            Copy-Item "$env:HOME/.nuget/packages/reservoir/$version/reservoir.nuspec" (Join-Path $evidence "reservoir-$version.nuspec")
           }
       - name: Summarize and validate measurements
         shell: bash
