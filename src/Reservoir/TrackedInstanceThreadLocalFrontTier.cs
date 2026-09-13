@@ -321,25 +321,33 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     // The missing-value path publishes each slot before returning it. Published links
     // never change, so one head reference is a stable snapshot even as other threads register.
     // Retain exited-thread slots just as trackAllValues did, without allocating a Values list.
-    private sealed class SlotRegistry : ThreadLocal<Slot?>
+    private sealed class SlotRegistry : ThreadLocal<Slot>
     {
-        private Slot? _head;
+        private readonly RegistryHead _registry;
 
         internal SlotRegistry()
-            : base(trackAllValues: false)
+            : this(new RegistryHead())
         {
         }
 
-        internal new Slot Value
+        private SlotRegistry(RegistryHead registry)
+            : base(registry.CreateSlot, trackAllValues: false)
         {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => base.Value ?? CreateSlot();
+            _registry = registry;
         }
+
+        internal Slot? Head => _registry.Head;
+    }
+
+    // ThreadLocal's factory publishes once per thread; warmed Value needs no extra null check.
+    private sealed class RegistryHead
+    {
+        private Slot? _head;
 
         internal Slot? Head => Volatile.Read(ref _head);
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private Slot CreateSlot()
+        internal Slot CreateSlot()
         {
             var created = new PaddedSlot();
             Slot? head;
@@ -350,8 +358,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             }
             while (!ReferenceEquals(Interlocked.CompareExchange(ref _head, created, head), head));
 
-            // Publish the stable link before a renter can use the thread's slot.
-            base.Value = created;
+            // ThreadLocal stores the result only after the stable link is published.
             return created;
         }
     }
