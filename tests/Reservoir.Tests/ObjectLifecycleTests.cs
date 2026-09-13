@@ -224,6 +224,7 @@ public class ObjectLifecycleTests
     [Test]
     [Arguments(1)]
     [Arguments(4)]
+    [Arguments(8)]
     [Arguments(9)]
     [Arguments(16)]
     public async Task ClearDisposesScopedItemsFromEveryParticipatingThread(int threadCount)

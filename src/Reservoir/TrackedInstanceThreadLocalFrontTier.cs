@@ -184,14 +184,23 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             // both passes guarantees no slot is taken from without its gate raised first. A slot
             // created after the snapshot is missed, which matches the existing behavior of a
             // return racing Clear.
-            T?[] capturedItems;
+            CaptureBuffer inlineItems = default;
+            scoped Span<T?> capturedItems;
+            int count;
             lock (slots)
             {
                 var snapshot = slots.Values;
                 // Reserve the capture buffer before raising gates. Each Clear owns its buffer,
                 // so callbacks may reenter Clear or clear another pool after we release locks.
-                int count = snapshot.Count;
-                capturedItems = new T?[count];
+                count = snapshot.Count;
+                if (count <= 8)
+                {
+                    capturedItems = inlineItems;
+                }
+                else
+                {
+                    capturedItems = new T?[count];
+                }
                 for (int i = 0; i < count; i++)
                 {
                     Slot slot = snapshot[i];
@@ -234,8 +243,9 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
 
             // Gate reconciliation is complete. Never invoke user cleanup while holding either
             // the collection lock or a slot lock: callbacks can wait for other pool operations.
-            foreach (T? item in capturedItems)
+            for (int i = 0; i < count; i++)
             {
+                T? item = capturedItems[i];
                 if (item is null)
                 {
                     continue;
@@ -306,6 +316,15 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         created.Dispose();
         return existing;
     }
+
+#if NETCOREAPP3_0_OR_GREATER
+    // Each Clear owns its references, including when destruction reenters Clear.
+    [InlineArray(8)]
+    private struct CaptureBuffer
+    {
+        private T? _element0;
+    }
+#endif
 
     // Ownership versions and nested lease states belong to the renting thread. Clear only
     // touches the retained-item fields below, leaving outstanding leases valid. The leading
