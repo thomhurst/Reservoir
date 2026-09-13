@@ -11,10 +11,10 @@ public class ObjectPoolCollisionBenchmarks
     private BenchmarkWorkerGroup? _workers;
     private ObjectPool<Payload, Policy>? _pool;
 
-    [Params(8, 32)]
+    [Params(32)]
     public int Capacity { get; set; }
 
-    [Params(4, 8)]
+    [Params(4)]
     public int WorkerCount { get; set; }
 
     [Params(false, true)]
