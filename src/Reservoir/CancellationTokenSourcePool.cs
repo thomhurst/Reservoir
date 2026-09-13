@@ -248,7 +248,9 @@ sealed class CancellationTokenSourcePool : IDisposable
     [DebuggerNonUserCode]
     internal sealed class PooledCancellationTokenSource : CancellationTokenSource
     {
+#if !NETCOREAPP3_0_OR_GREATER
         private static readonly Action<object?> s_cancelUpstream = static state => ((CancellationTokenSource)state!).Cancel();
+#endif
 
         private readonly CancellationTokenSourcePool _owner;
         private CancellationTokenRegistration _upstreamRegistration;
@@ -262,7 +264,7 @@ sealed class CancellationTokenSourcePool : IDisposable
         {
 #if NETCOREAPP3_0_OR_GREATER
             _upstreamRegistration = upstreamToken.UnsafeRegister(
-                s_cancelUpstream,
+                static state => ((CancellationTokenSource)state!).Cancel(),
                 this);
 #else
             _upstreamRegistration = upstreamToken.Register(
