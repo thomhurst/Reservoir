@@ -2,6 +2,7 @@
 #nullable enable
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
@@ -145,10 +146,14 @@ sealed class StringBuilderPool
 
             if (obj.Length != 0)
             {
-                obj.Clear();
+                ResetPopulated(obj);
             }
             return true;
         }
+
+        // Keep the length setter's chunk handling out of empty-return callers.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void ResetPopulated(StringBuilder obj) => obj.Length = 0;
 
         public bool TryReset(StringBuilder obj) => Reset(obj, maxRetainedCapacity);
 
