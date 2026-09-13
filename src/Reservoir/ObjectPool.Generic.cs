@@ -360,7 +360,8 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         int startSlot = FirstSlotOffset + startIndex * CacheLineSlotStride;
         // Scan physical indices in two contiguous ranges. The home slot was already tried;
         // splitting at the array boundary avoids wrap arithmetic on every empty slot.
-        for (int index = startSlot + CacheLineSlotStride; index < items.Length; index += CacheLineSlotStride)
+        // Small-store indices cannot overflow; an unsigned bound also proves the array index nonnegative.
+        for (uint index = (uint)(startSlot + CacheLineSlotStride); index < (uint)items.Length; index += CacheLineSlotStride)
         {
             ref T? slot = ref items[index].Element;
             T? item = Volatile.Read(ref slot);
