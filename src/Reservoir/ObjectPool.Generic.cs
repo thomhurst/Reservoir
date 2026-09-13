@@ -614,6 +614,12 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int GetStartIndex()
     {
+        // A single retained slot needs no per-thread affinity.
+        if (MaximumRetained == 1)
+        {
+            return 0;
+        }
+
         int threadStripe = _threadStripe;
         if (threadStripe == 0)
         {

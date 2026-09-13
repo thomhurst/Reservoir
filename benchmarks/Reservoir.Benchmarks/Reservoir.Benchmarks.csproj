@@ -32,5 +32,6 @@
     <Compile Include="Program.cs;DestroyPolicyBenchmarks.cs;RuntimeObjectPoolBenchmarks.cs;TrackedReturnBenchmarks.cs" />
     <Compile Include="StringBuilderPoolBenchmarks.cs;ScopedPoolBenchmarks.cs;ThreadLocalPoolBenchmarks.cs;PopulatedCollectionPoolBenchmarks.cs" />
     <Compile Include="TrackedClearAllocationBenchmarks.cs;BenchmarkWorkerGroup.cs" />
+    <Compile Include="ObjectPoolBenchmarks.cs;ObjectPoolCapacityScalingBenchmarks.cs;FullPoolReturnBenchmarks.cs" />
   </ItemGroup>
 </Project>
