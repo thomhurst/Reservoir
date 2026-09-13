@@ -14,7 +14,7 @@ generic policies.
 dotnet add package Reservoir
 ```
 
-Requires a .NET Standard 2.0-compatible runtime or later.
+Requires a .NET Standard 2.0-compatible runtime or later
 
 ## Why Reservoir?
 
