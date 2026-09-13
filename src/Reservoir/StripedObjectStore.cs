@@ -72,9 +72,19 @@ internal sealed class StripedObjectStore<T>
         // A completion thread often returns to the same remote stripe repeatedly. Try that
         // location before scanning, while keeping same-thread reuse on the home stripe.
         int hint = _lastRentStripe - 1;
-        if ((uint)hint < (uint)_stripes.Length && hint != start && TryPopAt(hint, out item))
+        if ((uint)hint < (uint)_stripes.Length && hint != start)
         {
-            return true;
+            if (TryPopAt(hint, out item))
+            {
+                return true;
+            }
+
+            // With two stripes, home and the only remote stripe have both been probed.
+            // A return arriving after either failed probe may be rented by the next attempt.
+            if (_stripes.Length == 2)
+            {
+                return false;
+            }
         }
 
         int index = start;

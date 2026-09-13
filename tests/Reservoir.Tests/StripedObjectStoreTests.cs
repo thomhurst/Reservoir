@@ -85,7 +85,9 @@ public class StripedObjectStoreTests
     }
 
     [Test]
-    public async Task ConcurrentPushPopStressPreservesOwnershipAcrossFullAndEmptyTransitions()
+    [Arguments(2)]
+    [Arguments(8)]
+    public async Task ConcurrentPushPopStressPreservesOwnershipAcrossFullAndEmptyTransitions(int stripeCount)
     {
         const int workerCount = 8;
         const int itemsPerWorker = 8;
@@ -95,7 +97,7 @@ public class StripedObjectStoreTests
 #else
         const int iterations = 1_000;
 #endif
-        var store = new StripedObjectStore<StoreItem>(capacity);
+        var store = new StripedObjectStore<StoreItem>(capacity, stripeCount);
         var failures = new ConcurrentQueue<string>();
         using var start = new Barrier(workerCount + 1);
         using var phase = new Barrier(workerCount + 1);
