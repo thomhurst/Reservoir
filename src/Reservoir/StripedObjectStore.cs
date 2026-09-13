@@ -85,7 +85,9 @@ internal sealed class StripedObjectStore<T>
                 index = 0;
             }
 
-            if (TryPopAt(index, out item))
+            // The remote hint was already probed before this scan. A concurrent return can
+            // arrive after any probe; retrying that stripe is not required for a pool miss.
+            if (index != hint && TryPopAt(index, out item))
             {
                 _lastRentStripe = index + 1;
                 return true;
