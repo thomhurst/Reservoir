@@ -288,12 +288,12 @@ sealed class CancellationTokenSourcePool : IDisposable
 
         private void DisposeUpstreamRegistration()
         {
-            if (_upstreamRegistration == default)
+            CancellationTokenRegistration registration = _upstreamRegistration;
+            if (registration == default)
             {
                 return;
             }
 
-            CancellationTokenRegistration registration = _upstreamRegistration;
             _upstreamRegistration = default;
             registration.Dispose();
         }
