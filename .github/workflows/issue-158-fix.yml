@@ -1,0 +1,98 @@
+name: Issue 158 fix validation
+
+on:
+  push:
+    branches: [issue-158-fix-bench]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_TieredPGO: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: harness
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8c06265ee370951fd11fa002c7c7299ed9575cc3
+          path: baseline
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 32f81570ed744b7c095ad9e955aca2174ac92b0c
+          path: candidate
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: thomhurst/Kevlar
+          ref: 801416a0e6f800b643cacacc402b45a42da48ad8
+          path: kevlar
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          global-json-file: harness/global.json
+      - name: Build matched source libraries and fixed Kevlar
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory evidence | Out-Null
+          foreach ($side in 'baseline', 'candidate') {
+            dotnet build "$side/src/Reservoir/Reservoir.csproj" -c Release -f net10.0 -p:Version=1.9.0 --disable-build-servers *> "evidence/$side-build.log"
+            if ($LASTEXITCODE -ne 0) { Get-Content "evidence/$side-build.log" -Tail 80; exit 1 }
+            git -C $side rev-parse HEAD > "evidence/$side-sha.txt"
+          }
+          $packages = Join-Path $PWD 'kevlar/Directory.Packages.props'
+          [xml] $xml = Get-Content $packages
+          $package = $xml.Project.ItemGroup.PackageVersion | Where-Object Include -eq 'Reservoir'
+          $package.Version = '[1.4.0]'
+          $xml.Save($packages)
+          dotnet build kevlar/src/Kevlar/Kevlar.csproj -c Release -f net10.0 --disable-build-servers *> evidence/kevlar-build.log
+          if ($LASTEXITCODE -ne 0) { Get-Content evidence/kevlar-build.log -Tail 80; exit 1 }
+          $assets = Get-Content kevlar/artifacts/obj/Kevlar/project.assets.json -Raw | ConvertFrom-Json
+          if ('Reservoir/1.4.0' -notin $assets.libraries.PSObject.Properties.Name) { throw 'Incorrect Kevlar dependency.' }
+          "KEVLAR_DLL=$((Resolve-Path kevlar/artifacts/bin/Kevlar/release_net10.0/Kevlar.dll).Path)" >> $env:GITHUB_ENV
+          "RESERVOIR_DLL=$((Resolve-Path baseline/src/Reservoir/bin/Release/net10.0/Reservoir.dll).Path)" >> $env:GITHUB_ENV
+          Copy-Item kevlar/artifacts/obj/Kevlar/project.assets.json evidence/kevlar-assets.json
+          git -C kevlar diff > evidence/kevlar-build.patch
+          git -C harness rev-parse HEAD > evidence/harness-sha.txt
+          git -C kevlar rev-parse HEAD > evidence/kevlar-sha.txt
+          dotnet --info > evidence/dotnet-info.txt
+          lscpu > evidence/cpu.txt
+      - name: Build harness
+        shell: pwsh
+        run: |
+          dotnet build harness/diagnostics/issue-158/Probe.csproj -c Release --disable-build-servers *> evidence/probe-build.log
+          if ($LASTEXITCODE -ne 0) { Get-Content evidence/probe-build.log -Tail 80; exit 1 }
+      - name: Dry validation and A-B-A measurement
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $PWD.Path
+          $evidence = (Resolve-Path evidence).Path
+          Set-Location harness/diagnostics/issue-158
+          foreach ($phase in 'dry-baseline', 'dry-candidate', 'A-baseline', 'B-candidate', 'C-baseline') {
+            $side = if ($phase -in 'dry-candidate', 'B-candidate') { 'candidate' } else { 'baseline' }
+            $env:RESERVOIR_DLL = Join-Path $root "$side/src/Reservoir/bin/Release/net10.0/Reservoir.dll"
+            $env:DIAG_PHASE = $phase
+            $env:DIAG_DRY = if ($phase.StartsWith('dry')) { '1' } else { '0' }
+            $output = Join-Path $evidence $phase
+            Write-Host "Starting $phase at $([DateTime]::UtcNow.ToString('O'))"
+            dotnet bin/Release/net10.0/Probe.dll --filter '*' --exporters json --join --disasm --disasmDepth 8 --artifacts $output --noOverwrite *> "$output.log"
+            if ($LASTEXITCODE -ne 0) { Get-Content "$output.log" -Tail 100; exit 1 }
+            Get-ChildItem $output -Recurse -Filter '*-report-github.md' | ForEach-Object { Get-Content $_ }
+          }
+      - name: Validate and summarize
+        shell: bash
+        run: python harness/diagnostics/issue-158/summarize.py evidence | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: issue-158-fix-evidence
+          path: evidence/
+          retention-days: 90
+          if-no-files-found: error

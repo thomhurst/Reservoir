@@ -1,5 +1,13 @@
 # Issue 158 reproduction
 
+## Source fix validation
+
+This branch validates baseline `8c06265ee370951fd11fa002c7c7299ed9575cc3` against candidate `32f81570ed744b7c095ad9e955aca2174ac92b0c`. `.github/workflows/issue-158-fix.yml` builds both libraries from their full source checkouts with identical SDK/framework/version settings. The generated BDN executables receive the selected DLL reference. The fixed Kevlar DLL remains built against 1.4.0. A-B-A phases each contain three launches and identical disassembly settings.
+
+Eight cases cover the original pool/context workloads and protected warm/nested manual TLS and scoped paths at capacity 128. The existing repository comparison workflow separately covers capacity 32 and scoped depth scaling. The candidate moves only shared fallback from the inline tracked-tier rent body to a cold helper. No performance claim is accepted until both comparisons pass.
+
+The material below records the preceding package investigation.
+
 Task-scoped diagnostic harness for Reservoir package comparisons. This branch is an experiment, not a production optimization.
 
 See [findings.md](findings.md) for the completed Ubuntu investigation and links to full artifacts. All 36 measured cases allocate 0 B/op. The 1.6.10 checkpoint already shows costs before the nested reset exception handler; a stable 1.9.0 nested-context regression remains unconfirmed.

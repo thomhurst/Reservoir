@@ -9,6 +9,7 @@ public class PoolContextProbe
 {
     private static readonly Shield Empty = Shield.Empty;
     private readonly ObjectPool<Item, Policy> _pool = new(maxCapacity: 128);
+    private readonly ObjectPool<Item, Policy> _tlsPool = new(default, 128, threadLocalFastPath: true);
 
     [GlobalSetup]
     public void Setup()
@@ -23,6 +24,10 @@ public class PoolContextProbe
 
         PrintAssembly(reservoir);
         PrintAssembly(typeof(Shield).Assembly);
+        _ = ManualTls();
+        _ = NestedManualTls();
+        _ = Scoped();
+        _ = NestedScoped();
         // Validate results and warm both retained objects before measurement.
         if (SingleRentReturn() != 42 || NestedRentReturn() != 84
             || SingleContext().GetAwaiter().GetResult() != 42
@@ -61,8 +66,47 @@ public class PoolContextProbe
         Empty.ExecuteWithContextAsync(
             static parent => Empty.ExecuteWithContextAsync(parent, static _ => new ValueTask<int>(42)));
 
+    [Benchmark]
+    public int ManualTls()
+    {
+        Item item = _tlsPool.Rent();
+        int result = item.Value;
+        _tlsPool.Return(item);
+        return result;
+    }
+
+    [Benchmark]
+    public int NestedManualTls()
+    {
+        Item outer = _tlsPool.Rent();
+        Item inner = _tlsPool.Rent();
+        int result = outer.Value + inner.Value;
+        _tlsPool.Return(inner);
+        _tlsPool.Return(outer);
+        return result;
+    }
+
+    [Benchmark]
+    public int Scoped()
+    {
+        using var lease = _pool.RentScoped();
+        return lease.Value.Value;
+    }
+
+    [Benchmark]
+    public int NestedScoped()
+    {
+        using var outer = _pool.RentScoped();
+        using var inner = _pool.RentScoped();
+        return outer.Value.Value + inner.Value.Value;
+    }
+
     [GlobalCleanup]
-    public void Cleanup() => _pool.Dispose();
+    public void Cleanup()
+    {
+        _pool.Dispose();
+        _tlsPool.Dispose();
+    }
 
     private static void PrintAssembly(Assembly assembly)
     {

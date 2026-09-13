@@ -2,13 +2,14 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
-    <ReservoirVersion Condition="'$(ReservoirVersion)' == ''">1.9.0</ReservoirVersion>
     <KevlarDll Condition="'$(KevlarDll)' == ''">$(KEVLAR_DLL)</KevlarDll>
   </PropertyGroup>
   <ItemGroup>
     <!-- Keep the diagnostic version identical to the original Windows investigation. -->
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
-    <PackageReference Include="Reservoir" Version="[$(ReservoirVersion)]" />
+    <Reference Include="Reservoir">
+      <HintPath>$(RESERVOIR_DLL)</HintPath>
+    </Reference>
     <Reference Include="Kevlar">
       <HintPath>$(KevlarDll)</HintPath>
     </Reference>
