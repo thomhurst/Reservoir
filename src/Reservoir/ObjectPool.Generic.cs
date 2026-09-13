@@ -166,31 +166,25 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     internal T RentWithoutLifecycle()
     {
         StripedObjectStore<T>? largeStore = _largeStore;
-        int startIndex = 0;
-        T? item;
-
-        if (largeStore is null)
+        if (largeStore is not null)
         {
-            startIndex = GetStartIndex();
-            ref T? startSlot = ref GetSlot(startIndex);
-            T? observed = Volatile.Read(ref startSlot);
-            // A failed CAS is a permitted pool miss; RentSlow scans the remaining slots.
-            item = observed is not null
-                && ReferenceEquals(
-                    Interlocked.CompareExchange(ref startSlot, null, observed),
-                    observed)
-                ? observed
-                : null;
-        }
-        else
-        {
-            _ = largeStore.TryPop(out item);
+            _ = largeStore.TryPop(out T? item);
+            return item ?? CreateItem();
         }
 
-        return item
-            ?? (largeStore is null
-                ? RentSlow(startIndex)
-                : CreateItem());
+        int startIndex = GetStartIndex();
+        ref T? startSlot = ref GetSlot(startIndex);
+        T? observed = Volatile.Read(ref startSlot);
+        // A failed CAS is a permitted pool miss; RentSlow scans the remaining slots.
+        if (observed is not null
+            && ReferenceEquals(
+                Interlocked.CompareExchange(ref startSlot, null, observed),
+                observed))
+        {
+            return observed;
+        }
+
+        return RentSlow(startIndex);
     }
 
     /// <summary>

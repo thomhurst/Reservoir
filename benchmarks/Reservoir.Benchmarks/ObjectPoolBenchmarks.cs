@@ -71,6 +71,10 @@ public class ObjectPoolBenchmarks
         public Payload Create() => new();
 
         public bool TryReset(Payload obj) => true;
+
+        public void Destroy(Payload obj)
+        {
+        }
     }
 
     public readonly struct NonThrowingPayloadPolicy
@@ -79,5 +83,9 @@ public class ObjectPoolBenchmarks
         public Payload Create() => new();
 
         public bool TryReset(Payload obj) => true;
+
+        public void Destroy(Payload obj)
+        {
+        }
     }
 }
