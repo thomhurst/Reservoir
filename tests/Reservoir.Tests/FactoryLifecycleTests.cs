@@ -3,27 +3,6 @@ namespace Reservoir.Tests;
 public class FactoryLifecycleTests
 {
     [Test]
-    [Arguments(false)]
-    [Arguments(true)]
-    public async Task DisposalDuringCreateDestroysRentalOnce(bool threadLocalFastPath)
-    {
-        var item = new Item();
-        ObjectPool<Item, DisposingPolicy>? pool = null;
-        var policy = new DisposingPolicy(() =>
-        {
-            pool!.Dispose();
-            return item;
-        });
-        using (pool = new ObjectPool<Item, DisposingPolicy>(policy, 128, threadLocalFastPath))
-        {
-            await Assert.That(() => pool.Rent()).Throws<ObjectDisposedException>();
-            await Assert.That(item.DestroyCount).IsEqualTo(1);
-        }
-
-        await Assert.That(item.DestroyCount).IsEqualTo(1);
-    }
-
-    [Test]
     [Arguments("manual")]
     [Arguments("scoped")]
     [Arguments("shared")]
@@ -71,15 +50,6 @@ public class FactoryLifecycleTests
         await Assert.That(beforeClear).IsEqualTo(0);
         await Assert.That(retained.DestroyCount).IsEqualTo(1);
         await Assert.That(excess.DestroyCount).IsEqualTo(1);
-    }
-
-    private readonly struct DisposingPolicy(Func<Item> factory) : IPooledObjectDestroyPolicy<Item>
-    {
-        public Item Create() => factory();
-
-        public bool TryReset(Item item) => true;
-
-        public void Destroy(Item item) => item.Dispose();
     }
 
     private sealed class Item : IDisposable

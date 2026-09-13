@@ -144,12 +144,14 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Rent()
     {
+        if (_threadLocalFastPath)
+        {
+            return RentScopedValue(out _);
+        }
+
         ThrowIfDisposed();
 
-        // Both default rents and TLS misses use the same shared-store path. Keep the
-        // lifecycle checks around either source without duplicating the shared lookup.
-        T rented = (_threadLocalFastPath ? _scopedTier.TryRent(out _) : null)
-            ?? RentWithoutLifecycle();
+        T rented = RentWithoutLifecycle();
 
         if (Volatile.Read(ref _isDisposed) == 0)
         {
@@ -464,13 +466,18 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             }
             catch (Exception destroyException)
             {
-                throw new AggregateException(
-                    "Reset and destruction both failed.", resetException, destroyException);
+                throw CreateResetDestroyException(resetException, destroyException);
             }
 
             throw;
         }
     }
+
+    // Exception construction needs scratch registers even when the handler never runs.
+    // Keep those allocations out of the guarded reset method's normal stack frame.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static AggregateException CreateResetDestroyException(Exception resetException, Exception destroyException)
+        => new("Reset and destruction both failed.", resetException, destroyException);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void ReturnWithoutReset(T obj)

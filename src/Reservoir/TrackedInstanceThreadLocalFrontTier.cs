@@ -36,12 +36,6 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal T Rent<TPolicy>(ObjectPool<T, TPolicy> fallback, out Slot slot)
         where TPolicy : struct, IPooledObjectPolicy<T>
-        => TryRent(out slot) ?? fallback.RentWithoutLifecycle();
-
-    // Manual Rent can join its existing shared-store path on a TLS miss, rather than
-    // inlining a second copy of that path through this tier.
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal T? TryRent(out Slot slot)
     {
         slot = GetSlot();
         // The take must be exclusive against a concurrent Clear or Dispose, which would
@@ -95,7 +89,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             slot.Rents = true;
         }
 
-        return null;
+        return fallback.RentWithoutLifecycle();
     }
 
 #if NETCOREAPP3_0_OR_GREATER
