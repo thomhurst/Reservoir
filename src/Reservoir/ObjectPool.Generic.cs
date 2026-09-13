@@ -598,10 +598,16 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             }
         }
 
+        CompleteFullReturn(ref items[startSlot].Element, returned, displaced);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void CompleteFullReturn(ref T? homeSlot, T returned, T displaced)
+    {
         // Preserve full-pool semantics: discard the newly returned object when
         // it has not already been rented or displaced by another thread.
         T? observed = Interlocked.CompareExchange(
-            ref items[startSlot].Element,
+            ref homeSlot,
             displaced,
             returned);
         DisposeItem(ReferenceEquals(observed, returned) ? returned : displaced);
