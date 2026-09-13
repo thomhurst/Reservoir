@@ -17,9 +17,14 @@ internal static class RuntimeCompatibility
     private static readonly string[] s_backingArrayFieldNames =
         ["_buckets", "buckets", "m_buckets", "_array"];
 
-    internal static Func<TCollection, int, int>? CreateEnsureCapacity<TCollection>()
+    internal static Func<TCollection, int, int>? CreateEnsureCapacityFallback<TCollection>()
         where TCollection : class
     {
+        if (FindCapacityGetter<TCollection>() is not null)
+        {
+            return null;
+        }
+
         MethodInfo? method = typeof(TCollection).GetMethod(
             "EnsureCapacity",
             [typeof(int)]);
@@ -29,6 +34,25 @@ internal static class RuntimeCompatibility
             : (Func<TCollection, int, int>)Delegate.CreateDelegate(
                 typeof(Func<TCollection, int, int>),
                 method);
+    }
+
+    internal static Func<TCollection, int>? CreateCapacityGetter<TCollection>()
+        where TCollection : class
+    {
+        MethodInfo? getter = FindCapacityGetter<TCollection>();
+        return getter is null
+            ? CreateBackingArrayLengthGetter<TCollection>()
+            : (Func<TCollection, int>)Delegate.CreateDelegate(typeof(Func<TCollection, int>), getter);
+    }
+
+    private static MethodInfo? FindCapacityGetter<TCollection>()
+        where TCollection : class
+    {
+        MethodInfo? getter = typeof(TCollection).GetProperty("Capacity")?.GetGetMethod();
+        return getter is not null && !getter.IsStatic && getter.ReturnType == typeof(int)
+            && getter.GetParameters().Length == 0
+            ? getter
+            : null;
     }
 
     /// <summary>
@@ -74,29 +98,28 @@ internal static class RuntimeCompatibility
 }
 
 /// <summary>
-/// Reports a collection's current capacity on runtimes that predate the public
-/// <c>EnsureCapacity</c> methods, so the pools can bound retention there instead of discarding or
-/// trimming every returned collection.
+/// Reports a collection's current capacity through a public getter when available, then
+/// EnsureCapacity(0), then a known backing array, so portable pools can bound retention.
 /// </summary>
 internal static class CollectionCapacity<TCollection>
     where TCollection : class
 {
     private static readonly Func<TCollection, int, int>? s_ensureCapacity
-        = RuntimeCompatibility.CreateEnsureCapacity<TCollection>();
+        = RuntimeCompatibility.CreateEnsureCapacityFallback<TCollection>();
 
-    private static readonly Func<TCollection, int>? s_backingArrayLength
+    private static readonly Func<TCollection, int>? s_capacity
         = s_ensureCapacity is null
-            ? RuntimeCompatibility.CreateBackingArrayLengthGetter<TCollection>()
+            ? RuntimeCompatibility.CreateCapacityGetter<TCollection>()
             : null;
 
     /// <summary>Gets whether the capacity can be read on this runtime.</summary>
     internal static bool IsAvailable
-        => s_ensureCapacity is not null || s_backingArrayLength is not null;
+        => s_ensureCapacity is not null || s_capacity is not null;
 
     /// <summary>Gets the current capacity; requires <see cref="IsAvailable"/>.</summary>
     internal static int Get(TCollection collection)
         => s_ensureCapacity is not null
             ? s_ensureCapacity(collection, 0)
-            : s_backingArrayLength!(collection);
+            : s_capacity!(collection);
 }
 #endif
