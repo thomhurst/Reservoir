@@ -581,7 +581,8 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     {
         ObjectWrapper[] items = _items;
         int startSlot = FirstSlotOffset + startIndex * CacheLineSlotStride;
-        for (int index = startSlot + CacheLineSlotStride; index < items.Length; index += CacheLineSlotStride)
+        // Small-store indices cannot overflow; an unsigned native bound also proves the array index nonnegative.
+        for (nint index = startSlot + CacheLineSlotStride; (nuint)index < (nuint)items.Length; index += CacheLineSlotStride)
         {
             // Occupied slots cost a shared read, preserving read-before-CAS under contention.
             ref T? slot = ref items[index].Element;
