@@ -148,18 +148,15 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
         // Both default rents and TLS misses use the same shared-store path. Keep the
         // lifecycle checks around either source without duplicating the shared lookup.
-        T? rented;
-        if (!_threadLocalFastPath || !_scopedTier.TryRent(out _, out rented))
-        {
-            rented = RentWithoutLifecycle();
-        }
+        T rented = (_threadLocalFastPath ? _scopedTier.TryRent(out _) : null)
+            ?? RentWithoutLifecycle();
 
         if (Volatile.Read(ref _isDisposed) == 0)
         {
-            return rented!;
+            return rented;
         }
 
-        DisposeItem(rented!);
+        DisposeItem(rented);
         return ThrowDisposed();
     }
 

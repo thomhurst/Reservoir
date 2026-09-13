@@ -36,17 +36,18 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal T Rent<TPolicy>(ObjectPool<T, TPolicy> fallback, out Slot slot)
         where TPolicy : struct, IPooledObjectPolicy<T>
-        => TryRent(out slot, out T? item) ? item! : fallback.RentWithoutLifecycle();
+        => TryRent(out slot) ?? fallback.RentWithoutLifecycle();
 
     // Manual Rent can join its existing shared-store path on a TLS miss, rather than
     // inlining a second copy of that path through this tier.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryRent(out Slot slot, out T? item)
+    internal T? TryRent(out Slot slot)
     {
         slot = GetSlot();
         // The take must be exclusive against a concurrent Clear or Dispose, which would
         // otherwise destroy the item after a plain read observed it. The cheap read first keeps
         // empty slots off both protected paths.
+        T? item;
 #if NETCOREAPP3_0_OR_GREATER
         if (s_asymmetricClear)
         {
@@ -65,7 +66,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
                 if ((Volatile.Read(ref slot.Gate) == gate && (gate & 1) == 0)
                     || (item = ReconcileRacedTake(slot, item!)) is not null)
                 {
-                    return true;
+                    return item;
                 }
             }
         }
@@ -75,7 +76,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             if (item is not null
                 && (item = Interlocked.Exchange(ref slot.Item, null)) is not null)
             {
-                return true;
+                return item;
             }
         }
 #else
@@ -83,7 +84,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         if (item is not null
             && (item = Interlocked.Exchange(ref slot.Item, null)) is not null)
         {
-            return true;
+            return item;
         }
 #endif
 
@@ -94,8 +95,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             slot.Rents = true;
         }
 
-        item = null;
-        return false;
+        return null;
     }
 
 #if NETCOREAPP3_0_OR_GREATER
