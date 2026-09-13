@@ -8,7 +8,7 @@ public class TrackedClearAllocationBenchmarks
     private ObjectPool<Payload, Policy>? _pool;
     private BenchmarkWorkerGroup? _workers;
 
-    [Params(1, 4, 8, 9, 16)]
+    [Params(8)]
     public int WorkerCount { get; set; }
 
     [GlobalSetup]
