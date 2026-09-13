@@ -36,12 +36,17 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal T Rent<TPolicy>(ObjectPool<T, TPolicy> fallback, out Slot slot)
         where TPolicy : struct, IPooledObjectPolicy<T>
+        => TryRent(out slot, out T? item) ? item! : fallback.RentWithoutLifecycle();
+
+    // Manual Rent can join its existing shared-store path on a TLS miss, rather than
+    // inlining a second copy of that path through this tier.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryRent(out Slot slot, out T? item)
     {
         slot = GetSlot();
         // The take must be exclusive against a concurrent Clear or Dispose, which would
         // otherwise destroy the item after a plain read observed it. The cheap read first keeps
         // empty slots off both protected paths.
-        T? item;
 #if NETCOREAPP3_0_OR_GREATER
         if (s_asymmetricClear)
         {
@@ -60,7 +65,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
                 if ((Volatile.Read(ref slot.Gate) == gate && (gate & 1) == 0)
                     || (item = ReconcileRacedTake(slot, item!)) is not null)
                 {
-                    return item;
+                    return true;
                 }
             }
         }
@@ -70,7 +75,7 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             if (item is not null
                 && (item = Interlocked.Exchange(ref slot.Item, null)) is not null)
             {
-                return item;
+                return true;
             }
         }
 #else
@@ -78,19 +83,10 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
         if (item is not null
             && (item = Interlocked.Exchange(ref slot.Item, null)) is not null)
         {
-            return item;
+            return true;
         }
 #endif
 
-        return RentFallback(fallback, slot);
-    }
-
-    // Keep the shared-store scan out of callers that inline the thread-local hit path.
-    // In particular, manual Rent already has its own shared path when TLS is disabled.
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static T RentFallback<TPolicy>(ObjectPool<T, TPolicy> fallback, Slot slot)
-        where TPolicy : struct, IPooledObjectPolicy<T>
-    {
         // A hit proves a prior return stored here, which the Rents gate already allowed, so
         // the flag only needs to be raised on the miss path; the hit path stays write-free.
         if (!slot.Rents)
@@ -98,7 +94,8 @@ internal struct TrackedInstanceThreadLocalFrontTier<T>
             slot.Rents = true;
         }
 
-        return fallback.RentWithoutLifecycle();
+        item = null;
+        return false;
     }
 
 #if NETCOREAPP3_0_OR_GREATER

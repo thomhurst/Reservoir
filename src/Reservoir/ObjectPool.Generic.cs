@@ -144,21 +144,22 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Rent()
     {
-        if (_threadLocalFastPath)
-        {
-            return RentScopedValue(out _);
-        }
-
         ThrowIfDisposed();
 
-        T rented = RentWithoutLifecycle();
+        // Both default rents and TLS misses use the same shared-store path. Keep the
+        // lifecycle checks around either source without duplicating the shared lookup.
+        T? rented;
+        if (!_threadLocalFastPath || !_scopedTier.TryRent(out _, out rented))
+        {
+            rented = RentWithoutLifecycle();
+        }
 
         if (Volatile.Read(ref _isDisposed) == 0)
         {
-            return rented;
+            return rented!;
         }
 
-        DisposeItem(rented);
+        DisposeItem(rented!);
         return ThrowDisposed();
     }
 
