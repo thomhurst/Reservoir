@@ -67,7 +67,9 @@ public class SmallPoolAffinityCacheTests
                     : (int)(((ulong)mixed * (uint)capacity) >> 32);
                 var slots = (Array)items.GetValue(pool)!;
                 object slot = slots.GetValue(8 + expectedHome * 8)!;
-                object? retained = slot.GetType().GetField("Element")!.GetValue(slot);
+                object? retained = slot.GetType()
+                    .GetField("Element", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .GetValue(slot);
                 if (!ReferenceEquals(retained, item))
                 {
                     return false;
