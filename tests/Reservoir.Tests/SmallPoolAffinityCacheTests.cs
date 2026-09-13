@@ -36,7 +36,7 @@ public class SmallPoolAffinityCacheTests
     {
         Type poolType = typeof(ObjectPool<Item, Policy>);
         FieldInfo counter = poolType.GetField("s_nextThreadStripe", BindingFlags.NonPublic | BindingFlags.Static)!;
-        FieldInfo hash = poolType.GetField("_threadStripeHash", BindingFlags.NonPublic | BindingFlags.Static)!;
+        FieldInfo hash = poolType.GetField("_threadStripeState", BindingFlags.NonPublic | BindingFlags.Static)!;
         FieldInfo items = poolType.GetField("_items", BindingFlags.NonPublic | BindingFlags.Instance)!;
         object? previousCounter = counter.GetValue(null);
         object? previousHash = hash.GetValue(null);
@@ -51,10 +51,10 @@ public class SmallPoolAffinityCacheTests
             foreach (int capacity in new[] { 1, 3, 31, 32, 63, 64 })
             {
                 counter.SetValue(null, seed);
-                hash.SetValue(null, 0u);
+                hash.SetValue(null, 0UL);
                 using var pool = new ObjectPool<Item, Policy>(capacity);
                 Item item = pool.Rent();
-                uint cached = (uint)hash.GetValue(null)!;
+                ulong cached = (ulong)hash.GetValue(null)!;
                 if (cached == 0 || (int)counter.GetValue(null)! != next)
                 {
                     return false;
@@ -81,7 +81,7 @@ public class SmallPoolAffinityCacheTests
                 Item otherItem = other.Rent();
                 other.Return(otherItem);
                 if (!ReferenceEquals(pool.Rent(), item)
-                    || (uint)hash.GetValue(null)! != cached
+                    || (ulong)hash.GetValue(null)! != cached
                     || (int)counter.GetValue(null)! != next)
                 {
                     return false;

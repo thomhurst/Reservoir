@@ -35,7 +35,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
     // Cache only scalar affinity; retained objects remain enumerable in the shared array.
     [ThreadStatic]
-    private static uint _threadStripeHash;
+    private static ulong _threadStripeState;
 
     private static int s_nextThreadStripe;
 
@@ -614,24 +614,31 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int GetStartIndex()
     {
-        uint threadStripeHash = _threadStripeHash;
-        if (threadStripeHash == 0)
+        ulong state = _threadStripeState;
+        if (state == 0)
         {
-            int threadStripe;
-            do
-            {
-                threadStripe = Interlocked.Increment(ref s_nextThreadStripe);
-            }
-            while (threadStripe == 0);
-
-            // The odd multiplier maps every nonzero ordinal to a nonzero hash, so zero
-            // remains the uninitialized sentinel even after the counter wraps.
-            threadStripeHash = unchecked((uint)threadStripe * StripeHashMultiplier);
-            _threadStripeHash = threadStripeHash;
+            state = InitializeThreadStripeState();
         }
 
-        // Recover the original zero-based hash without multiplying on every rent/return.
-        return GetIndexFromHash(unchecked(threadStripeHash - StripeHashMultiplier));
+        return GetIndexFromHash(unchecked((uint)state));
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ulong InitializeThreadStripeState()
+    {
+        int threadStripe;
+        do
+        {
+            threadStripe = Interlocked.Increment(ref s_nextThreadStripe);
+        }
+        while (threadStripe == 0);
+
+        // The high word distinguishes an initialized zero hash from an unused thread.
+        // Only the owning thread reads or writes this thread-static state.
+        uint hash = unchecked((uint)(threadStripe - 1) * StripeHashMultiplier);
+        ulong state = (1UL << 32) | hash;
+        _threadStripeState = state;
+        return state;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

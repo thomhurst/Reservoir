@@ -37,7 +37,9 @@ public class ObjectPoolCollisionBenchmarks
         }
 
         FieldInfo affinity = typeof(ObjectPool<Payload, Policy>)
-            .GetField("_threadStripeHash", BindingFlags.NonPublic | BindingFlags.Static)
+            .GetField("_threadStripeState", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? typeof(ObjectPool<Payload, Policy>)
+                .GetField("_threadStripeHash", BindingFlags.NonPublic | BindingFlags.Static)
             ?? typeof(ObjectPool<Payload, Policy>)
                 .GetField("_threadStripe", BindingFlags.NonPublic | BindingFlags.Static)!;
         var initialized = new bool[WorkerCount];
@@ -48,7 +50,11 @@ public class ObjectPoolCollisionBenchmarks
             {
                 int ordinal = CollidingAffinity ? 1 : worker + 1;
                 // Keep the candidate benchmark overlay compatible with baseline libraries.
-                if (affinity.FieldType == typeof(uint))
+                if (affinity.FieldType == typeof(ulong))
+                {
+                    affinity.SetValue(null, (1UL << 32) | unchecked((uint)(ordinal - 1) * 2_654_435_769u));
+                }
+                else if (affinity.FieldType == typeof(uint))
                 {
                     affinity.SetValue(null, unchecked((uint)ordinal * 2_654_435_769u));
                 }

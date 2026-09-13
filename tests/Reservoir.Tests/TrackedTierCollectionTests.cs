@@ -31,6 +31,26 @@ public class TrackedTierCollectionTests
     }
 
     [Test]
+    [Arguments(1)]
+    [Arguments(8)]
+    [Arguments(9)]
+    public async Task CapturedItemsAreCollectibleAfterCleanupThrows(int workerCount)
+    {
+        var state = new State { Failure = new InvalidOperationException("Cleanup failed.") };
+        using var pool = new ObjectPool<Item, Policy>(new Policy(state), 1);
+        var items = new WeakReference<Item>[workerCount];
+        await ConcurrentTestWorkers.RunAsync(Enumerable.Range(0, workerCount)
+            .Select<int, Action<CancellationToken>>(index => _ => items[index] = Seed(pool, scoped: true)));
+
+        await Assert.That(() => pool.Clear()).Throws<InvalidOperationException>();
+
+        bool alive = items.Any(CollectAndCheck);
+        GC.KeepAlive(pool);
+        await Assert.That(state.Destroyed).IsEqualTo(workerCount);
+        await Assert.That(alive).IsFalse();
+    }
+
+    [Test]
     [Arguments(false)]
     [Arguments(true)]
     public async Task DestroyedScopedSourcesAreCollectibleWhilePoolRemainsAlive(bool dispose)
@@ -250,12 +270,20 @@ public class TrackedTierCollectionTests
     private sealed class State
     {
         internal int Destroyed;
+        internal Exception? Failure;
     }
 
     private readonly struct Policy(State state) : IPooledObjectDestroyPolicy<Item>
     {
         public Item Create() => new();
         public bool TryReset(Item item) => true;
-        public void Destroy(Item item) => Interlocked.Increment(ref state.Destroyed);
+        public void Destroy(Item item)
+        {
+            Interlocked.Increment(ref state.Destroyed);
+            if (state.Failure is { } failure)
+            {
+                throw failure;
+            }
+        }
     }
 }
