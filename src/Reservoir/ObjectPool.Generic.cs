@@ -598,6 +598,12 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             }
         }
 
+        CompleteFullReturn(returned, displaced, startIndex);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void CompleteFullReturn(T returned, T displaced, int startIndex)
+    {
         // Preserve full-pool semantics: discard the newly returned object when
         // it has not already been rented or displaced by another thread.
         T? observed = Interlocked.CompareExchange(
