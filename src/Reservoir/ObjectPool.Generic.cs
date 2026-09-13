@@ -392,7 +392,14 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private T CreateItem()
         => _policy.Create()
-            ?? throw new InvalidOperationException("The pool policy returned null from Create().");
+            ?? ThrowNullCreatedItem();
+
+#if NET5_0_OR_GREATER
+    [DoesNotReturn]
+#endif
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T ThrowNullCreatedItem()
+        => throw new InvalidOperationException("The pool policy returned null from Create().");
 
     /// <summary>Resets and returns an object. Objects exceeding capacity are discarded.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
