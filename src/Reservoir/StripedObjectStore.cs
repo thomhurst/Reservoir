@@ -139,7 +139,8 @@ internal sealed class StripedObjectStore<T>
 
     private static bool TryPop(Stripe stripe, out T? item)
     {
-        if (!TryTakeNode(ref stripe.AvailableHead, stripe.Nodes, out int nodeIndex))
+        int nodeIndex = TakeNode(ref stripe.AvailableHead, stripe.Nodes);
+        if (nodeIndex == EmptyIndex)
         {
             item = null;
             return false;
@@ -154,7 +155,8 @@ internal sealed class StripedObjectStore<T>
 
     private static bool TryPush(Stripe stripe, T item)
     {
-        if (!TryTakeNode(ref stripe.FreeHead, stripe.Nodes, out int nodeIndex))
+        int nodeIndex = TakeNode(ref stripe.FreeHead, stripe.Nodes);
+        if (nodeIndex == EmptyIndex)
         {
             return false;
         }
@@ -164,22 +166,22 @@ internal sealed class StripedObjectStore<T>
         return true;
     }
 
-    private static bool TryTakeNode(ref long head, Node[] nodes, out int nodeIndex)
+    private static int TakeNode(ref long head, Node[] nodes)
     {
         while (true)
         {
             long observedHead = Volatile.Read(ref head);
-            nodeIndex = GetIndex(observedHead);
+            int nodeIndex = GetIndex(observedHead);
             if (nodeIndex == EmptyIndex)
             {
-                return false;
+                return EmptyIndex;
             }
 
             int nextIndex = Volatile.Read(ref nodes[nodeIndex].Next);
             long updatedHead = NextHead(observedHead, nextIndex);
             if (Interlocked.CompareExchange(ref head, updatedHead, observedHead) == observedHead)
             {
-                return true;
+                return nodeIndex;
             }
         }
     }
