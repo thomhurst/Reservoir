@@ -24,6 +24,7 @@ ref struct PooledLease<T, TPolicy>
     private readonly TrackedInstanceThreadLocalFrontTier<T>.Slot? _slot;
     private ScopedPoolLease<T> _lease;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal PooledLease(
         ObjectPool<T, TPolicy> pool,
         T value,
@@ -61,6 +62,7 @@ ref struct PooledLease<T>
     private readonly TrackedInstanceThreadLocalFrontTier<T>.Slot? _slot;
     private ScopedPoolLease<T> _lease;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal PooledLease(
         ObjectPool<T, ObjectPool<T>.PolicyAdapter> pool,
         T value,
