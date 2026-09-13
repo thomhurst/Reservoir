@@ -42,6 +42,8 @@ public class ObjectPoolCapacityScalingBenchmarks
         public Payload Create() => new();
 
         public bool TryReset(Payload obj) => true;
+
+        public void Destroy(Payload obj) { }
     }
 
     public readonly struct SingletonPolicy : IPooledObjectPolicy<Payload>
@@ -51,6 +53,8 @@ public class ObjectPoolCapacityScalingBenchmarks
         public Payload Create() => Singleton;
 
         public bool TryReset(Payload obj) => true;
+
+        public void Destroy(Payload obj) { }
     }
 }
 
@@ -103,6 +107,8 @@ public class ObjectPoolBurstBenchmarks
         public Payload Create() => new();
 
         public bool TryReset(Payload obj) => true;
+
+        public void Destroy(Payload obj) { }
     }
 }
 
