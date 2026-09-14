@@ -35,7 +35,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.401
 
       - name: Verify ARM64 runner
         if: matrix.os == 'ubuntu-24.04-arm'
