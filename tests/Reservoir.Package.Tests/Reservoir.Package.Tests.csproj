@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="Reservoir" Version="$(ReservoirPackageVersion)" />
-    <PackageReference Include="TUnit" Version="1.69.16" />
+    <PackageReference Include="TUnit" Version="1.69.21" />
     <!-- Reference the already compiled netstandard consumer, never rebuild it for the host. -->
     <Reference Include="Reservoir.Package.Consumer">
       <HintPath>$(_PrecompiledConsumerPath)</HintPath>
