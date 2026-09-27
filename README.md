@@ -140,10 +140,10 @@ BenchmarkDotNet 0.15.8 `.NET 10.0`, .NET 10.0.12, Linux Ubuntu 24.04.5 LTS, AMD 
 
 | Method | Mean | Ratio | Allocated |
 | --- | ---: | ---: | ---: |
-| `new` | 28.81 ns | 1.00 | 304 B |
-| **Reservoir** | **22.60 ns** | **0.78** | **0 B** |
-| `Microsoft.Extensions.ObjectPool` | 14.71 ns | 0.51 | 0 B |
-| `ConcurrentBag<T>` pool | 36.37 ns | 1.26 | 0 B |
+| `new` | 22.96 ns | 1.00 | 304 B |
+| **Reservoir** | **22.70 ns** | **0.99** | **0 B** |
+| `Microsoft.Extensions.ObjectPool` | 14.76 ns | 0.64 | 0 B |
+| `ConcurrentBag<T>` pool | 36.44 ns | 1.59 | 0 B |
 <!-- BENCHMARK_RESULTS_END -->
 
 Allocation measurements apply to the published workloads and their recorded runtime and job. Timings vary by machine; compare methods within the same run.
