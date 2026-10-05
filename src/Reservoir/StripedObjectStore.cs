@@ -15,7 +15,6 @@ namespace Reservoir;
 internal sealed class StripedObjectStore<T>
     where T : class
 {
-    private const int EmptyIndex = -1;
     private const int MaximumStripeCount = 32;
     private const int MinimumSlotsPerStripe = 8;
 
@@ -137,63 +136,78 @@ internal sealed class StripedObjectStore<T>
         return false;
     }
 
+    // Each stripe is a bounded MPMC ring (Vyukov): a per-cell sequence number tells a claimant
+    // whether the cell is ready, so a pop or push owns its cell after a single head or tail CAS.
     private static bool TryPop(Stripe stripe, out T? item)
     {
-        if (!TryTakeNode(ref stripe.AvailableHead, stripe.Nodes, out int nodeIndex))
+        Cell[] cells = stripe.Cells;
+        long position = Volatile.Read(ref stripe.Head);
+        while (true)
         {
-            item = null;
-            return false;
-        }
+            ref Cell cell = ref cells[(int)position & stripe.Mask];
+            long difference = Volatile.Read(ref cell.Sequence) - (position + 1);
+            if (difference == 0)
+            {
+                long observed = Interlocked.CompareExchange(ref stripe.Head, position + 1, position);
+                if (observed == position)
+                {
+                    // Winning the head CAS owns this cell until its sequence is republished.
+                    item = cell.Item;
+                    cell.Item = null;
+                    Volatile.Write(ref cell.Sequence, position + cells.Length);
+                    return item is not null;
+                }
 
-        // Winning the available-head CAS owns this node until free-head publication.
-        item = stripe.Nodes[nodeIndex].Item;
-        stripe.Nodes[nodeIndex].Item = null;
-        PublishNode(ref stripe.FreeHead, stripe.Nodes, nodeIndex);
-        return item is not null;
+                position = observed;
+            }
+            else if (difference < 0)
+            {
+                // Empty, or the next cell is still being published by its pusher.
+                item = null;
+                return false;
+            }
+            else
+            {
+                position = Volatile.Read(ref stripe.Head);
+            }
+        }
     }
 
     private static bool TryPush(Stripe stripe, T item)
     {
-        if (!TryTakeNode(ref stripe.FreeHead, stripe.Nodes, out int nodeIndex))
-        {
-            return false;
-        }
-
-        Volatile.Write(ref stripe.Nodes[nodeIndex].Item, item);
-        PublishNode(ref stripe.AvailableHead, stripe.Nodes, nodeIndex);
-        return true;
-    }
-
-    private static bool TryTakeNode(ref long head, Node[] nodes, out int nodeIndex)
-    {
+        Cell[] cells = stripe.Cells;
+        long position = Volatile.Read(ref stripe.Tail);
         while (true)
         {
-            long observedHead = Volatile.Read(ref head);
-            nodeIndex = GetIndex(observedHead);
-            if (nodeIndex == EmptyIndex)
+            // The ring rounds up to a power of two; the head read after the tail can only
+            // overstate occupancy, so the exact capacity is never exceeded.
+            if (position - Volatile.Read(ref stripe.Head) >= stripe.Capacity)
             {
                 return false;
             }
 
-            int nextIndex = Volatile.Read(ref nodes[nodeIndex].Next);
-            long updatedHead = NextHead(observedHead, nextIndex);
-            if (Interlocked.CompareExchange(ref head, updatedHead, observedHead) == observedHead)
+            ref Cell cell = ref cells[(int)position & stripe.Mask];
+            long difference = Volatile.Read(ref cell.Sequence) - position;
+            if (difference == 0)
             {
-                return true;
-            }
-        }
-    }
+                long observed = Interlocked.CompareExchange(ref stripe.Tail, position + 1, position);
+                if (observed == position)
+                {
+                    cell.Item = item;
+                    Volatile.Write(ref cell.Sequence, position + 1);
+                    return true;
+                }
 
-    private static void PublishNode(ref long head, Node[] nodes, int nodeIndex)
-    {
-        while (true)
-        {
-            long observedHead = Volatile.Read(ref head);
-            Volatile.Write(ref nodes[nodeIndex].Next, GetIndex(observedHead));
-            long updatedHead = NextHead(observedHead, nodeIndex);
-            if (Interlocked.CompareExchange(ref head, updatedHead, observedHead) == observedHead)
+                position = observed;
+            }
+            else if (difference < 0)
             {
-                return;
+                // Full, or the cell is still being released by its popper.
+                return false;
+            }
+            else
+            {
+                position = Volatile.Read(ref stripe.Tail);
             }
         }
     }
@@ -244,35 +258,33 @@ internal sealed class StripedObjectStore<T>
     private static uint FastMod(uint value, uint divisor, ulong multiplier)
         => (uint)(((((multiplier * value) >> 32) + 1) * divisor) >> 32);
 
-    private static long PackHead(int version, int index)
-        => ((long)version << 32) | (uint)index;
-
-    private static long NextHead(long observedHead, int index)
-        => PackHead(unchecked((int)(observedHead >> 32) + 1), index);
-
-    private static int GetIndex(long head) => (int)head;
-
     // A stripe is the unit of contention, so its hot fields get their own cache lines through the
     // base-class leading pad and the allocated subclass's trailing pad; see CacheLinePadded.
     private class Stripe : CacheLinePadded
     {
-        internal readonly Node[] Nodes;
-        internal long AvailableHead;
-        internal long FreeHead;
+        internal readonly Cell[] Cells;
+        internal readonly int Mask;
+        internal readonly int Capacity;
+        internal long Head;
+        internal long Tail;
         internal T? FastItem;
 
         internal Stripe(int capacity)
         {
-            // The directly exchanged item replaces one node in the exact capacity.
-            Nodes = new Node[capacity - 1];
-
-            for (int i = 0; i < Nodes.Length; i++)
+            // The directly exchanged item replaces one ring cell in the exact capacity.
+            Capacity = capacity - 1;
+            int length = 1;
+            while (length < Capacity)
             {
-                Nodes[i].Next = i + 1 < Nodes.Length ? i + 1 : EmptyIndex;
+                length <<= 1;
             }
 
-            AvailableHead = PackHead(0, EmptyIndex);
-            FreeHead = PackHead(0, 0);
+            Cells = new Cell[length];
+            Mask = length - 1;
+            for (int i = 0; i < Cells.Length; i++)
+            {
+                Cells[i].Sequence = i;
+            }
         }
     }
 
@@ -288,9 +300,9 @@ internal sealed class StripedObjectStore<T>
         }
     }
 
-    private struct Node
+    private struct Cell
     {
         internal T? Item;
-        internal int Next;
+        internal long Sequence;
     }
 }
