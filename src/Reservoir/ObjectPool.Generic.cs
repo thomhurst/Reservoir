@@ -37,13 +37,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [ThreadStatic]
     private static int _threadStripe;
 
-    // Physical index of this thread's last slow-path hit, shared by every pool of this type. Slow
-    // returns fill upward from it and slow rents drain downward from it, so a burst that rents
-    // or returns many objects in a row probes O(1) slots instead of rescanning from home. It only
-    // orders the scan: a stale or out-of-range value still leads to a full scan.
-    [ThreadStatic]
-    private static int _scanCursor;
-
     private static int s_nextThreadStripe;
 
     private readonly ObjectWrapper[] _items;
@@ -364,6 +357,9 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private T RentSlow(int startIndex)
     {
         ObjectWrapper[] items = _items;
+        // SmallPoolScanCursor holds the physical index of this thread's last slow-path hit. Slow
+        // returns fill upward from it and slow rents drain downward from it, so a burst that rents
+        // or returns many objects in a row probes O(1) slots instead of rescanning from home.
         int begin = GetScanCursor(items, startIndex, -CacheLineSlotStride);
         // Scan downward in two contiguous ranges, from the cursor to the first slot and then
         // from the last slot back to the cursor, so wrap arithmetic stays off empty slots.
@@ -376,7 +372,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
                     Interlocked.CompareExchange(ref slot, null, item),
                     item))
             {
-                _scanCursor = index;
+                SmallPoolScanCursor.Value = index;
                 return item;
             }
         }
@@ -390,7 +386,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
                     Interlocked.CompareExchange(ref slot, null, item),
                     item))
             {
-                _scanCursor = index;
+                SmallPoolScanCursor.Value = index;
                 return item;
             }
         }
@@ -634,7 +630,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             if (Volatile.Read(ref slot) is null
                 && Interlocked.CompareExchange(ref slot, displaced, null) is null)
             {
-                _scanCursor = index;
+                SmallPoolScanCursor.Value = index;
                 return;
             }
         }
@@ -645,7 +641,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             if (Volatile.Read(ref slot) is null
                 && Interlocked.CompareExchange(ref slot, displaced, null) is null)
             {
-                _scanCursor = index;
+                SmallPoolScanCursor.Value = index;
                 return;
             }
         }
@@ -682,7 +678,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int GetScanCursor(ObjectWrapper[] items, int startIndex, int step)
     {
-        int cursor = _scanCursor;
+        int cursor = SmallPoolScanCursor.Value;
         if (cursor >= FirstSlotOffset && cursor < items.Length)
         {
             return cursor;

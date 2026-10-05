@@ -30,11 +30,9 @@ public class SmallPoolScanTests
     [Arguments(32)]
     public async Task AnyScanCursorRetainsAndDrainsExactCapacity(int capacity)
     {
-        // The cursor is shared by every pool of a type, so it can hold a slot of a larger pool,
+        // The cursor is shared by every small pool, so it can hold a slot of a larger pool,
         // a slot of this one, or the unset value; each must still scan every retained slot.
-        FieldInfo cursor = typeof(ObjectPool<Item, Policy>)
-            .GetField("_scanCursor", BindingFlags.NonPublic | BindingFlags.Static)!;
-        object? previous = cursor.GetValue(null);
+        int previous = SmallPoolScanCursor.Value;
         int destroyed = 0;
         int cursors = 0;
         try
@@ -43,7 +41,7 @@ public class SmallPoolScanTests
             {
                 for (int home = 0; home < capacity; home++)
                 {
-                    cursor.SetValue(null, value);
+                    SmallPoolScanCursor.Value = value;
                     destroyed += VerifyHomeSlot(capacity, home);
                 }
 
@@ -52,7 +50,7 @@ public class SmallPoolScanTests
         }
         finally
         {
-            cursor.SetValue(null, previous);
+            SmallPoolScanCursor.Value = previous;
         }
 
         await Assert.That(destroyed).IsEqualTo(cursors * capacity * (capacity + 1));
