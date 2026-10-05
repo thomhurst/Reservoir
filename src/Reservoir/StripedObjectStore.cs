@@ -140,8 +140,20 @@ internal sealed class StripedObjectStore<T>
     // whether the cell is ready, so a pop or push owns its cell after a single head or tail CAS.
     private static bool TryPop(Stripe stripe, out T? item)
     {
-        Cell[] cells = stripe.Cells;
         long position = Volatile.Read(ref stripe.Head);
+        // An empty stripe answers from its head/tail line alone, without touching a cell.
+        if (Volatile.Read(ref stripe.Tail) == position)
+        {
+            item = null;
+            return false;
+        }
+
+        return TryPopNonEmpty(stripe, position, out item);
+    }
+
+    private static bool TryPopNonEmpty(Stripe stripe, long position, out T? item)
+    {
+        Cell[] cells = stripe.Cells;
         SpinWait spinner = default;
         while (true)
         {
