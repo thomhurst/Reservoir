@@ -364,7 +364,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private T RentSlow(int startIndex)
     {
         ObjectWrapper[] items = _items;
-        int begin = GetScanCursor(items, startIndex);
+        int begin = GetScanCursor(items, startIndex, -CacheLineSlotStride);
         // Scan downward in two contiguous ranges, from the cursor to the first slot and then
         // from the last slot back to the cursor, so wrap arithmetic stays off empty slots.
         for (int index = begin; index >= FirstSlotOffset; index -= CacheLineSlotStride)
@@ -625,7 +625,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private void ReturnSlow(T returned, T displaced, int startIndex)
     {
         ObjectWrapper[] items = _items;
-        int begin = GetScanCursor(items, startIndex);
+        int begin = GetScanCursor(items, startIndex, CacheLineSlotStride);
         // Scan upward in two contiguous ranges, mirroring RentSlow.
         for (int index = begin; index < items.Length; index += CacheLineSlotStride)
         {
@@ -677,14 +677,23 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         return GetAffinityIndex(unchecked((uint)(threadStripe - 1)));
     }
 
-    // Starts a slow scan at the cursor when it names a slot of this pool, otherwise at home.
+    // Starts a slow scan at the cursor when it names a slot of this pool. Otherwise it starts at
+    // the home slot's neighbor in the scan direction, since the fast path already tried home.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int GetScanCursor(ObjectWrapper[] items, int startIndex)
+    private static int GetScanCursor(ObjectWrapper[] items, int startIndex, int step)
     {
         int cursor = _scanCursor;
-        return cursor >= FirstSlotOffset && cursor < items.Length
-            ? cursor
-            : FirstSlotOffset + startIndex * CacheLineSlotStride;
+        if (cursor >= FirstSlotOffset && cursor < items.Length)
+        {
+            return cursor;
+        }
+
+        cursor = FirstSlotOffset + startIndex * CacheLineSlotStride + step;
+        return cursor < FirstSlotOffset
+            ? items.Length - CacheLineSlotStride
+            : cursor < items.Length
+                ? cursor
+                : FirstSlotOffset;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
