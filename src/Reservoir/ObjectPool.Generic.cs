@@ -173,13 +173,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         {
             startIndex = GetStartIndex();
             ref T? startSlot = ref GetSlot(startIndex);
-            T? observed = Volatile.Read(ref startSlot);
-            // A failed CAS is a permitted pool miss; RentSlow scans the remaining slots.
-            item = observed is not null
-                && ReferenceEquals(
-                    Interlocked.CompareExchange(ref startSlot, null, observed),
-                    observed)
-                ? observed
+            // Read first so an empty home slot costs a shared read. Any object swapped in after
+            // the read is equally ours, so a racing return cannot turn a hit into a miss; a null
+            // exchange result is a permitted pool miss and RentSlow scans the remaining slots.
+            item = Volatile.Read(ref startSlot) is not null
+                ? Interlocked.Exchange(ref startSlot, null)
                 : null;
         }
         else
@@ -363,11 +361,8 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         for (int index = startSlot + CacheLineSlotStride; index < items.Length; index += CacheLineSlotStride)
         {
             ref T? slot = ref items[index].Element;
-            T? item = Volatile.Read(ref slot);
-            if (item is not null
-                && ReferenceEquals(
-                    Interlocked.CompareExchange(ref slot, null, item),
-                    item))
+            if (Volatile.Read(ref slot) is not null
+                && Interlocked.Exchange(ref slot, null) is { } item)
             {
                 return item;
             }
@@ -376,11 +371,8 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         for (int index = FirstSlotOffset; index < startSlot; index += CacheLineSlotStride)
         {
             ref T? slot = ref items[index].Element;
-            T? item = Volatile.Read(ref slot);
-            if (item is not null
-                && ReferenceEquals(
-                    Interlocked.CompareExchange(ref slot, null, item),
-                    item))
+            if (Volatile.Read(ref slot) is not null
+                && Interlocked.Exchange(ref slot, null) is { } item)
             {
                 return item;
             }
