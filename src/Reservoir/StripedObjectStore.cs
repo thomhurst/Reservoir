@@ -142,6 +142,7 @@ internal sealed class StripedObjectStore<T>
     {
         Cell[] cells = stripe.Cells;
         long position = Volatile.Read(ref stripe.Head);
+        SpinWait spinner = default;
         while (true)
         {
             ref Cell cell = ref cells[(int)position & stripe.Mask];
@@ -162,9 +163,15 @@ internal sealed class StripedObjectStore<T>
             }
             else if (difference < 0)
             {
-                // Empty, or the next cell is still being published by its pusher.
-                item = null;
-                return false;
+                if (Volatile.Read(ref stripe.Tail) == position)
+                {
+                    item = null;
+                    return false;
+                }
+
+                // A pusher claimed this cell and is publishing it: the stripe is not empty.
+                spinner.SpinOnce();
+                position = Volatile.Read(ref stripe.Head);
             }
             else
             {
@@ -177,6 +184,7 @@ internal sealed class StripedObjectStore<T>
     {
         Cell[] cells = stripe.Cells;
         long position = Volatile.Read(ref stripe.Tail);
+        SpinWait spinner = default;
         while (true)
         {
             // The ring rounds up to a power of two; the head read after the tail can only
@@ -202,8 +210,10 @@ internal sealed class StripedObjectStore<T>
             }
             else if (difference < 0)
             {
-                // Full, or the cell is still being released by its popper.
-                return false;
+                // The capacity check found room, so a popper claimed this cell and is releasing
+                // it. Wait rather than reject an item the pool has room for.
+                spinner.SpinOnce();
+                position = Volatile.Read(ref stripe.Tail);
             }
             else
             {
