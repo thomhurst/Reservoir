@@ -100,9 +100,9 @@ internal sealed class StripedObjectStore<T>
     private bool TryPopAt(int index, out T? item)
     {
         Stripe stripe = _stripes[index];
-        // Any object swapped in after the read is equally ours, so take whatever the slot holds.
-        if (Volatile.Read(ref stripe.FastItem) is not null
-            && Interlocked.Exchange(ref stripe.FastItem, null) is { } observed)
+        T? observed = Volatile.Read(ref stripe.FastItem);
+        if (observed is not null
+            && ReferenceEquals(Interlocked.CompareExchange(ref stripe.FastItem, null, observed), observed))
         {
             item = observed;
             return true;
