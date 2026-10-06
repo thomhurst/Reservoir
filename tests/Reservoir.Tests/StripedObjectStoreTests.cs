@@ -85,6 +85,63 @@ public class StripedObjectStoreTests
     }
 
     [Test]
+    [Arguments(65)]
+    [Arguments(72)]
+    [Arguments(100)]
+    public async Task RingKeepsExactCapacityAcrossWrappedTransitions(int capacity)
+    {
+        // One stripe: the direct item plus a ring that is exactly a power of two (65) or
+        // rounded up past the capacity (72, 100), so the capacity check and cell sequences
+        // both have to hold as positions wrap the ring many times at shifting offsets.
+        var store = new StripedObjectStore<StoreItem>(capacity, processorLimit: 1);
+        StoreItem[] expected = Enumerable.Range(0, capacity)
+            .Select(static id => new StoreItem(id))
+            .ToArray();
+        var overflow = new StoreItem(-1);
+        var failures = new List<string>();
+
+        for (int round = 0; round < 64; round++)
+        {
+            for (int shift = 0; shift < round % 7; shift++)
+            {
+                if (!store.TryPush(expected[0]) || !store.TryPop(out _))
+                {
+                    failures.Add($"Round {round} could not shift the ring offset.");
+                }
+            }
+
+            foreach (StoreItem item in expected)
+            {
+                if (!store.TryPush(item))
+                {
+                    failures.Add($"Round {round} rejected item {item.Id} below capacity.");
+                }
+            }
+
+            if (store.TryPush(overflow))
+            {
+                failures.Add($"Round {round} accepted an item past capacity.");
+            }
+
+            var drained = new HashSet<StoreItem>();
+            while (store.TryPop(out StoreItem? item))
+            {
+                if (!drained.Add(item!))
+                {
+                    failures.Add($"Round {round} popped item {item!.Id} twice.");
+                }
+            }
+
+            if (!drained.SetEquals(expected))
+            {
+                failures.Add($"Round {round} drained {drained.Count} of {capacity} items.");
+            }
+        }
+
+        await Assert.That(failures).IsEmpty();
+    }
+
+    [Test]
     public async Task ConcurrentPushPopStressPreservesOwnershipAcrossFullAndEmptyTransitions()
     {
         const int workerCount = 8;
