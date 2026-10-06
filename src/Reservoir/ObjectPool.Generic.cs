@@ -357,10 +357,13 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private T RentSlow(int startIndex)
     {
         ObjectWrapper[] items = _items;
-        int startSlot = FirstSlotOffset + startIndex * CacheLineSlotStride;
-        // Scan physical indices in two contiguous ranges. The home slot was already tried;
-        // splitting at the array boundary avoids wrap arithmetic on every empty slot.
-        for (int index = startSlot + CacheLineSlotStride; index < items.Length; index += CacheLineSlotStride)
+        // SmallPoolScanCursor holds the physical index of this thread's last slow-path hit. Slow
+        // returns fill upward from it and slow rents drain downward from it, so a burst that rents
+        // or returns many objects in a row probes O(1) slots instead of rescanning from home.
+        int begin = GetScanCursor(items, startIndex, -CacheLineSlotStride);
+        // Scan downward in two contiguous ranges, from the cursor to the first slot and then
+        // from the last slot back to the cursor, so wrap arithmetic stays off empty slots.
+        for (int index = begin; index >= FirstSlotOffset; index -= CacheLineSlotStride)
         {
             ref T? slot = ref items[index].Element;
             T? item = Volatile.Read(ref slot);
@@ -369,11 +372,12 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
                     Interlocked.CompareExchange(ref slot, null, item),
                     item))
             {
+                SmallPoolScanCursor.Value = index;
                 return item;
             }
         }
 
-        for (int index = FirstSlotOffset; index < startSlot; index += CacheLineSlotStride)
+        for (int index = items.Length - CacheLineSlotStride; index > begin; index -= CacheLineSlotStride)
         {
             ref T? slot = ref items[index].Element;
             T? item = Volatile.Read(ref slot);
@@ -382,6 +386,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
                     Interlocked.CompareExchange(ref slot, null, item),
                     item))
             {
+                SmallPoolScanCursor.Value = index;
                 return item;
             }
         }
@@ -616,24 +621,27 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private void ReturnSlow(T returned, T displaced, int startIndex)
     {
         ObjectWrapper[] items = _items;
-        int startSlot = FirstSlotOffset + startIndex * CacheLineSlotStride;
-        for (int index = startSlot + CacheLineSlotStride; index < items.Length; index += CacheLineSlotStride)
+        int begin = GetScanCursor(items, startIndex, CacheLineSlotStride);
+        // Scan upward in two contiguous ranges, mirroring RentSlow.
+        for (int index = begin; index < items.Length; index += CacheLineSlotStride)
         {
             // Occupied slots cost a shared read, preserving read-before-CAS under contention.
             ref T? slot = ref items[index].Element;
             if (Volatile.Read(ref slot) is null
                 && Interlocked.CompareExchange(ref slot, displaced, null) is null)
             {
+                SmallPoolScanCursor.Value = index;
                 return;
             }
         }
 
-        for (int index = FirstSlotOffset; index < startSlot; index += CacheLineSlotStride)
+        for (int index = FirstSlotOffset; index < begin; index += CacheLineSlotStride)
         {
             ref T? slot = ref items[index].Element;
             if (Volatile.Read(ref slot) is null
                 && Interlocked.CompareExchange(ref slot, displaced, null) is null)
             {
+                SmallPoolScanCursor.Value = index;
                 return;
             }
         }
@@ -663,6 +671,25 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
 
         return GetAffinityIndex(unchecked((uint)(threadStripe - 1)));
+    }
+
+    // Starts a slow scan at the cursor when it names a slot of this pool. Otherwise it starts at
+    // the home slot's neighbor in the scan direction, since the fast path already tried home.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int GetScanCursor(ObjectWrapper[] items, int startIndex, int step)
+    {
+        int cursor = SmallPoolScanCursor.Value;
+        if (cursor >= FirstSlotOffset && cursor < items.Length)
+        {
+            return cursor;
+        }
+
+        cursor = FirstSlotOffset + startIndex * CacheLineSlotStride + step;
+        return cursor < FirstSlotOffset
+            ? items.Length - CacheLineSlotStride
+            : cursor < items.Length
+                ? cursor
+                : FirstSlotOffset;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
