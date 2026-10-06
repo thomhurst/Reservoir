@@ -5,15 +5,20 @@ using System;
 
 namespace Reservoir;
 
-/// <summary>Per-thread scan cursor shared by every small object pool.</summary>
+/// <summary>Per-thread slow-scan cursors shared by every small object pool.</summary>
 /// <remarks>
-/// A thread static on the generic pool would be reached through a runtime helper call in shared
-/// generic code (every reference-type pool), so the cursor lives on this non-generic type, whose
-/// thread static the JIT accesses inline. It is only a scan-order hint, so pools of different
-/// types and sizes sharing it can make a scan start elsewhere but never skip a slot.
+/// A thread static on the generic pool is reached through a generic-lookup helper call in shared
+/// generic code (every reference-type pool), so the cursors live on this non-generic type, whose
+/// thread statics use a cheaper access path. They are only scan-order hints: pools of different
+/// types and sizes sharing them can make a scan start elsewhere, but never skip a slot.
 /// </remarks>
 internal static class SmallPoolScanCursor
 {
+    // Physical slot index of this thread's last slow-path rent hit.
     [ThreadStatic]
-    internal static int Value;
+    internal static int Rent;
+
+    // Physical slot index of this thread's last slow-path return placement.
+    [ThreadStatic]
+    internal static int Return;
 }
