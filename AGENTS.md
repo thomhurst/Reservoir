@@ -26,3 +26,5 @@ Every performance change requires repeatable before/after Release benchmarks on 
 ## Commits and PRs
 
 Use Conventional Commits. PRs must explain motivation and impact, link relevant issues, and list validation. Include benchmark data for hot-path changes and screenshots for visible documentation updates. Library tests and the website build must pass before review.
+
+Resolve each PR review thread, whether a human or a bot opened it, as soon as you have dispositioned it: the fix is pushed to the PR head and your reply names the commit, or your reply pushes back on the finding with evidence. Leave a thread open only while it has no disposition. If the reviewer replies after your disposition, unresolve the thread and handle the reply.
