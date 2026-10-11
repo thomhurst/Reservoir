@@ -9,10 +9,10 @@ description: BenchmarkDotNet results for Reservoir's warm paths and specialized 
 The 24 validated warm results below allocated **0 B per operation**.
 This covers the Reservoir core, collection, list, warm capacity and burst results, manual/scoped rentals, and the TLS StringBuilder reference. Empty-rent results and other libraries are excluded from this claim.
 
-Results below select .NET 10.0 and used BenchmarkDotNet 0.15.8 `.NET 10.0`, .NET 10.0.12, Linux Ubuntu 24.04.5 LTS, Intel Xeon Platinum 8370C CPU 2.80GHz (Max: 3.39GHz). Other runtimes remain in the raw reports. Nanosecond timings vary by machine; compare methods within a table.
+Results below select .NET 10.0 and used BenchmarkDotNet 0.15.8 `.NET 10.0`, .NET 10.0.12, Linux Ubuntu 24.04.5 LTS, AMD EPYC 7763. Other runtimes remain in the raw reports. Nanosecond timings vary by machine; compare methods within a table.
 
 :::info Automated results
-Generated 2026-10-04 06:08 UTC from commit `6d2cea22f9f5`. See the [GitHub Actions run](https://github.com/thomhurst/Reservoir/actions/runs/37175673348) for logs and downloadable artifacts.
+Generated 2026-10-11 05:17 UTC from commit `50bf84b97962`. See the [GitHub Actions run](https://github.com/thomhurst/Reservoir/actions/runs/38107401185) for logs and downloadable artifacts.
 :::
 
 ## Core pool
@@ -21,10 +21,10 @@ The payload owns a 256-byte buffer. Lower ratio is better; `new` is the baseline
 
 | Method | Mean | Ratio | Allocated |
 | --- | ---: | ---: | ---: |
-| `new` | 24.28 ns | 1.00 | 304 B |
-| Reservoir | 22.02 ns | 0.91 | 0 B |
-| `Microsoft.Extensions.ObjectPool` | 22.75 ns | 0.94 | 0 B |
-| `ConcurrentBag<T>` pool | 62.55 ns | 2.58 | 0 B |
+| `new` | 23.19 ns | 1.00 | 304 B |
+| Reservoir | 23.10 ns | 1.00 | 0 B |
+| `Microsoft.Extensions.ObjectPool` | 14.84 ns | 0.64 | 0 B |
+| `ConcurrentBag<T>` pool | 36.29 ns | 1.56 | 0 B |
 
 ## Capacity scaling
 
@@ -32,33 +32,33 @@ Small pools use cache-line-separated slots. Large pools use dense striped storag
 
 | Retained capacity | Warm rent/return | Empty rent | Drain and refill |
 | ---: | ---: | ---: | ---: |
-| 32 | 18.53 ns | 21.22 ns | 1.80 μs |
-| 256 | 19.64 ns | 13.99 ns | 10.66 μs |
-| 4,096 | 19.61 ns | 13.48 ns | 170.60 μs |
-| 65,536 | 19.70 ns | 15.49 ns | 2,702.50 μs |
+| 32 | 18.80 ns | 22.78 ns | 1.52 μs |
+| 256 | 16.82 ns | 15.99 ns | 7.79 μs |
+| 4,096 | 16.70 ns | 15.86 ns | 123.38 μs |
+| 65,536 | 16.80 ns | 15.83 ns | 1,999.61 μs |
 
 ## Warm allocation guarantee
 
 | Pool | Mean | Allocated |
 | --- | ---: | ---: |
-| `ObjectPool` | 20.96 ns | 0 B |
-| `ListPool` | 19.83 ns | 0 B |
-| `DictionaryPool` | 19.83 ns | 0 B |
-| `HashSetPool` | 19.86 ns | 0 B |
-| `QueuePool` | 20.04 ns | 0 B |
-| `StackPool` | 19.61 ns | 0 B |
-| `StringBuilderPool` | 19.94 ns | 0 B |
+| `ObjectPool` | 15.06 ns | 0 B |
+| `ListPool` | 13.42 ns | 0 B |
+| `DictionaryPool` | 14.03 ns | 0 B |
+| `HashSetPool` | 13.35 ns | 0 B |
+| `QueuePool` | 13.64 ns | 0 B |
+| `StackPool` | 13.65 ns | 0 B |
+| `StringBuilderPool` | 14.00 ns | 0 B |
 
 ## Specialized workloads
 
 | Workload | Baseline | Reservoir | Baseline allocated | Reservoir allocated |
 | --- | ---: | ---: | ---: | ---: |
-| `StringBuilder`, append 128 chars | 52.40 ns | 23.30 ns | 400 B | 0 B |
-| `List<int>`, 8 items | 36.12 ns | 37.74 ns | 88 B | 0 B |
-| `List<int>`, 128 items | 331.95 ns | 277.54 ns | 568 B | 0 B |
-| `List<int>`, 2,048 items | 4,824.17 ns | 4,169.15 ns | 8,248 B | 0 B |
+| `StringBuilder`, append 128 chars | 46.30 ns | 23.90 ns | 400 B | 0 B |
+| `List<int>`, 8 items | 25.17 ns | 28.52 ns | 88 B | 0 B |
+| `List<int>`, 128 items | 236.71 ns | 219.05 ns | 568 B | 0 B |
+| `List<int>`, 2,048 items | 3,551.20 ns | 3,516.61 ns | 8,248 B | 0 B |
 
-The single-thread TLS `StringBuilder` cache measured 14.04 ns and 0 B; it gives up cross-thread reuse and bounded shared capacity. `ObjectPool.RentScoped(out T)` measured 10.17 ns and 0 B, `RentScoped()` measured 10.48 ns and 0 B, and manual rent/return measured 18.38 ns and 0 B. Allocations are per operation in the selected runtime and job.
+The single-thread TLS `StringBuilder` cache measured 15.30 ns and 0 B; it gives up cross-thread reuse and bounded shared capacity. `ObjectPool.RentScoped(out T)` measured 10.13 ns and 0 B, `RentScoped()` measured 13.34 ns and 0 B, and manual rent/return measured 18.26 ns and 0 B. Allocations are per operation in the selected runtime and job.
 <!-- BENCHMARK_RESULTS_END -->
 
 ## Choosing a rental API
@@ -126,5 +126,5 @@ uses the host's matching asset and the full benchmark suite. Both selections run
 before measuring each revision; the logs print the loaded Reservoir asset.
 
 <!-- BENCHMARK_RESULTS_LINK_START -->
-Raw Markdown, CSV, and HTML exports—including capacity scaling and 1–32 worker contention results—are available from the [GitHub Actions run](https://github.com/thomhurst/Reservoir/actions/runs/37175673348).
+Raw Markdown, CSV, and HTML exports—including capacity scaling and 1–32 worker contention results—are available from the [GitHub Actions run](https://github.com/thomhurst/Reservoir/actions/runs/38107401185).
 <!-- BENCHMARK_RESULTS_LINK_END -->
