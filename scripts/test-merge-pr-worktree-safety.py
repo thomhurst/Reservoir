@@ -68,6 +68,42 @@ def assert_worktree_cleanup_behavior(errors: list[str]) -> None:
                 f"stdout={result.stdout!r} stderr={result.stderr!r}"
             )
 
+        if os.name == "nt":
+            # Git follows a junction while deleting, so cleanup must detach it first.
+            outside = root / "junction-target"
+            outside.mkdir()
+            keep = outside / "keep.txt"
+            keep.write_text("outside the worktree", encoding="utf-8")
+            junction_worktree = root / "junction-worktree"
+            result = run(
+                "git", "worktree", "add", "-b", "junction-branch", str(junction_worktree), expected_head, cwd=repo
+            )
+            if result.returncode:
+                errors.append(f"Could not create junction fixture worktree: {result.stderr}")
+                return
+            (junction_worktree / "node_modules").mkdir()
+            result = run(
+                "pwsh",
+                "-NoProfile",
+                "-Command",
+                f"New-Item -ItemType Junction -Path '{junction_worktree / 'node_modules' / 'pkg'}' -Target '{outside}'",
+                cwd=repo,
+            )
+            if result.returncode:
+                errors.append(f"Could not create junction fixture: {result.stderr}")
+                return
+            command = (
+                f". '{cleanup_script}'; "
+                f"Remove-MergedWorktree -Repo '{repo}' -Worktree '{junction_worktree}' "
+                f"-ExpectedHead '{expected_head}' -Label fixture"
+            )
+            result = run("pwsh", "-NoProfile", "-Command", command, cwd=repo)
+            if junction_worktree.exists() or not keep.exists():
+                errors.append(
+                    "Worktree cleanup must remove a worktree containing a junction without deleting the "
+                    f"junction target's contents. stdout={result.stdout!r} stderr={result.stderr!r}"
+                )
+
         local_worktree = root / "local-worktree"
         result = run("git", "worktree", "add", "-b", "local-branch", str(local_worktree), expected_head, cwd=repo)
         if result.returncode:
