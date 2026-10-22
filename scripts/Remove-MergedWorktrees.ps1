@@ -145,7 +145,7 @@ try {
     $openNames = @{}
     $openOids = @{}
 
-    $rawMerged = gh pr list @repoArgs --state merged --limit 1000 --json headRefName,headRefOid,isCrossRepository 2>$null
+    $rawMerged = gh pr list @repoArgs --state merged --limit 1000 --json number,headRefName,headRefOid,isCrossRepository 2>$null
     if ($LASTEXITCODE -ne 0) {
         Warn "could not list merged PRs (exit $LASTEXITCODE) -- skipping sweep this round"
         exit 0
@@ -285,6 +285,17 @@ try {
         $sha = $sha.Trim()
         if ($openOids.ContainsKey($sha)) { continue }
 
+        # A named branch proven to be a merged PR's own head branch (same name, and it
+        # contains that PR's head commit) also takes that PR's lock identity, so a pending
+        # retry of a checkout with a non-canonical path and no marker can still reserve it.
+        # Detached checkouts never borrow one: a fresh setup checkout of main may sit on a
+        # merged tip before its owner registers.
+        $containsCommit = {
+            param([string]$Commit)
+            git -C $worktree.Path merge-base --is-ancestor $Commit $sha 2>$null
+            return $LASTEXITCODE -eq 0
+        }
+
         $evidence = $null
         if ($worktree.Branch -and $mergedByName.ContainsKey($worktree.Branch)) {
             $pr = $mergedByName[$worktree.Branch]
@@ -294,6 +305,7 @@ try {
                 HeadBranch = $pr.headRefName.Trim()
                 IsCrossRepository = [bool]$pr.isCrossRepository
                 IsMergedPr = $true
+                LockNames = @(if ($pr.number -and (& $containsCommit $pr.headRefOid.Trim())) { "pr-$([int]$pr.number)" })
             }
         }
 
@@ -363,6 +375,9 @@ try {
                         HeadBranch = if ($mergedAssociation.head.ref) { $mergedAssociation.head.ref.Trim() } else { $null }
                         IsCrossRepository = $isCrossRepository
                         IsMergedPr = $true
+                        LockNames = @(if ($worktree.Branch -and -not $worktree.Detached -and $mergedAssociation.number -and
+                                $mergedAssociation.head.ref -ceq $worktree.Branch -and
+                                (& $containsCommit $mergedAssociation.head.sha.Trim())) { "pr-$([int]$mergedAssociation.number)" })
                     }
                 }
             }
@@ -403,7 +418,7 @@ try {
             continue
         }
 
-        Remove-MergedWorktree @cleanupArgs
+        Remove-MergedWorktree @cleanupArgs -LockNames @($evidence.LockNames | Where-Object { $_ })
         if (Test-Path -LiteralPath $worktree.Path) { continue }
 
         $removed++

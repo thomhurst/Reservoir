@@ -113,6 +113,27 @@ try {
                 Assert (Test-Path (Join-Path $path 'notes.md')) 'Pending removal deleted work written after release.'
             }
         }
+
+        # A merged checkout at a non-canonical path has no marker or canonical identity.
+        # The merged PR's identity passed by Merge-Pr or the sweep must reach the record.
+        $path = New-Checkout 'ad-hoc-merged'
+        $head = & git -C $path rev-parse HEAD
+        $key = "release-test-$suffix-merged-pr"
+        $locks.Add($key)
+        $holder = Start-Process pwsh -ArgumentList '-NoProfile', '-Command', 'Start-Sleep 300' -WorkingDirectory $path -WindowStyle Hidden -PassThru
+        try {
+            Start-Sleep -Seconds 2
+            Remove-MergedWorktree -Repo $repo -Worktree $path -ExpectedHead $head -Label '(merged fixture)' -LockNames @($key)
+            Assert (Test-Path $path) 'Merged checkout was removed while a process used it; the test cannot reproduce the lock.'
+            $records = @(Get-ChildItem (Join-Path $repo '.git/agent-pending-removals') -Filter '*.json')
+            Assert ($records.Count -eq 1) 'Merged removal did not record a pending removal.'
+            $recorded = @((Get-Content -LiteralPath $records[0].FullName -Raw | ConvertFrom-Json).lockNames)
+            Assert ($recorded -ccontains $key) 'Pending removal did not record the merged PR identity.'
+        }
+        finally { Stop-Process -Id $holder.Id -Force -ErrorAction SilentlyContinue; $holder.WaitForExit() }
+        $null = Complete-PendingWorktreeRemovals -Repo $repo
+        Assert (-not (Test-Path $path)) 'Pending removal with a merged PR identity was not completed.'
+        Assert (-not (Test-Path (Join-Path $repo '.git/agent-pending-removals/*.json'))) 'Merged pending removal record survived the sweep.'
     }
 
     foreach ($kind in @('tracked', 'untracked', 'ignored', 'locked', 'main', 'foreign', 'harness', 'reassigned')) {
@@ -143,7 +164,7 @@ try {
         $status = & pwsh -NoProfile -File $agentLocks status -LockName $key -OwnerId $owner
         Assert ($status -eq 'FREE') "$kind lock was not released."
     }
-    Write-Host 'OK released worktree cleanup: generated output, unpublished branches, detached commits, re-checkout, busy-directory pending removal, dirty/ignored/locked/main/foreign/harness/reassigned preservation.'
+    Write-Host 'OK released worktree cleanup: generated output, unpublished branches, detached commits, re-checkout, busy-directory pending removal, merged-PR pending identity, dirty/ignored/locked/main/foreign/harness/reassigned preservation.'
 } finally {
     if (Test-Path $repo) {
         Set-Location $repo
