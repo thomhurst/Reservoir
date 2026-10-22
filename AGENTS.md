@@ -6,6 +6,8 @@ Follow `.editorconfig` and existing code conventions. Use TUnit for regression t
 
 Run performance benchmarks on GitHub Actions `ubuntu-latest` runners to avoid local machine noise. This repository no longer requires the local Redis `performance` lock, including for local restores, builds, tests, or website builds. PR/issue ownership locks still apply.
 
+Agent output outside a worktree (evidence, throwaway checkouts, downloaded tools) has fixed locations; never write to the repository's parent directory itself or to the main checkout. See [issue-pr-loop § Isolation and ownership](.agents/skills/issue-pr-loop/SKILL.md#isolation-and-ownership).
+
 ## Validation
 
 - SDK: `global.json` selects the .NET 10.0.4xx feature band, rolls forward only to the latest patch in that band, and excludes preview SDKs. CI setup reads this file directly.
