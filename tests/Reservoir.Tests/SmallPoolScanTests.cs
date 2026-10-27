@@ -30,13 +30,14 @@ public class SmallPoolScanTests
         FieldInfo affinity = typeof(ObjectPool<Item, Policy>)
             .GetField("_threadStripe", BindingFlags.NonPublic | BindingFlags.Static)!;
         object? previous = affinity.GetValue(null);
-        uint ordinal = 0;
+        // Ordinal zero would mix to the unassigned marker, so start at one as threads do.
+        uint ordinal = 1;
         while (pool.GetAffinityIndex(ordinal) != home)
         {
             ordinal++;
         }
 
-        affinity.SetValue(null, checked((int)ordinal + 1));
+        affinity.SetValue(null, ObjectPool<Item, Policy>.MixStripe(ordinal));
         try
         {
             var items = new Item[capacity + 1];

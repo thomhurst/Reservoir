@@ -36,8 +36,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private const uint StripeHashMultiplier = 2_654_435_769u;
 
     // Cache only scalar affinity; retained objects remain enumerable in the shared array.
+    // Holds the thread's already-mixed ordinal so the hot paths do no multiply between the
+    // thread-static load and the slot's interlocked operation. Ordinals start at one and the
+    // multiplier is odd, so a mixed value is never zero and zero marks an unassigned thread.
     [ThreadStatic]
-    private static int _threadStripe;
+    private static uint _threadStripe;
 
     private static int s_nextThreadStripe;
 
@@ -486,25 +489,39 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int GetStartIndex()
     {
-        int threadStripe = _threadStripe;
-        if (threadStripe == 0)
+        uint mixedStripe = _threadStripe;
+        if (mixedStripe == 0)
         {
-            do
-            {
-                threadStripe = Interlocked.Increment(ref s_nextThreadStripe);
-            }
-            while (threadStripe == 0);
-
-            _threadStripe = threadStripe;
+            mixedStripe = AssignThreadStripe();
         }
 
-        return GetAffinityIndex(unchecked((uint)(threadStripe - 1)));
+        return GetAffinityIndexFromMixed(mixedStripe);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static uint AssignThreadStripe()
+    {
+        uint ordinal;
+        do
+        {
+            ordinal = unchecked((uint)Interlocked.Increment(ref s_nextThreadStripe));
+        }
+        while (ordinal == 0);
+
+        uint mixedStripe = MixStripe(ordinal);
+        _threadStripe = mixedStripe;
+        return mixedStripe;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal int GetAffinityIndex(uint threadStripe)
+    internal static uint MixStripe(uint ordinal) => unchecked(ordinal * StripeHashMultiplier);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int GetAffinityIndex(uint ordinal) => GetAffinityIndexFromMixed(MixStripe(ordinal));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int GetAffinityIndexFromMixed(uint mixedStripe)
     {
-        uint mixedStripe = threadStripe * StripeHashMultiplier;
         // Preserve masking for powers of two; scale other hashes without integer division.
         return _indexMask >= 0
             ? (int)(mixedStripe & (uint)_indexMask)
