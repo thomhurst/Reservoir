@@ -26,8 +26,8 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     where T : class
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
-    // One logical slot per 64-byte cache line on 64-bit runtimes.
-    private const int CacheLineSlotStride = 8;
+    // One logical slot per 64-byte cache line on 64-bit runtimes (ObjectWrapper is 16 bytes).
+    private const int CacheLineSlotStride = 4;
     // The first slot starts one stride in so that no slot shares a cache line with the array
     // header, whose length every bounds check reads.
     private const int FirstSlotOffset = CacheLineSlotStride;
@@ -50,6 +50,10 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private readonly bool _skipReset;
 #endif
     private readonly StripedObjectStore<T>? _largeStore;
+    // At most half of the small store can be owned so that other threads keep shared slots.
+    private readonly int _ownedSlotLimit;
+    private int _ownedSlotCount;
+    private bool _claimsExhausted;
     private TPolicy _policy;
     private int _isDisposed;
 
@@ -93,6 +97,8 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 #endif
         if (maxCapacity <= MaximumCacheLineSlotCapacity)
         {
+            _ownedSlotLimit = maxCapacity / 2;
+            _claimsExhausted = _ownedSlotLimit == 0;
             _items = new ObjectWrapper[checked(FirstSlotOffset + maxCapacity * CacheLineSlotStride)];
         }
         else
@@ -142,15 +148,17 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         if (largeStore is null)
         {
             int startIndex = GetStartIndex();
-            ref T? startSlot = ref GetHotSlot(startIndex);
-            T? observed = Volatile.Read(ref startSlot);
-            // A failed CAS is a permitted pool miss; RentSlow scans the remaining slots.
+            ref ObjectWrapper startSlot = ref GetHotSlot(startIndex);
+            object? observed = Volatile.Read(ref startSlot.Element);
+            // A failed CAS is a permitted pool miss; RentSlow scans the remaining slots. Taking an
+            // item from an owned slot puts the owner's token back so only the owner can refill it.
             if (observed is not null
+                && observed is not SlotOwner
                 && ReferenceEquals(
-                    Interlocked.CompareExchange(ref startSlot, null, observed),
+                    Interlocked.CompareExchange(ref startSlot.Element, Volatile.Read(ref startSlot.Owner), observed),
                     observed))
             {
-                return observed;
+                return AsItem(observed);
             }
 
             return RentSlow(startIndex);
@@ -216,27 +224,29 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         // splitting at the array boundary avoids wrap arithmetic on every empty slot.
         for (int index = startSlot + CacheLineSlotStride; index < items.Length; index += CacheLineSlotStride)
         {
-            ref T? slot = ref items[index].Element;
-            T? item = Volatile.Read(ref slot);
+            ref ObjectWrapper slot = ref items[index];
+            object? item = Volatile.Read(ref slot.Element);
             if (item is not null
+                && item is not SlotOwner
                 && ReferenceEquals(
-                    Interlocked.CompareExchange(ref slot, null, item),
+                    Interlocked.CompareExchange(ref slot.Element, Volatile.Read(ref slot.Owner), item),
                     item))
             {
-                return item;
+                return AsItem(item);
             }
         }
 
         for (int index = FirstSlotOffset; index < startSlot; index += CacheLineSlotStride)
         {
-            ref T? slot = ref items[index].Element;
-            T? item = Volatile.Read(ref slot);
+            ref ObjectWrapper slot = ref items[index];
+            object? item = Volatile.Read(ref slot.Element);
             if (item is not null
+                && item is not SlotOwner
                 && ReferenceEquals(
-                    Interlocked.CompareExchange(ref slot, null, item),
+                    Interlocked.CompareExchange(ref slot.Element, Volatile.Read(ref slot.Owner), item),
                     item))
             {
-                return item;
+                return AsItem(item);
             }
         }
 
@@ -342,14 +352,50 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
 
         int startIndex = GetStartIndex();
-        ref T? startSlot = ref GetHotSlot(startIndex);
-        T? displaced = Interlocked.Exchange(ref startSlot, obj);
-        if (displaced is null)
+        ref ObjectWrapper startSlot = ref GetHotSlot(startIndex);
+        object? observed = Volatile.Read(ref startSlot.Element);
+        // An owned empty slot holds its owner's token. Nobody else changes a live owner's token,
+        // so the owner can refill the slot with a plain release store instead of a locked RMW.
+        if (observed is not null && ReferenceEquals(observed, SlotOwner.CurrentOrNull))
         {
+            Volatile.Write(ref startSlot.Element, obj);
             return;
         }
 
-        ReturnSlow(obj, displaced, startIndex);
+        if (observed is null
+            && Interlocked.CompareExchange(ref startSlot.Element, obj, null) is null)
+        {
+            if (!_claimsExhausted && Volatile.Read(ref startSlot.Owner) is null)
+            {
+                TryClaim(ref startSlot);
+            }
+
+            return;
+        }
+
+        ReturnSlow(obj, startIndex);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void TryClaim(ref ObjectWrapper slot)
+    {
+        if (Interlocked.Increment(ref _ownedSlotCount) > _ownedSlotLimit)
+        {
+            Interlocked.Decrement(ref _ownedSlotCount);
+            Volatile.Write(ref _claimsExhausted, true);
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref slot.Owner, SlotOwner.Current, null) is not null)
+        {
+            Interlocked.Decrement(ref _ownedSlotCount);
+        }
+    }
+
+    private void ReleaseClaim()
+    {
+        Interlocked.Decrement(ref _ownedSlotCount);
+        Volatile.Write(ref _claimsExhausted, false);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -391,53 +437,26 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             return;
         }
 
-#if NET8_0
-        if (MaximumRetained == 1)
+        ObjectWrapper[] items = _items;
+        for (int i = FirstSlotOffset; i < items.Length; i += CacheLineSlotStride)
         {
-            ref T? slot = ref GetSlot(0);
-            if (Volatile.Read(ref slot) is not null)
+            ref ObjectWrapper slot = ref items[i];
+            object? item = Volatile.Read(ref slot.Element);
+            if (item is not null
+                && item is not SlotOwner
+                && ReferenceEquals(
+                    Interlocked.CompareExchange(ref slot.Element, Volatile.Read(ref slot.Owner), item),
+                    item))
             {
-                DisposeRetained(Interlocked.Exchange(ref slot, null), ref firstException);
+                DisposeRetained(AsItem(item), ref firstException);
             }
         }
-        else
-        {
-            ClearSmallStore(ref firstException);
-        }
-#else
-        for (int i = 0; i < MaximumRetained; i++)
-        {
-            ref T? slot = ref GetSlot(i);
-            if (Volatile.Read(ref slot) is not null)
-            {
-                DisposeRetained(
-                    Interlocked.Exchange(ref slot, null),
-                    ref firstException);
-            }
-        }
-#endif
 
         if (firstException is not null)
         {
             ExceptionDispatchInfo.Capture(firstException).Throw();
         }
     }
-
-#if NET8_0
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private void ClearSmallStore(ref Exception? firstException)
-    {
-        ObjectWrapper[] items = _items;
-        for (int i = FirstSlotOffset; i < items.Length; i += CacheLineSlotStride)
-        {
-            ref T? slot = ref items[i].Element;
-            if (Volatile.Read(ref slot) is not null)
-            {
-                DisposeRetained(Interlocked.Exchange(ref slot, null), ref firstException);
-            }
-        }
-    }
-#endif
 
     /// <summary>
     /// Permanently closes the pool and disposes all retained disposable objects. Objects returned
@@ -452,16 +471,18 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private void ReturnSlow(T returned, T displaced, int startIndex)
+    private void ReturnSlow(T returned, int startIndex)
     {
         ObjectWrapper[] items = _items;
         int startSlot = FirstSlotOffset + startIndex * CacheLineSlotStride;
+        if (TryReturnHome(ref items[startSlot], returned))
+        {
+            return;
+        }
+
         for (int index = startSlot + CacheLineSlotStride; index < items.Length; index += CacheLineSlotStride)
         {
-            // Occupied slots cost a shared read, preserving read-before-CAS under contention.
-            ref T? slot = ref items[index].Element;
-            if (Volatile.Read(ref slot) is null
-                && Interlocked.CompareExchange(ref slot, displaced, null) is null)
+            if (TryFillScanned(ref items[index], returned))
             {
                 return;
             }
@@ -469,21 +490,70 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
         for (int index = FirstSlotOffset; index < startSlot; index += CacheLineSlotStride)
         {
-            ref T? slot = ref items[index].Element;
-            if (Volatile.Read(ref slot) is null
-                && Interlocked.CompareExchange(ref slot, displaced, null) is null)
+            if (TryFillScanned(ref items[index], returned))
             {
                 return;
             }
         }
 
-        // Preserve full-pool semantics: discard the newly returned object when
-        // it has not already been rented or displaced by another thread.
-        T? observed = Interlocked.CompareExchange(
-            ref GetSlot(startIndex),
-            displaced,
-            returned);
-        DisposeItem(ReferenceEquals(observed, returned) ? returned : displaced);
+        DisposeItem(returned);
+    }
+
+    // Shared slots accept a return only from empty. An owned empty slot holds its owner's token
+    // and refuses, unless that owner has exited and can no longer write to it.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool TryFillScanned(ref ObjectWrapper slot, T returned)
+    {
+        object? observed = Volatile.Read(ref slot.Element);
+        if (observed is null)
+        {
+            return Interlocked.CompareExchange(ref slot.Element, returned, null) is null;
+        }
+
+        return observed is SlotOwner token && TryTakeExitedOwnerSlot(ref slot, token, returned);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool TryTakeExitedOwnerSlot(ref ObjectWrapper slot, SlotOwner token, T returned)
+    {
+        if (!token.HasExited)
+        {
+            return false;
+        }
+
+        // Release ownership first so renters stop writing the exited token back, and return the
+        // claim so live threads can claim slots again after thread churn.
+        if (ReferenceEquals(Interlocked.CompareExchange(ref slot.Owner, null, token), token))
+        {
+            ReleaseClaim();
+        }
+
+        return ReferenceEquals(Interlocked.CompareExchange(ref slot.Element, returned, token), token);
+    }
+
+    // Handles a home slot that holds a token other than the caller's: a stale token written back
+    // by a renter that read the owner before a reclaim, or the token of an exited owner.
+    private static bool TryReturnHome(ref ObjectWrapper slot, T returned)
+    {
+        if (Volatile.Read(ref slot.Element) is not SlotOwner token)
+        {
+            return false;
+        }
+
+        SlotOwner current = SlotOwner.Current;
+        SlotOwner? owner = Volatile.Read(ref slot.Owner);
+        if (!ReferenceEquals(owner, current))
+        {
+            // An exited thread never writes again, so its slot can change hands safely.
+            if (owner is null
+                || !owner.HasExited
+                || !ReferenceEquals(Interlocked.CompareExchange(ref slot.Owner, current, owner), owner))
+            {
+                return false;
+            }
+        }
+
+        return ReferenceEquals(Interlocked.CompareExchange(ref slot.Element, returned, token), token);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -529,20 +599,24 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private ref T? GetSlot(int index)
-        => ref _items[FirstSlotOffset + index * CacheLineSlotStride].Element;
+    private static T AsItem(object item)
+#if NET5_0_OR_GREATER
+        => Unsafe.As<T>(item);
+#else
+        => (T)item;
+#endif
 
     // GetStartIndex always yields an index below MaximumRetained, and the small store holds
     // FirstSlotOffset + MaximumRetained * CacheLineSlotStride elements, so the hot paths can
     // skip the bounds check. Only call this when _largeStore is null.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private ref T? GetHotSlot(int index)
+    private ref ObjectWrapper GetHotSlot(int index)
 #if NET5_0_OR_GREATER
         => ref Unsafe.Add(
             ref MemoryMarshal.GetArrayDataReference(_items),
-            FirstSlotOffset + index * CacheLineSlotStride).Element;
+            FirstSlotOffset + index * CacheLineSlotStride);
 #else
-        => ref GetSlot(index);
+        => ref _items[FirstSlotOffset + index * CacheLineSlotStride];
 #endif
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -593,6 +667,37 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
     private struct ObjectWrapper
     {
-        internal T? Element;
+        // A retained T, the owner's token while an owned slot is empty, or null.
+        internal object? Element;
+        internal SlotOwner? Owner;
     }
+}
+
+/// <summary>A thread's identity for owning small-store slots across every pool.</summary>
+[ExcludeFromCodeCoverage]
+[DebuggerNonUserCode]
+internal sealed class SlotOwner
+{
+    // Non-generic so shared-generic pool code reads it through the inlined TLS path.
+    [ThreadStatic]
+    private static SlotOwner? t_current;
+
+    private readonly WeakReference<Thread> _thread = new(Thread.CurrentThread);
+
+    internal bool HasExited => !_thread.TryGetTarget(out Thread? thread) || !thread.IsAlive;
+
+    internal static SlotOwner? CurrentOrNull
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => t_current;
+    }
+
+    internal static SlotOwner Current
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => t_current ?? Create();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static SlotOwner Create() => t_current = new SlotOwner();
 }
