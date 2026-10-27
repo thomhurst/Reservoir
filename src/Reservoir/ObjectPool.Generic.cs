@@ -156,10 +156,14 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             return RentSlow(startIndex);
         }
 
-        // Only the large path takes an address-exposed out local, so the small path's rented
-        // object stays in a register instead of round-tripping through the stack.
-        return largeStore.TryPop(out T? item) ? item! : CreateItem();
+        return RentLarge(largeStore);
     }
+
+    // The large store's inlined scan and address-exposed out local would otherwise force extra
+    // callee-saved registers and a stack slot into every small-pool Rent call site.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private T RentLarge(StripedObjectStore<T> largeStore)
+        => largeStore.TryPop(out T? item) ? item! : CreateItem();
 
     /// <summary>Rents an object owned by a stack-only lease.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -333,11 +337,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         StripedObjectStore<T>? largeStore = _largeStore;
         if (largeStore is not null)
         {
-            if (!largeStore.TryPush(obj))
-            {
-                DisposeItem(obj);
-            }
-
+            ReturnLarge(largeStore, obj);
             return;
         }
 
@@ -350,6 +350,16 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
 
         ReturnSlow(obj, displaced, startIndex);
+    }
+
+    // Keeps the large store's stripe scan out of small-pool Return call sites; see RentLarge.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void ReturnLarge(StripedObjectStore<T> largeStore, T obj)
+    {
+        if (!largeStore.TryPush(obj))
+        {
+            DisposeItem(obj);
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
