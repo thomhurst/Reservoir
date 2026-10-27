@@ -56,24 +56,32 @@ internal sealed class StripedObjectStore<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool TryPop(out T? item)
     {
-        int start = GetStartStripe();
-        if (TryPopAt(start, out item))
-        {
-            return true;
-        }
+        item = Pop();
+        return item is not null;
+    }
 
-        return TryPopSlow(start, out item);
+    // Returns null when empty. Pool hot paths inline this, and a returned value stays in a
+    // register where an out parameter would expose a zero-initialized stack slot in every caller.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal T? Pop()
+    {
+        int start = GetStartStripe();
+        return PopAt(start) ?? PopSlow(start);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private bool TryPopSlow(int start, out T? item)
+    private T? PopSlow(int start)
     {
         // A completion thread often returns to the same remote stripe repeatedly. Try that
         // location before scanning, while keeping same-thread reuse on the home stripe.
         int hint = _lastRentStripe - 1;
-        if ((uint)hint < (uint)_stripes.Length && hint != start && TryPopAt(hint, out item))
+        if ((uint)hint < (uint)_stripes.Length && hint != start)
         {
-            return true;
+            T? hinted = PopAt(hint);
+            if (hinted is not null)
+            {
+                return hinted;
+            }
         }
 
         int index = start;
@@ -84,30 +92,29 @@ internal sealed class StripedObjectStore<T>
                 index = 0;
             }
 
-            if (TryPopAt(index, out item))
+            T? item = PopAt(index);
+            if (item is not null)
             {
                 _lastRentStripe = index + 1;
-                return true;
+                return item;
             }
         }
 
-        item = null;
-        return false;
+        return null;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool TryPopAt(int index, out T? item)
+    private T? PopAt(int index)
     {
         Stripe stripe = _stripes[index];
         T? observed = Volatile.Read(ref stripe.FastItem);
         if (observed is not null
             && ReferenceEquals(Interlocked.CompareExchange(ref stripe.FastItem, null, observed), observed))
         {
-            item = observed;
-            return true;
+            return observed;
         }
 
-        return TryPop(stripe, out item);
+        return Pop(stripe);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -138,20 +145,19 @@ internal sealed class StripedObjectStore<T>
 
     // Each stripe is a bounded MPMC ring (Vyukov): a per-cell sequence number tells a claimant
     // whether the cell is ready, so a pop or push owns its cell after a single head or tail CAS.
-    private static bool TryPop(Stripe stripe, out T? item)
+    private static T? Pop(Stripe stripe)
     {
         long position = Volatile.Read(ref stripe.Head);
         // An empty stripe answers from its head/tail line alone, without touching a cell.
         if (Volatile.Read(ref stripe.Tail) == position)
         {
-            item = null;
-            return false;
+            return null;
         }
 
-        return TryPopNonEmpty(stripe, position, out item);
+        return PopNonEmpty(stripe, position);
     }
 
-    private static bool TryPopNonEmpty(Stripe stripe, long position, out T? item)
+    private static T? PopNonEmpty(Stripe stripe, long position)
     {
         Cell[] cells = stripe.Cells;
         SpinWait spinner = default;
@@ -165,10 +171,10 @@ internal sealed class StripedObjectStore<T>
                 if (observed == position)
                 {
                     // Winning the head CAS owns this cell until its sequence is republished.
-                    item = cell.Item;
+                    T? item = cell.Item;
                     cell.Item = null;
                     Volatile.Write(ref cell.Sequence, position + cells.Length);
-                    return item is not null;
+                    return item;
                 }
 
                 position = observed;
@@ -177,8 +183,7 @@ internal sealed class StripedObjectStore<T>
             {
                 if (Volatile.Read(ref stripe.Tail) == position)
                 {
-                    item = null;
-                    return false;
+                    return null;
                 }
 
                 // A pusher claimed this cell and is publishing it: the stripe is not empty.

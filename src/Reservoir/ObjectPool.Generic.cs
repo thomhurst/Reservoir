@@ -156,9 +156,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             return RentSlow(startIndex);
         }
 
-        // Only the large path takes an address-exposed out local, so the small path's rented
-        // object stays in a register instead of round-tripping through the stack.
-        return largeStore.TryPop(out T? item) ? item! : CreateItem();
+        return largeStore.Pop() ?? CreateItem();
     }
 
     /// <summary>Rents an object owned by a stack-only lease.</summary>
