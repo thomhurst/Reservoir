@@ -7,6 +7,9 @@ using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
+#if NET5_0_OR_GREATER
+using System.Runtime.InteropServices;
+#endif
 using System.Threading;
 
 namespace Reservoir;
@@ -133,31 +136,26 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     internal T RentWithoutLifecycle()
     {
         StripedObjectStore<T>? largeStore = _largeStore;
-        int startIndex = 0;
-        T? item;
-
         if (largeStore is null)
         {
-            startIndex = GetStartIndex();
-            ref T? startSlot = ref GetSlot(startIndex);
+            int startIndex = GetStartIndex();
+            ref T? startSlot = ref GetHotSlot(startIndex);
             T? observed = Volatile.Read(ref startSlot);
             // A failed CAS is a permitted pool miss; RentSlow scans the remaining slots.
-            item = observed is not null
+            if (observed is not null
                 && ReferenceEquals(
                     Interlocked.CompareExchange(ref startSlot, null, observed),
-                    observed)
-                ? observed
-                : null;
-        }
-        else
-        {
-            _ = largeStore.TryPop(out item);
+                    observed))
+            {
+                return observed;
+            }
+
+            return RentSlow(startIndex);
         }
 
-        return item
-            ?? (largeStore is null
-                ? RentSlow(startIndex)
-                : CreateItem());
+        // Only the large path takes an address-exposed out local, so the small path's rented
+        // object stays in a register instead of round-tripping through the stack.
+        return largeStore.TryPop(out T? item) ? item! : CreateItem();
     }
 
     /// <summary>Rents an object owned by a stack-only lease.</summary>
@@ -341,7 +339,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
 
         int startIndex = GetStartIndex();
-        ref T? startSlot = ref GetSlot(startIndex);
+        ref T? startSlot = ref GetHotSlot(startIndex);
         T? displaced = Interlocked.Exchange(ref startSlot, obj);
         if (displaced is null)
         {
@@ -516,6 +514,19 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ref T? GetSlot(int index)
         => ref _items[FirstSlotOffset + index * CacheLineSlotStride].Element;
+
+    // GetStartIndex always yields an index below MaximumRetained, and the small store holds
+    // FirstSlotOffset + MaximumRetained * CacheLineSlotStride elements, so the hot paths can
+    // skip the bounds check. Only call this when _largeStore is null.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private ref T? GetHotSlot(int index)
+#if NET5_0_OR_GREATER
+        => ref Unsafe.Add(
+            ref MemoryMarshal.GetArrayDataReference(_items),
+            FirstSlotOffset + index * CacheLineSlotStride).Element;
+#else
+        => ref GetSlot(index);
+#endif
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ClearIfDisposed()
