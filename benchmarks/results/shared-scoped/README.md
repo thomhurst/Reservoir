@@ -1,5 +1,7 @@
 # Shared-store scoped rental investigation (#103)
 
+> **Historical record.** This report predates the removal of thread-local retention in #192; `RentScopedShared()` no longer exists. Every rental path now returns to the bounded shared store.
+
 `RentScopedShared()` adds copied-lease ownership protection while keeping idle pooled objects in the existing bounded shared store. It is an opt-in retention tradeoff: the measured warm shared-store lease paths cost more than the existing thread-local scoped paths. Existing defaults and hot method bodies are unchanged. The separate lease types avoid adding a mode branch to `PooledLease.Dispose()`.
 
 ## Reproduction and provenance
