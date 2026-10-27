@@ -5,7 +5,6 @@ public class FactoryLifecycleTests
     [Test]
     [Arguments("manual")]
     [Arguments("scoped")]
-    [Arguments("shared")]
     public async Task FactoryReturnsAfterDisposalDestroyOnce(string rental)
     {
         var pool = new ObjectPool<Item>(() => new Item(), maxCapacity: 1);
@@ -16,17 +15,9 @@ public class FactoryLifecycleTests
             pool.Dispose();
             pool.Return(item);
         }
-        else if (rental == "scoped")
-        {
-            var lease = pool.RentScoped(out item);
-            var copy = lease;
-            pool.Dispose();
-            lease.Dispose();
-            copy.Dispose();
-        }
         else
         {
-            var lease = pool.RentScopedShared(out item);
+            var lease = pool.RentScoped(out item);
             var copy = lease;
             pool.Dispose();
             lease.Dispose();

@@ -63,9 +63,10 @@ The single-thread TLS `StringBuilder` cache measured 10.76 ns and 0 B; it gives 
 
 ## Choosing a rental API
 
-For synchronous hot paths on .NET 10, prefer `RentScoped(out T)`. On .NET 8, manual `Rent()` and
-`Return()` remain faster. See the measured allocation results above. Always use manual rental when ownership
-crosses an `await`, and measure representative workloads on target hardware.
+For synchronous scopes, prefer `RentScoped(out T)` for automatic return; it avoids the ownership
+check that each `lease.Value` read performs. Scoped and manual rentals share the same bounded store.
+See the measured allocation results above. Always use manual rental when ownership crosses an
+`await`, and measure representative workloads on target hardware.
 
 ## Reproduce
 

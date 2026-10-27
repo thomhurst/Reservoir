@@ -66,7 +66,9 @@ public class CorePoolComparisonBenchmarks
         public byte[] Buffer { get; } = GC.AllocateUninitializedArray<byte>(256);
     }
 
-    public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
+    // Microsoft's default policy lets a reset exception propagate without destroying the
+    // object; the marker gives Reservoir the same contract so both pools do equal work.
+    public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>, INonThrowingResetPolicy
     {
         public Payload Create() => new();
 

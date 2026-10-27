@@ -16,19 +16,12 @@ public
 sealed class StackPool<T>
 {
     private readonly ObjectPool<Stack<T>, Policy> _pool;
-    private InstanceThreadLocalFrontTier<Stack<T>> _scopedTier;
 
     /// <summary>Gets the default largest stack capacity retained by a pool.</summary>
     public const int DefaultMaximumRetainedCapacity = 1024;
 
     /// <summary>Gets the shared pool.</summary>
     public static StackPool<T> Shared { get; } = new();
-
-    /// <summary>
-    /// Gets an opt-in pool that retains one stack per participating thread before using
-    /// <see cref="Shared"/> as a bounded fallback.
-    /// </summary>
-    public static ThreadLocalPool ThreadLocalShared { get; } = new();
 
     /// <summary>Initializes a pool with default limits.</summary>
     public StackPool()
@@ -69,20 +62,20 @@ sealed class StackPool<T>
     /// <summary>Rents an empty stack.</summary>
     public Stack<T> Rent() => _pool.RentWithoutLifecycle();
 
-    /// <summary>Rents an empty stack owned by a stack-only thread-local lease.</summary>
+    /// <summary>Rents an empty stack owned by a stack-only lease.</summary>
     public Lease RentScoped()
     {
-        Stack<T> stack = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<Stack<T>>.Slot slot);
-        return new Lease(this, stack, slot);
+        Stack<T> stack = _pool.RentWithoutLifecycle();
+        return new Lease(this, stack);
     }
 
     /// <summary>
-    /// Rents an empty stack owned by a stack-only thread-local lease and exposes it directly.
+    /// Rents an empty stack owned by a stack-only lease and exposes it directly.
     /// </summary>
     public Lease RentScoped(out Stack<T> stack)
     {
-        stack = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<Stack<T>>.Slot slot);
-        return new Lease(this, stack, slot);
+        stack = _pool.RentWithoutLifecycle();
+        return new Lease(this, stack);
     }
 
     /// <summary>Returns a stack, clearing it when retained and discarding it when too large.</summary>
@@ -109,14 +102,9 @@ sealed class StackPool<T>
         return false;
     }
 
-    private void ReturnScoped(Stack<T> stack, InstanceThreadLocalFrontTier<Stack<T>>.Slot slot)
+    private void ReturnScoped(Stack<T> stack)
     {
-        if (!TryReset(stack))
-        {
-            return;
-        }
-
-        if (!InstanceThreadLocalFrontTier<Stack<T>>.TryReturn(slot, stack))
+        if (TryReset(stack))
         {
             _pool.ReturnWithoutReset(stack);
         }
@@ -175,21 +163,18 @@ sealed class StackPool<T>
         }
     }
 
-    /// <summary>Owns a thread-local stack rental and returns it when disposed.</summary>
+    /// <summary>Owns a stack rental and returns it when disposed.</summary>
     public ref struct Lease
     {
         private readonly StackPool<T>? _pool;
-        private readonly InstanceThreadLocalFrontTier<Stack<T>>.Slot? _slot;
         private ScopedPoolLease<Stack<T>> _lease;
 
         internal Lease(
             StackPool<T> pool,
-            Stack<T> stack,
-            InstanceThreadLocalFrontTier<Stack<T>>.Slot slot)
+            Stack<T> stack)
         {
             _pool = pool;
-            _slot = slot;
-            _lease = new ScopedPoolLease<Stack<T>>(stack, slot);
+            _lease = new ScopedPoolLease<Stack<T>>(stack);
         }
 
         /// <summary>Gets the rented stack while this lease owns it.</summary>
@@ -200,34 +185,7 @@ sealed class StackPool<T>
         {
             if (_lease.TryRelease(out Stack<T> stack))
             {
-                _pool!.ReturnScoped(stack, _slot!);
-            }
-        }
-    }
-
-    /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>
-    public sealed class ThreadLocalPool
-    {
-        internal ThreadLocalPool()
-        {
-        }
-
-        /// <summary>Rents an empty stack from the current thread or shared fallback.</summary>
-        public Stack<T> Rent()
-            => ThreadLocalFrontTier<Stack<T>, Policy>.Rent(Shared._pool);
-
-        /// <summary>Returns a stack to the current thread or shared fallback.</summary>
-        public void Return(Stack<T> stack)
-        {
-            ThrowIfNull(stack);
-            if (!Shared.TryReset(stack))
-            {
-                return;
-            }
-
-            if (!ThreadLocalFrontTier<Stack<T>, Policy>.TryReturn(stack))
-            {
-                Shared._pool.ReturnWithoutReset(stack);
+                _pool!.ReturnScoped(stack);
             }
         }
     }

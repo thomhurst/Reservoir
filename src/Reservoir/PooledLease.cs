@@ -21,28 +21,23 @@ ref struct PooledLease<T, TPolicy>
     where TPolicy : struct, IPooledObjectPolicy<T>
 {
     private readonly ObjectPool<T, TPolicy>? _pool;
-    private readonly TrackedInstanceThreadLocalFrontTier<T>.Slot? _slot;
     private ScopedPoolLease<T> _lease;
 
-    internal PooledLease(
-        ObjectPool<T, TPolicy> pool,
-        T value,
-        TrackedInstanceThreadLocalFrontTier<T>.Slot slot)
+    internal PooledLease(ObjectPool<T, TPolicy> pool, T value)
     {
         _pool = pool;
-        _slot = slot;
-        _lease = new ScopedPoolLease<T>(value, slot);
+        _lease = new ScopedPoolLease<T>(value);
     }
 
     /// <summary>Gets the rented object while this lease owns it.</summary>
     public readonly T Value => _lease.Value;
 
-    /// <summary>Returns the rented object. Repeated calls on this lease are ignored.</summary>
+    /// <summary>Returns the object once; stale or repeated lease copies cannot return it again.</summary>
     public void Dispose()
     {
         if (_lease.TryRelease(out T value))
         {
-            _pool!.ReturnScoped(value, _slot!);
+            _pool!.ReturnScoped(value);
         }
     }
 }
@@ -58,28 +53,23 @@ ref struct PooledLease<T>
     where T : class
 {
     private readonly ObjectPool<T, ObjectPool<T>.PolicyAdapter>? _pool;
-    private readonly TrackedInstanceThreadLocalFrontTier<T>.Slot? _slot;
     private ScopedPoolLease<T> _lease;
 
-    internal PooledLease(
-        ObjectPool<T, ObjectPool<T>.PolicyAdapter> pool,
-        T value,
-        TrackedInstanceThreadLocalFrontTier<T>.Slot slot)
+    internal PooledLease(ObjectPool<T, ObjectPool<T>.PolicyAdapter> pool, T value)
     {
         _pool = pool;
-        _slot = slot;
-        _lease = new ScopedPoolLease<T>(value, slot);
+        _lease = new ScopedPoolLease<T>(value);
     }
 
     /// <summary>Gets the rented object while this lease owns it.</summary>
     public readonly T Value => _lease.Value;
 
-    /// <summary>Returns the rented object. Repeated calls on this lease are ignored.</summary>
+    /// <summary>Returns the object once; stale or repeated lease copies cannot return it again.</summary>
     public void Dispose()
     {
         if (_lease.TryRelease(out T value))
         {
-            _pool!.ReturnScoped(value, _slot!);
+            _pool!.ReturnScoped(value);
         }
     }
 }

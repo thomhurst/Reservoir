@@ -15,19 +15,12 @@ public
 sealed class StringBuilderPool
 {
     private readonly ObjectPool<StringBuilder, Policy> _pool;
-    private InstanceThreadLocalFrontTier<StringBuilder> _scopedTier;
 
     /// <summary>Gets the default largest builder capacity retained by a pool.</summary>
     public const int DefaultMaximumRetainedCapacity = 4096;
 
     /// <summary>Gets the shared pool.</summary>
     public static StringBuilderPool Shared { get; } = new();
-
-    /// <summary>
-    /// Gets an opt-in pool that retains one builder per participating thread before using
-    /// <see cref="Shared"/> as a bounded fallback.
-    /// </summary>
-    public static ThreadLocalPool ThreadLocalShared { get; } = new();
 
     /// <summary>Initializes a pool with default limits.</summary>
     public StringBuilderPool()
@@ -70,20 +63,20 @@ sealed class StringBuilderPool
     /// <summary>Rents an empty string builder.</summary>
     public StringBuilder Rent() => _pool.RentWithoutLifecycle();
 
-    /// <summary>Rents an empty builder owned by a stack-only thread-local lease.</summary>
+    /// <summary>Rents an empty builder owned by a stack-only lease.</summary>
     public Lease RentScoped()
     {
-        StringBuilder builder = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<StringBuilder>.Slot slot);
-        return new Lease(this, builder, slot);
+        StringBuilder builder = _pool.RentWithoutLifecycle();
+        return new Lease(this, builder);
     }
 
     /// <summary>
-    /// Rents an empty builder owned by a stack-only thread-local lease and exposes it directly.
+    /// Rents an empty builder owned by a stack-only lease and exposes it directly.
     /// </summary>
     public Lease RentScoped(out StringBuilder builder)
     {
-        builder = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<StringBuilder>.Slot slot);
-        return new Lease(this, builder, slot);
+        builder = _pool.RentWithoutLifecycle();
+        return new Lease(this, builder);
     }
 
     /// <summary>Returns a builder, clearing it when retained and discarding it when incompatible or too large.</summary>
@@ -110,14 +103,9 @@ sealed class StringBuilderPool
         return false;
     }
 
-    private void ReturnScoped(StringBuilder builder, InstanceThreadLocalFrontTier<StringBuilder>.Slot slot)
+    private void ReturnScoped(StringBuilder builder)
     {
-        if (!TryReset(builder))
-        {
-            return;
-        }
-
-        if (!InstanceThreadLocalFrontTier<StringBuilder>.TryReturn(slot, builder))
+        if (TryReset(builder))
         {
             _pool.ReturnWithoutReset(builder);
         }
@@ -164,21 +152,18 @@ sealed class StringBuilderPool
         }
     }
 
-    /// <summary>Owns a thread-local builder rental and returns it when disposed.</summary>
+    /// <summary>Owns a builder rental and returns it when disposed.</summary>
     public ref struct Lease
     {
         private readonly StringBuilderPool? _pool;
-        private readonly InstanceThreadLocalFrontTier<StringBuilder>.Slot? _slot;
         private ScopedPoolLease<StringBuilder> _lease;
 
         internal Lease(
             StringBuilderPool pool,
-            StringBuilder builder,
-            InstanceThreadLocalFrontTier<StringBuilder>.Slot slot)
+            StringBuilder builder)
         {
             _pool = pool;
-            _slot = slot;
-            _lease = new ScopedPoolLease<StringBuilder>(builder, slot);
+            _lease = new ScopedPoolLease<StringBuilder>(builder);
         }
 
         /// <summary>Gets the rented builder while this lease owns it.</summary>
@@ -189,34 +174,7 @@ sealed class StringBuilderPool
         {
             if (_lease.TryRelease(out StringBuilder builder))
             {
-                _pool!.ReturnScoped(builder, _slot!);
-            }
-        }
-    }
-
-    /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>
-    public sealed class ThreadLocalPool
-    {
-        internal ThreadLocalPool()
-        {
-        }
-
-        /// <summary>Rents an empty builder from the current thread or shared fallback.</summary>
-        public StringBuilder Rent()
-            => ThreadLocalFrontTier<StringBuilder, Policy>.Rent(Shared._pool);
-
-        /// <summary>Returns a builder to the current thread or shared fallback.</summary>
-        public void Return(StringBuilder builder)
-        {
-            ThrowIfNull(builder);
-            if (!Shared.TryReset(builder))
-            {
-                return;
-            }
-
-            if (!ThreadLocalFrontTier<StringBuilder, Policy>.TryReturn(builder))
-            {
-                Shared._pool.ReturnWithoutReset(builder);
+                _pool!.ReturnScoped(builder);
             }
         }
     }

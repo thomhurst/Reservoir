@@ -16,19 +16,12 @@ public
 sealed class ListPool<T>
 {
     private readonly ObjectPool<List<T>, Policy> _pool;
-    private InstanceThreadLocalFrontTier<List<T>> _scopedTier;
 
     /// <summary>Gets the default largest list capacity retained by a pool.</summary>
     public const int DefaultMaximumRetainedCapacity = 1024;
 
     /// <summary>Gets the shared pool.</summary>
     public static ListPool<T> Shared { get; } = new();
-
-    /// <summary>
-    /// Gets an opt-in pool that retains one list per participating thread before using
-    /// <see cref="Shared"/> as a bounded fallback.
-    /// </summary>
-    public static ThreadLocalPool ThreadLocalShared { get; } = new();
 
     /// <summary>Initializes a pool with default limits.</summary>
     public ListPool()
@@ -69,20 +62,20 @@ sealed class ListPool<T>
     /// <summary>Rents an empty list.</summary>
     public List<T> Rent() => _pool.RentWithoutLifecycle();
 
-    /// <summary>Rents an empty list owned by a stack-only thread-local lease.</summary>
+    /// <summary>Rents an empty list owned by a stack-only lease.</summary>
     public Lease RentScoped()
     {
-        List<T> list = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<List<T>>.Slot slot);
-        return new Lease(this, list, slot);
+        List<T> list = _pool.RentWithoutLifecycle();
+        return new Lease(this, list);
     }
 
     /// <summary>
-    /// Rents an empty list owned by a stack-only thread-local lease and exposes it directly.
+    /// Rents an empty list owned by a stack-only lease and exposes it directly.
     /// </summary>
     public Lease RentScoped(out List<T> list)
     {
-        list = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<List<T>>.Slot slot);
-        return new Lease(this, list, slot);
+        list = _pool.RentWithoutLifecycle();
+        return new Lease(this, list);
     }
 
     /// <summary>Returns a list, clearing it when retained and discarding it when too large.</summary>
@@ -109,14 +102,9 @@ sealed class ListPool<T>
         return false;
     }
 
-    private void ReturnScoped(List<T> list, InstanceThreadLocalFrontTier<List<T>>.Slot slot)
+    private void ReturnScoped(List<T> list)
     {
-        if (!TryReset(list))
-        {
-            return;
-        }
-
-        if (!InstanceThreadLocalFrontTier<List<T>>.TryReturn(slot, list))
+        if (TryReset(list))
         {
             _pool.ReturnWithoutReset(list);
         }
@@ -158,21 +146,18 @@ sealed class ListPool<T>
         }
     }
 
-    /// <summary>Owns a thread-local list rental and returns it when disposed.</summary>
+    /// <summary>Owns a list rental and returns it when disposed.</summary>
     public ref struct Lease
     {
         private readonly ListPool<T>? _pool;
-        private readonly InstanceThreadLocalFrontTier<List<T>>.Slot? _slot;
         private ScopedPoolLease<List<T>> _lease;
 
         internal Lease(
             ListPool<T> pool,
-            List<T> list,
-            InstanceThreadLocalFrontTier<List<T>>.Slot slot)
+            List<T> list)
         {
             _pool = pool;
-            _slot = slot;
-            _lease = new ScopedPoolLease<List<T>>(list, slot);
+            _lease = new ScopedPoolLease<List<T>>(list);
         }
 
         /// <summary>Gets the rented list while this lease owns it.</summary>
@@ -183,34 +168,7 @@ sealed class ListPool<T>
         {
             if (_lease.TryRelease(out List<T> list))
             {
-                _pool!.ReturnScoped(list, _slot!);
-            }
-        }
-    }
-
-    /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>
-    public sealed class ThreadLocalPool
-    {
-        internal ThreadLocalPool()
-        {
-        }
-
-        /// <summary>Rents an empty list from the current thread or shared fallback.</summary>
-        public List<T> Rent()
-            => ThreadLocalFrontTier<List<T>, Policy>.Rent(Shared._pool);
-
-        /// <summary>Returns a list to the current thread or shared fallback.</summary>
-        public void Return(List<T> list)
-        {
-            ThrowIfNull(list);
-            if (!Shared.TryReset(list))
-            {
-                return;
-            }
-
-            if (!ThreadLocalFrontTier<List<T>, Policy>.TryReturn(list))
-            {
-                Shared._pool.ReturnWithoutReset(list);
+                _pool!.ReturnScoped(list);
             }
         }
     }

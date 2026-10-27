@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Runtime.CompilerServices;
 
 namespace Reservoir.Tests;
 
@@ -8,8 +7,6 @@ public class CacheLinePaddingTests
     private const int CacheLineSize = 64;
 
     [Test]
-    [Arguments(typeof(TrackedInstanceThreadLocalFrontTier<object>), "PaddedSlot")]
-    [Arguments(typeof(InstanceThreadLocalFrontTier<object>), "PaddedSlot")]
     [Arguments(typeof(StripedObjectStore<object>), "PaddedStripe")]
     public async Task PaddedNestedTypesOccupyAtLeastTwoCacheLinesBeyondTheirFields(
         Type declaringType,
@@ -32,26 +29,6 @@ public class CacheLinePaddingTests
         => await AssertPaddedAllocation(
             typeof(PaddedScopedPoolLeaseState),
             static () => new PaddedScopedPoolLeaseState());
-
-    [Test]
-    public async Task HotSlotFieldsStartOneCacheLinePastTheObjectHeader()
-    {
-        Type paddedType = GetPaddedNestedType(
-            typeof(TrackedInstanceThreadLocalFrontTier<object>),
-            "PaddedSlot");
-        var slot = (TrackedInstanceThreadLocalFrontTier<object>.Slot)Activator.CreateInstance(
-            paddedType,
-            nonPublic: true)!;
-
-        // The first field of any object sits right after its method-table pointer, so its
-        // distance from the Item field gives Item's offset from the object start.
-        long itemOffset = (long)Unsafe.ByteOffset(
-            ref Unsafe.As<RawData>(slot).Data,
-            ref Unsafe.As<object?, byte>(ref slot.Item))
-            + IntPtr.Size;
-
-        await Assert.That(itemOffset).IsGreaterThanOrEqualTo(CacheLineSize);
-    }
 
     // A nested type of a constructed generic type comes back as its open definition.
     private static Type GetPaddedNestedType(Type declaringType, string nestedTypeName)
@@ -98,12 +75,5 @@ public class CacheLinePaddingTests
         // Header, leading pad, the hot fields, then a trailing pad.
         int minimumSize = IntPtr.Size + CacheLineSize + fieldBytes + CacheLineSize;
         await Assert.That(allocatedPerObject).IsGreaterThanOrEqualTo(minimumSize);
-    }
-
-    private sealed class RawData
-    {
-#pragma warning disable CS0649 // Only ever read through Unsafe.As.
-        public byte Data;
-#pragma warning restore CS0649
     }
 }

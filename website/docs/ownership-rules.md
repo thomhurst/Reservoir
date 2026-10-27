@@ -20,28 +20,17 @@ Do not concurrently use an object while returning it. If work crosses an `await`
 
 A `PooledLease` is stack-only and protects lexical synchronous scopes. Copies of a lease are safe
 to dispose, but a stale copy cannot release a later rental that reused the lease state.
-`RentScoped()` object-pool rentals return through a per-pool thread-local tier.
-`RentScopedShared()` instead returns only to bounded shared storage while preserving the same
-lease-copy protection. Its idle-object bound excludes outstanding rentals and ownership
-bookkeeping; other modes can still retain thread-local objects in the same pool. Manual rentals use the same
-thread-local tier only when constructed with `threadLocalFastPath: true` — a return then prefers
-the returning thread's slot when that thread has rented from the pool, overflowing to the bounded
-shared tier otherwise — so each thread that rents retains up to one object beyond
-`MaximumRetained`, while a thread that only returns never parks one. By default, manual returns
-go straight to the bounded shared tier.
+Scoped and manual rentals return to the same bounded store, so idle objects never exceed
+`MaximumRetained`. The bound excludes outstanding rentals and lease ownership bookkeeping.
 
 Specialized collection and cancellation-token-source `Lease` values provide the same stale-copy
-protection and return through a per-pool thread-local tier. They cannot cross an `await`; use
-manual rental APIs for async ownership.
+protection. They cannot cross an `await`; use manual rental APIs for async ownership.
 
 ## Collections arrive empty
 
 `ListPool`, `DictionaryPool`, `HashSetPool`, `QueuePool`, `StackPool`, and `StringBuilderPool` clear an item before retaining it. Every successful rental therefore starts empty.
 
 Custom dictionary and hash-set pools also verify the configured comparer before retention. Do not mutate comparer identity through unsupported means.
-
-`ThreadLocalShared` follows the same ownership rules. It stores an item on the thread that calls
-`Return`, which may differ from the thread that rented it after an async continuation.
 
 ## Reset failure means destruction
 

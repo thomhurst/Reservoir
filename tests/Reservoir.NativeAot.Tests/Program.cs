@@ -8,7 +8,7 @@ internal static class Program
     {
         CancellationTokenSourcePoolSupportsNativeAot();
         CustomDestructionSupportsNativeAot();
-        SharedScopedDestructionSupportsNativeAot();
+        ScopedDestructionSupportsNativeAot();
         ExplicitDestructionPreservesPolicyState();
         DefaultPortableDestructionSupportsNativeAot();
         RuntimeDestructionPreservesPolicyState();
@@ -45,22 +45,22 @@ internal static class Program
         }
     }
 
-    private static void SharedScopedDestructionSupportsNativeAot()
+    private static void ScopedDestructionSupportsNativeAot()
     {
         using var generic = new ObjectPool<PooledItem, CustomDestructionPolicy>(maxCapacity: 1);
-        var lease = generic.RentScopedShared(out PooledItem item);
+        var lease = generic.RentScoped(out PooledItem item);
         lease.Dispose();
         if (!item.IsDestroyed)
         {
-            throw new InvalidOperationException("Shared-store scoped destruction failed.");
+            throw new InvalidOperationException("Scoped destruction failed.");
         }
 
         using var runtime = new ObjectPool<PooledItem>(new CustomDestructionPolicy(), maxCapacity: 1);
-        var runtimeLease = runtime.RentScopedShared(out PooledItem runtimeItem);
+        var runtimeLease = runtime.RentScoped(out PooledItem runtimeItem);
         runtimeLease.Dispose();
         if (!runtimeItem.IsDestroyed)
         {
-            throw new InvalidOperationException("Runtime shared-store scoped destruction failed.");
+            throw new InvalidOperationException("Runtime scoped destruction failed.");
         }
     }
 

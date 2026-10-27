@@ -26,20 +26,6 @@ public class ObjectPoolContentionBenchmarks
             () => RunReservoir(pool, operationsPerWorker));
     }
 
-    [GlobalSetup(Target = nameof(ReservoirThreadLocalFastPath))]
-    public void SetupReservoirThreadLocalFastPath()
-    {
-        var pool = new ObjectPool<Payload, PayloadPolicy>(
-            default,
-            PoolCapacity,
-            threadLocalFastPath: true);
-        WarmReservoirPool(pool);
-        int operationsPerWorker = OperationsPerInvocation / WorkerCount;
-        _workers = new BenchmarkWorkerGroup(
-            WorkerCount,
-            () => RunReservoir(pool, operationsPerWorker));
-    }
-
     [GlobalSetup(Target = nameof(MicrosoftExtensionsObjectPool))]
     public void SetupMicrosoftPool()
     {
@@ -73,9 +59,6 @@ public class ObjectPoolContentionBenchmarks
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation, Baseline = true)]
     public void Reservoir() => _workers!.Run();
-
-    [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void ReservoirThreadLocalFastPath() => _workers!.Run();
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
     public void MicrosoftExtensionsObjectPool() => _workers!.Run();
@@ -155,7 +138,9 @@ public class ObjectPoolContentionBenchmarks
         public byte[] Buffer { get; } = GC.AllocateUninitializedArray<byte>(256);
     }
 
-    public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
+    // Microsoft's default policy lets a reset exception propagate without destroying the
+    // object; the marker gives Reservoir the same contract so both pools do equal work.
+    public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>, INonThrowingResetPolicy
     {
         public Payload Create() => new();
 

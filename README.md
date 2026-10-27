@@ -19,9 +19,8 @@ Requires a .NET Standard 2.0-compatible runtime or later
 ## Why Reservoir?
 
 - **Zero general-purpose pool allocations when warm.** `ObjectPool<T,TPolicy>` rent and return reuse fixed slots without allocating nodes. Legacy collection fallbacks may trim or replace backing storage.
-- **Bounded shared retention.** You choose the shared tier's maximum idle-object count. Manual
-  rentals use the bounded shared tier by default; pass `threadLocalFastPath: true` to opt into
-  retaining one additional object per thread that rents.
+- **Bounded retention.** You choose the maximum idle-object count. Every rental mode returns to
+  the same bounded store, so idle objects never accumulate per thread.
 - **Capacity-aware storage.** Cache-line-separated slots keep small pools fast; dense striped storage keeps large async working sets scalable.
 - **Library-friendly delivery.** One public assembly identity flows normally through `PackageReference` dependency graphs.
 - **Scoped ownership.** Stack-only leases return rentals automatically when synchronous work leaves scope.
@@ -58,16 +57,13 @@ readonly struct BufferPolicy : IPooledObjectPolicy<Buffer>
 }
 ```
 
-`Create()` handles a miss. `TryReset()` prepares an object for reuse or returns `false` to discard it. `Destroy()` releases discarded objects. Every netstandard2.0 policy must implement it; modern targets provide default `IDisposable` cleanup when it is omitted. The scoped lease guarantees return when control leaves the synchronous scope. It uses a per-pool thread-local fast path and retains one object per participating thread in addition to the bounded shared tier.
+`Create()` handles a miss. `TryReset()` prepares an object for reuse or returns `false` to discard it. `Destroy()` releases discarded objects. Every netstandard2.0 policy must implement it; modern targets provide default `IDisposable` cleanup when it is omitted. The scoped lease guarantees return when control leaves the synchronous scope and returns to the same bounded store as manual rentals.
 
 **Breaking policy migration:** `Destroy(T)` now belongs to `IPooledObjectPolicy<T>` on every target. Rebuild existing netstandard2.0 consumers and change explicit `IPooledObjectDestroyPolicy<T>.Destroy` implementations to `IPooledObjectPolicy<T>.Destroy`. See the [migration guide](https://thomhurst.github.io/Reservoir/docs/api/object-pools#migrate-the-destruction-contract).
 
-For performance-critical synchronous code, prefer `RentScoped(out T)` on .NET 10; its thread-local
-path is faster and avoids the ownership validation needed by repeated `lease.Value` access. On
-.NET 8, manual `Rent()` and `Return()` remain faster. Manual rental is also required when work
-crosses an `await`. Manual rentals use the bounded shared tier by default; opt into the thread-local
-path with `threadLocalFastPath: true` only when its same-thread reuse wins justify its lookup and
-retention costs. Measure on target hardware when nanoseconds matter.
+For performance-critical synchronous code, prefer `RentScoped(out T)` over repeated
+`lease.Value` access, which validates ownership on every read. Manual rental is required when work
+crosses an `await`. Measure on target hardware when nanoseconds matter.
 
 For work that crosses an `await`, use `Rent()` and return the object in `finally`. See the [quick start](https://thomhurst.github.io/Reservoir/docs/quick-start) for both patterns.
 
@@ -92,8 +88,7 @@ finally
 
 Collections return empty. Oversized backing stores are discarded instead of retained. Each pool exposes a shared instance and constructors for custom limits.
 
-For synchronous scopes, `RentScoped` uses a per-pool thread-local fast path and returns the
-collection automatically:
+For synchronous scopes, `RentScoped` returns the collection automatically:
 
 ```csharp
 using ListPool<int>.Lease lease = ListPool<int>.Shared.RentScoped(out List<int> values);
@@ -104,28 +99,9 @@ Consume(values);
 The lease is stack-only and cannot cross an `await`. Manual `Rent` and `Return` keep using the
 bounded shared pool for asynchronous ownership.
 
-`CancellationTokenSourcePool.RentScoped` uses the same per-pool thread-local strategy while
-preserving source reset and disposal semantics. Use `Rent()` or `RentLinked()` when ownership
-crosses an async boundary.
-
-For synchronous, thread-affine hot paths, each specialized collection pool also exposes an
-opt-in `ThreadLocalShared` facade:
-
-```csharp
-List<int> values = ListPool<int>.ThreadLocalShared.Rent();
-try
-{
-    Consume(values);
-}
-finally
-{
-    ListPool<int>.ThreadLocalShared.Return(values);
-}
-```
-
-It retains one item per participating thread, then falls back to the bounded `Shared` pool.
-This improves same-thread reuse but can retain items on idle threads and is not globally bounded
-by `Shared.MaximumRetained`.
+`CancellationTokenSourcePool.RentScoped` offers the same scoped ownership while preserving
+source reset and disposal semantics. Use `Rent()` or `RentLinked()` when ownership crosses an
+async boundary.
 
 ## The ownership rule
 
@@ -173,10 +149,6 @@ with explicit baseline and candidate SHAs for performance acceptance; local timi
 
 Choose Reservoir when you want bounded shared custom-object reuse, struct-policy specialization,
 scoped leases, or capacity-aware storage.
-
-For synchronous ownership with bounded idle retention, use `pool.RentScopedShared(out var item)`.
-It returns a stack-only `SharedPooledLease` through the shared store. Existing `RentScoped()`
-uses additional per-thread object retention. [Compare retention modes](https://thomhurst.github.io/Reservoir/docs/api/object-pools#scoped-rentals-with-bounded-shared-retention).
 
 Use `ArrayPool<T>` for raw arrays. Use `Microsoft.Extensions.ObjectPool` when integration with Microsoft Extensions abstractions matters more than Reservoir's specialized policies and leases.
 

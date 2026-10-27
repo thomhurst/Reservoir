@@ -124,8 +124,7 @@ public class ObjectLifecycleTests
     {
         var pool = new ObjectPool<DisposableItem, DisposablePolicy>(
             default,
-            maxCapacity: 1,
-            threadLocalFastPath: false);
+            maxCapacity: 1);
         DisposableItem retained = pool.Rent();
         DisposableItem excess = pool.Rent();
 
@@ -143,8 +142,7 @@ public class ObjectLifecycleTests
         const int capacity = 65;
         var pool = new ObjectPool<DisposableItem, DisposablePolicy>(
             default,
-            capacity,
-            threadLocalFastPath: false);
+            capacity);
         var retained = new DisposableItem[capacity];
 
         for (int i = 0; i < retained.Length; i++)
@@ -205,7 +203,7 @@ public class ObjectLifecycleTests
     }
 
     [Test]
-    public async Task ClearDisposesScopedThreadLocalItemAndLeavesPoolUsable()
+    public async Task ClearDisposesScopedItemAndLeavesPoolUsable()
     {
         var pool = new ObjectPool<DisposableItem, DisposablePolicy>(maxCapacity: 1);
         DisposableItem retained;
@@ -227,11 +225,13 @@ public class ObjectLifecycleTests
     [Arguments(8)]
     [Arguments(9)]
     [Arguments(16)]
-    public async Task ClearDisposesScopedItemsFromEveryParticipatingThread(int threadCount)
+    public async Task ScopedReturnsFromManyThreadsStayWithinCapacity(int threadCount)
     {
         var pool = new ObjectPool<DisposableItem, DisposablePolicy>(maxCapacity: 1);
         var retained = new DisposableItem[threadCount];
         var threads = new Thread[threadCount];
+        // Every thread holds its rental until all have rented, so each rents a distinct item.
+        using var rented = new Barrier(threadCount);
 
         for (int i = 0; i < threads.Length; i++)
         {
@@ -240,6 +240,7 @@ public class ObjectLifecycleTests
             {
                 using PooledLease<DisposableItem, DisposablePolicy> lease = pool.RentScoped();
                 retained[index] = lease.Value;
+                rented.SignalAndWait();
             });
             threads[i].Start();
         }
@@ -249,15 +250,15 @@ public class ObjectLifecycleTests
             thread.Join();
         }
 
-        await Assert.That(retained.All(item => item.DisposeCount == 0)).IsTrue();
-        pool.Clear();
-
-        await Assert.That(retained.All(item => item.DisposeCount == 1)).IsTrue();
-
-        pool.Clear();
-
-        await Assert.That(retained.All(item => item.DisposeCount == 1)).IsTrue();
         await Assert.That(retained.Distinct()).Count().IsEqualTo(threadCount);
+        await Assert.That(retained.Count(item => item.DisposeCount == 0)).IsEqualTo(1);
+        pool.Clear();
+
+        await Assert.That(retained.All(item => item.DisposeCount == 1)).IsTrue();
+
+        pool.Clear();
+
+        await Assert.That(retained.All(item => item.DisposeCount == 1)).IsTrue();
     }
 
     [Test]
@@ -306,7 +307,7 @@ public class ObjectLifecycleTests
     }
 
     [Test]
-    public async Task DisposeDrainsScopedThreadLocalItem()
+    public async Task DisposeDrainsScopedItem()
     {
         var pool = new ObjectPool<DisposableItem, DisposablePolicy>(maxCapacity: 1);
         DisposableItem retained;

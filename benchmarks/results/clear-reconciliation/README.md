@@ -1,5 +1,7 @@
 # Clear reconciliation retention fix (#98)
 
+> **Historical record.** This report predates the removal of thread-local retention in #192; `TrackedInstanceThreadLocalFrontTier<T>` no longer exists. Every rental path now returns to the bounded shared store.
+
 `TrackedInstanceThreadLocalFrontTier<T>` now keeps its last captured item in a weak reference. A racing renter still holds the item strongly while reconciling under the slot lock; an uncontended clear no longer keeps a destroyed object graph alive. The first capturing clear allocates one weak-reference handle per slot, reused by later clears. Ordinary warm rent/return does not access that handle.
 
 ## Measurement

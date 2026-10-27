@@ -16,19 +16,12 @@ public
 sealed class HashSetPool<T>
 {
     private readonly ObjectPool<HashSet<T>, Policy> _pool;
-    private InstanceThreadLocalFrontTier<HashSet<T>> _scopedTier;
 
     /// <summary>Gets the default largest hash-set capacity retained by a pool.</summary>
     public const int DefaultMaximumRetainedCapacity = 1024;
 
     /// <summary>Gets the shared pool using the default element comparer.</summary>
     public static HashSetPool<T> Shared { get; } = new();
-
-    /// <summary>
-    /// Gets an opt-in default-comparer pool that retains one set per participating thread
-    /// before using <see cref="Shared"/> as a bounded fallback.
-    /// </summary>
-    public static ThreadLocalPool ThreadLocalShared { get; } = new();
 
     /// <summary>Initializes a pool with default limits and element comparer.</summary>
     public HashSetPool()
@@ -102,20 +95,20 @@ sealed class HashSetPool<T>
     /// <summary>Rents an empty hash set.</summary>
     public HashSet<T> Rent() => _pool.RentWithoutLifecycle();
 
-    /// <summary>Rents an empty hash set owned by a stack-only thread-local lease.</summary>
+    /// <summary>Rents an empty hash set owned by a stack-only lease.</summary>
     public Lease RentScoped()
     {
-        HashSet<T> set = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<HashSet<T>>.Slot slot);
-        return new Lease(this, set, slot);
+        HashSet<T> set = _pool.RentWithoutLifecycle();
+        return new Lease(this, set);
     }
 
     /// <summary>
-    /// Rents an empty hash set owned by a stack-only thread-local lease and exposes it directly.
+    /// Rents an empty hash set owned by a stack-only lease and exposes it directly.
     /// </summary>
     public Lease RentScoped(out HashSet<T> set)
     {
-        set = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<HashSet<T>>.Slot slot);
-        return new Lease(this, set, slot);
+        set = _pool.RentWithoutLifecycle();
+        return new Lease(this, set);
     }
 
     /// <summary>Returns a hash set, clearing it when retained and discarding it when incompatible or too large.</summary>
@@ -142,14 +135,9 @@ sealed class HashSetPool<T>
         return false;
     }
 
-    private void ReturnScoped(HashSet<T> set, InstanceThreadLocalFrontTier<HashSet<T>>.Slot slot)
+    private void ReturnScoped(HashSet<T> set)
     {
-        if (!TryReset(set))
-        {
-            return;
-        }
-
-        if (!InstanceThreadLocalFrontTier<HashSet<T>>.TryReturn(slot, set))
+        if (TryReset(set))
         {
             _pool.ReturnWithoutReset(set);
         }
@@ -219,19 +207,16 @@ sealed class HashSetPool<T>
         }
     }
 
-    /// <summary>Owns a thread-local hash-set rental and returns it when disposed.</summary>
+    /// <summary>Owns a hash-set rental and returns it when disposed.</summary>
     public ref struct Lease
     {
         private readonly HashSetPool<T>? _pool;
-        private readonly InstanceThreadLocalFrontTier<HashSet<T>>.Slot? _slot;
         private ScopedPoolLease<HashSet<T>> _lease;
 
-        internal Lease(HashSetPool<T> pool, HashSet<T> set,
-            InstanceThreadLocalFrontTier<HashSet<T>>.Slot slot)
+        internal Lease(HashSetPool<T> pool, HashSet<T> set)
         {
             _pool = pool;
-            _slot = slot;
-            _lease = new ScopedPoolLease<HashSet<T>>(set, slot);
+            _lease = new ScopedPoolLease<HashSet<T>>(set);
         }
 
         /// <summary>Gets the rented hash set while this lease owns it.</summary>
@@ -242,34 +227,7 @@ sealed class HashSetPool<T>
         {
             if (_lease.TryRelease(out HashSet<T> set))
             {
-                _pool!.ReturnScoped(set, _slot!);
-            }
-        }
-    }
-
-    /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>
-    public sealed class ThreadLocalPool
-    {
-        internal ThreadLocalPool()
-        {
-        }
-
-        /// <summary>Rents an empty set from the current thread or shared fallback.</summary>
-        public HashSet<T> Rent()
-            => ThreadLocalFrontTier<HashSet<T>, Policy>.Rent(Shared._pool);
-
-        /// <summary>Returns a set to the current thread or shared fallback.</summary>
-        public void Return(HashSet<T> set)
-        {
-            ThrowIfNull(set);
-            if (!Shared.TryReset(set))
-            {
-                return;
-            }
-
-            if (!ThreadLocalFrontTier<HashSet<T>, Policy>.TryReturn(set))
-            {
-                Shared._pool.ReturnWithoutReset(set);
+                _pool!.ReturnScoped(set);
             }
         }
     }

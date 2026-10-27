@@ -7,13 +7,15 @@ using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
+#if NET5_0_OR_GREATER
+using System.Runtime.InteropServices;
+#endif
 using System.Threading;
 
 namespace Reservoir;
 
 /// <summary>
-/// A thread-safe object pool specialized for a struct policy, with bounded shared retention and a
-/// per-pool thread-local tier for default scoped rentals.
+/// A thread-safe object pool specialized for a struct policy, with bounded shared retention.
 /// </summary>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
 /// <typeparam name="TPolicy">The policy used to create, reset, and destroy objects.</typeparam>
@@ -34,19 +36,20 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     private const uint StripeHashMultiplier = 2_654_435_769u;
 
     // Cache only scalar affinity; retained objects remain enumerable in the shared array.
+    // Holds the thread's already-mixed ordinal so the hot paths do no multiply between the
+    // thread-static load and the slot's interlocked operation. Ordinals start at one and the
+    // multiplier is odd, so a mixed value is never zero and zero marks an unassigned thread.
     [ThreadStatic]
-    private static int _threadStripe;
+    private static uint _threadStripe;
 
     private static int s_nextThreadStripe;
 
     private readonly ObjectWrapper[] _items;
     private readonly int _indexMask;
-    private readonly bool _threadLocalFastPath;
 #if NET10_0_OR_GREATER
     private readonly bool _skipReset;
 #endif
     private readonly StripedObjectStore<T>? _largeStore;
-    private TrackedInstanceThreadLocalFrontTier<T> _scopedTier;
     private TPolicy _policy;
     private int _isDisposed;
 
@@ -69,15 +72,9 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     }
 
     /// <summary>Initializes a pool with the supplied policy and capacity.</summary>
-    /// <remarks>
-    /// The thread-local fast path is disabled by default, so retention is bounded strictly to
-    /// <see cref="MaximumRetained"/>. Use
-    /// <see cref="ObjectPool{T,TPolicy}(TPolicy, int, bool)"/> to opt in when same-thread reuse
-    /// outweighs the lookup overhead and additional per-thread retention.
-    /// </remarks>
+    /// <remarks>Idle objects are retained only up to <see cref="MaximumRetained"/>.</remarks>
     public ObjectPool(TPolicy policy, int maxCapacity)
     {
-        _threadLocalFastPath = false;
 #if NET8_0_OR_GREATER
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCapacity);
 #else
@@ -105,30 +102,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
     }
 
-    /// <summary>
-    /// Initializes a pool with the supplied policy and capacity, controlling whether
-    /// <see cref="Rent()"/> and <see cref="Return"/> use the per-pool thread-local tier.
-    /// </summary>
-    /// <remarks>
-    /// With the fast path enabled, a rent takes the current thread's slot when it holds an object,
-    /// and a return stores into the returning thread's slot when that thread has rented from this
-    /// pool and the slot is empty, overflowing to the bounded shared tier otherwise — so each
-    /// thread that rents retains up to one object beyond <see cref="MaximumRetained"/> until it
-    /// rents again or <see cref="Clear"/> or <see cref="Dispose"/> runs. A thread that only
-    /// returns (a completion or IO thread receiving handed-off objects) never parks one. Same-
-    /// thread reuse costs a single atomic operation. Pass <see langword="true"/> to opt in.
-    /// </remarks>
-    public ObjectPool(TPolicy policy, int maxCapacity, bool threadLocalFastPath)
-        : this(policy, maxCapacity)
-    {
-        _threadLocalFastPath = threadLocalFastPath;
-    }
-
 #if NET10_0_OR_GREATER
     // Factory-backed pools have no reset callback. Preserve lifecycle checks while avoiding
     // the guarded reset call on every return, including returns carried by scoped leases.
-    internal ObjectPool(TPolicy policy, int maxCapacity, bool threadLocalFastPath, bool skipReset)
-        : this(policy, maxCapacity, threadLocalFastPath)
+    internal ObjectPool(TPolicy policy, int maxCapacity, bool skipReset)
+        : this(policy, maxCapacity)
     {
         _skipReset = skipReset;
     }
@@ -144,11 +122,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Rent()
     {
-        if (_threadLocalFastPath)
-        {
-            return RentScopedValue(out _);
-        }
-
         ThrowIfDisposed();
 
         T rented = RentWithoutLifecycle();
@@ -166,78 +139,43 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     internal T RentWithoutLifecycle()
     {
         StripedObjectStore<T>? largeStore = _largeStore;
-        int startIndex = 0;
-        T? item;
-
         if (largeStore is null)
         {
-            startIndex = GetStartIndex();
-            ref T? startSlot = ref GetSlot(startIndex);
+            int startIndex = GetStartIndex();
+            ref T? startSlot = ref GetHotSlot(startIndex);
             T? observed = Volatile.Read(ref startSlot);
             // A failed CAS is a permitted pool miss; RentSlow scans the remaining slots.
-            item = observed is not null
+            if (observed is not null
                 && ReferenceEquals(
                     Interlocked.CompareExchange(ref startSlot, null, observed),
-                    observed)
-                ? observed
-                : null;
-        }
-        else
-        {
-            _ = largeStore.TryPop(out item);
+                    observed))
+            {
+                return observed;
+            }
+
+            return RentSlow(startIndex);
         }
 
-        return item
-            ?? (largeStore is null
-                ? RentSlow(startIndex)
-                : CreateItem());
+        // Only the large path takes an address-exposed out local, so the small path's rented
+        // object stays in a register instead of round-tripping through the stack.
+        return largeStore.TryPop(out T? item) ? item! : CreateItem();
     }
 
-    /// <summary>
-    /// Rents an object owned by a stack-only lease using a per-pool thread-local fast path.
-    /// </summary>
+    /// <summary>Rents an object owned by a stack-only lease.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public PooledLease<T, TPolicy> RentScoped()
-    {
-        T value = RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot);
-        return new PooledLease<T, TPolicy>(this, value, slot);
-    }
+        => new(this, RentScopedValue());
 
-    /// <summary>
-    /// Rents an object owned by a stack-only lease using a per-pool thread-local fast path and also
-    /// exposes the object directly.
-    /// </summary>
+    /// <summary>Rents an object owned by a stack-only lease and also exposes the object directly.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public PooledLease<T, TPolicy> RentScoped(out T value)
     {
-        value = RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot);
-        return new PooledLease<T, TPolicy>(this, value, slot);
-    }
-
-    /// <summary>
-    /// Rents a stack-only lease whose idle object returns only to the bounded shared store.
-    /// </summary>
-    /// <remarks>
-    /// This mode bypasses thread-local object retention, including when manual rentals opt into
-    /// that tier. The bound applies to idle pooled objects, not outstanding rentals or lease
-    /// ownership bookkeeping. Other rental modes can still retain thread-local objects.
-    /// </remarks>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public SharedPooledLease<T, TPolicy> RentScopedShared()
-        => new(this, RentSharedValue());
-
-    /// <summary>
-    /// Rents a shared-store scoped lease and exposes its object directly.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public SharedPooledLease<T, TPolicy> RentScopedShared(out T value)
-    {
-        value = RentSharedValue();
-        return new SharedPooledLease<T, TPolicy>(this, value);
+        value = RentScopedValue();
+        return new PooledLease<T, TPolicy>(this, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal T RentSharedValue()
+    internal T RentScopedValue()
     {
         ThrowIfDisposed();
         T value = RentWithoutLifecycle();
@@ -250,9 +188,8 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         return ThrowDisposed();
     }
 
-    // Shared-store leases bypass the manual TLS option on both rent and return.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void ReturnSharedValue(T value)
+    internal void ReturnScoped(T value)
     {
         if (Volatile.Read(ref _isDisposed) != 0)
         {
@@ -268,89 +205,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
         ReturnWithoutReset(value);
         ClearIfDisposed();
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal T RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot)
-    {
-        ThrowIfDisposed();
-        T value = _scopedTier.Rent(this, out slot);
-        if (Volatile.Read(ref _isDisposed) == 0)
-        {
-            return value;
-        }
-
-        DisposeItem(value);
-        return ThrowDisposed();
-    }
-
-    // The slot rented with the value replaces the return-side thread-local lookup; a stack-only
-    // lease cannot change threads, so it is still the returning thread's own slot.
-    internal void ReturnScoped(T value, TrackedInstanceThreadLocalFrontTier<T>.Slot slot)
-    {
-        if (Volatile.Read(ref _isDisposed) != 0)
-        {
-            DisposeItem(value);
-            return;
-        }
-
-        if (!TryResetItem(value))
-        {
-            DisposeItem(value);
-            return;
-        }
-
-        if (Volatile.Read(ref _isDisposed) != 0)
-        {
-            DisposeItem(value);
-            return;
-        }
-
-        if (!TrackedInstanceThreadLocalFrontTier<T>.TryReturn(slot, value))
-        {
-            ReturnWithoutResetWithLifecycle(value);
-            return;
-        }
-
-        if (Volatile.Read(ref _isDisposed) != 0
-            && TrackedInstanceThreadLocalFrontTier<T>.TryRemove(slot, value))
-        {
-            DisposeItem(value);
-        }
-    }
-
-    // The fast-path Return has no lease to carry the slot, so this overload resolves the
-    // returning thread's slot through the tier.
-    internal void ReturnScoped(T value)
-    {
-        if (Volatile.Read(ref _isDisposed) != 0)
-        {
-            DisposeItem(value);
-            return;
-        }
-
-        if (!TryResetItem(value))
-        {
-            DisposeItem(value);
-            return;
-        }
-
-        if (Volatile.Read(ref _isDisposed) != 0)
-        {
-            DisposeItem(value);
-            return;
-        }
-
-        if (!_scopedTier.TryReturn(value))
-        {
-            ReturnWithoutResetWithLifecycle(value);
-            return;
-        }
-
-        if (Volatile.Read(ref _isDisposed) != 0 && _scopedTier.TryRemove(value))
-        {
-            DisposeItem(value);
-        }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -406,12 +260,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             throw new ArgumentNullException(nameof(obj));
         }
 #endif
-
-        if (_threadLocalFastPath)
-        {
-            ReturnScoped(obj);
-            return;
-        }
 
         if (Volatile.Read(ref _isDisposed) != 0)
         {
@@ -494,7 +342,7 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
 
         int startIndex = GetStartIndex();
-        ref T? startSlot = ref GetSlot(startIndex);
+        ref T? startSlot = ref GetHotSlot(startIndex);
         T? displaced = Interlocked.Exchange(ref startSlot, obj);
         if (displaced is null)
         {
@@ -521,21 +369,12 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     internal void Destroy(T obj) => DisposeItem(obj);
 
     /// <summary>
-    /// Removes all thread-local and shared retained objects and disposes those that implement
-    /// <see cref="IDisposable"/>. The pool remains usable.
+    /// Removes all retained objects and disposes those that implement <see cref="IDisposable"/>.
+    /// The pool remains usable.
     /// </summary>
     public void Clear()
     {
         Exception? firstException = null;
-        try
-        {
-            _scopedTier.Clear(this);
-        }
-        catch (Exception exception)
-        {
-            firstException = exception;
-        }
-
         StripedObjectStore<T>? largeStore = _largeStore;
         if (largeStore is not null)
         {
@@ -650,25 +489,39 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int GetStartIndex()
     {
-        int threadStripe = _threadStripe;
-        if (threadStripe == 0)
+        uint mixedStripe = _threadStripe;
+        if (mixedStripe == 0)
         {
-            do
-            {
-                threadStripe = Interlocked.Increment(ref s_nextThreadStripe);
-            }
-            while (threadStripe == 0);
-
-            _threadStripe = threadStripe;
+            mixedStripe = AssignThreadStripe();
         }
 
-        return GetAffinityIndex(unchecked((uint)(threadStripe - 1)));
+        return GetAffinityIndexFromMixed(mixedStripe);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static uint AssignThreadStripe()
+    {
+        uint ordinal;
+        do
+        {
+            ordinal = unchecked((uint)Interlocked.Increment(ref s_nextThreadStripe));
+        }
+        while (ordinal == 0);
+
+        uint mixedStripe = MixStripe(ordinal);
+        _threadStripe = mixedStripe;
+        return mixedStripe;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal int GetAffinityIndex(uint threadStripe)
+    internal static uint MixStripe(uint ordinal) => unchecked(ordinal * StripeHashMultiplier);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int GetAffinityIndex(uint ordinal) => GetAffinityIndexFromMixed(MixStripe(ordinal));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int GetAffinityIndexFromMixed(uint mixedStripe)
     {
-        uint mixedStripe = threadStripe * StripeHashMultiplier;
         // Preserve masking for powers of two; scale other hashes without integer division.
         return _indexMask >= 0
             ? (int)(mixedStripe & (uint)_indexMask)
@@ -678,6 +531,19 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ref T? GetSlot(int index)
         => ref _items[FirstSlotOffset + index * CacheLineSlotStride].Element;
+
+    // GetStartIndex always yields an index below MaximumRetained, and the small store holds
+    // FirstSlotOffset + MaximumRetained * CacheLineSlotStride elements, so the hot paths can
+    // skip the bounds check. Only call this when _largeStore is null.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private ref T? GetHotSlot(int index)
+#if NET5_0_OR_GREATER
+        => ref Unsafe.Add(
+            ref MemoryMarshal.GetArrayDataReference(_items),
+            FirstSlotOffset + index * CacheLineSlotStride).Element;
+#else
+        => ref GetSlot(index);
+#endif
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ClearIfDisposed()

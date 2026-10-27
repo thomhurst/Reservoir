@@ -3,14 +3,12 @@ using BenchmarkDotNet.Attributes;
 namespace Reservoir.Benchmarks;
 
 [MemoryDiagnoser]
-public class SharedScopedRentalBenchmarks
+public class ScopedRentalBenchmarks
 {
     private ObjectPool<Payload, Policy> _manual = null!;
     private ObjectPool<Payload, Policy> _scoped = null!;
-    private ObjectPool<Payload, Policy> _sharedScoped = null!;
     private ObjectPool<Payload> _runtimeManual = null!;
     private ObjectPool<Payload> _runtimeScoped = null!;
-    private ObjectPool<Payload> _runtimeSharedScoped = null!;
 
     [Params(1, 32, 256)]
     public int Capacity { get; set; }
@@ -20,16 +18,12 @@ public class SharedScopedRentalBenchmarks
     {
         _manual = new(default, Capacity);
         _scoped = new(default, Capacity);
-        _sharedScoped = new(default, Capacity);
         _runtimeManual = new(new Policy(), Capacity);
         _runtimeScoped = new(new Policy(), Capacity);
-        _runtimeSharedScoped = new(new Policy(), Capacity);
         _ = Manual();
         _ = Scoped();
-        _ = SharedScoped();
         _ = RuntimeManual();
         _ = RuntimeScoped();
-        _ = RuntimeSharedScoped();
     }
 
     [GlobalCleanup]
@@ -37,10 +31,8 @@ public class SharedScopedRentalBenchmarks
     {
         _manual.Dispose();
         _scoped.Dispose();
-        _sharedScoped.Dispose();
         _runtimeManual.Dispose();
         _runtimeScoped.Dispose();
-        _runtimeSharedScoped.Dispose();
     }
 
     [Benchmark(Baseline = true)]
@@ -61,17 +53,9 @@ public class SharedScopedRentalBenchmarks
     }
 
     [Benchmark]
-    public Payload SharedScoped()
+    public Payload ScopedValue()
     {
-        using var lease = _sharedScoped.RentScopedShared(out Payload item);
-        item.Length = 1;
-        return item;
-    }
-
-    [Benchmark]
-    public Payload SharedScopedValue()
-    {
-        using var lease = _sharedScoped.RentScopedShared();
+        using var lease = _scoped.RentScoped();
         Payload item = lease.Value;
         item.Length = 1;
         return item;
@@ -90,14 +74,6 @@ public class SharedScopedRentalBenchmarks
     public Payload RuntimeScoped()
     {
         using var lease = _runtimeScoped.RentScoped(out Payload item);
-        item.Length = 1;
-        return item;
-    }
-
-    [Benchmark]
-    public Payload RuntimeSharedScoped()
-    {
-        using var lease = _runtimeSharedScoped.RentScopedShared(out Payload item);
         item.Length = 1;
         return item;
     }

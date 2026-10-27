@@ -76,7 +76,7 @@ A builder is retained only when `Capacity <= MaximumRetainedCapacity` and `MaxCa
 
 Specialized collection pools do not own external resources and do not expose `Clear` or `Dispose`. Use a custom `ObjectPool<T,TPolicy>` when lifecycle control is required.
 
-## Scoped thread-local rentals
+## Scoped rentals
 
 Every specialized pool exposes `RentScoped` for synchronous scopes:
 
@@ -85,35 +85,6 @@ using ListPool<int>.Lease lease = ListPool<int>.Shared.RentScoped(out List<int> 
 list.Add(42);
 ```
 
-The stack-only lease returns the collection automatically. It cannot cross an `await`, so the pool
-can keep one item per participating thread and use its bounded shared store as a fallback for
-nested rentals. The thread-local slot belongs to the pool instance, preserving dedicated limits
-and dictionary or hash-set comparers.
-
-Use manual `Rent` and `Return` when ownership crosses an async boundary.
-
-## Thread-local shared pools
-
-Every specialized pool also exposes an opt-in `ThreadLocalShared` facade for synchronous,
-thread-affine hot paths:
-
-```csharp
-List<int> list = ListPool<int>.ThreadLocalShared.Rent();
-try
-{
-    list.Add(42);
-}
-finally
-{
-    ListPool<int>.ThreadLocalShared.Return(list);
-}
-```
-
-The facade retains one item per participating thread. If that thread's slot is occupied, return
-falls back to the bounded `Shared` pool. The thread-local tier is therefore additional retention:
-it is not counted by `Shared.MaximumRetained`, and items can remain attached to idle threads.
-
-Rent and return may occur on different threads safely, but the returned item becomes local to the
-returning thread. Async continuations can migrate between threads, so use `ThreadLocalShared` only
-when this retention tradeoff fits the workload. Dictionary and hash-set facades use the default
-comparer; create a dedicated pool when a custom comparer is required.
+The stack-only lease returns the collection automatically to the same bounded store as manual
+rentals, preserving dedicated limits and dictionary or hash-set comparers. It cannot cross an
+`await`; use manual `Rent` and `Return` when ownership crosses an async boundary.
