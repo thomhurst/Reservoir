@@ -12,8 +12,7 @@ using System.Threading;
 namespace Reservoir;
 
 /// <summary>
-/// A thread-safe object pool specialized for a struct policy, with bounded shared retention and a
-/// per-pool thread-local tier for default scoped rentals.
+/// A thread-safe object pool specialized for a struct policy, with bounded shared retention.
 /// </summary>
 /// <typeparam name="T">The reference type stored by the pool.</typeparam>
 /// <typeparam name="TPolicy">The policy used to create, reset, and destroy objects.</typeparam>
@@ -41,12 +40,10 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
     private readonly ObjectWrapper[] _items;
     private readonly int _indexMask;
-    private readonly bool _threadLocalFastPath;
 #if NET10_0_OR_GREATER
     private readonly bool _skipReset;
 #endif
     private readonly StripedObjectStore<T>? _largeStore;
-    private TrackedInstanceThreadLocalFrontTier<T> _scopedTier;
     private TPolicy _policy;
     private int _isDisposed;
 
@@ -69,15 +66,9 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     }
 
     /// <summary>Initializes a pool with the supplied policy and capacity.</summary>
-    /// <remarks>
-    /// The thread-local fast path is disabled by default, so retention is bounded strictly to
-    /// <see cref="MaximumRetained"/>. Use
-    /// <see cref="ObjectPool{T,TPolicy}(TPolicy, int, bool)"/> to opt in when same-thread reuse
-    /// outweighs the lookup overhead and additional per-thread retention.
-    /// </remarks>
+    /// <remarks>Idle objects are retained only up to <see cref="MaximumRetained"/>.</remarks>
     public ObjectPool(TPolicy policy, int maxCapacity)
     {
-        _threadLocalFastPath = false;
 #if NET8_0_OR_GREATER
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCapacity);
 #else
@@ -105,30 +96,11 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         }
     }
 
-    /// <summary>
-    /// Initializes a pool with the supplied policy and capacity, controlling whether
-    /// <see cref="Rent()"/> and <see cref="Return"/> use the per-pool thread-local tier.
-    /// </summary>
-    /// <remarks>
-    /// With the fast path enabled, a rent takes the current thread's slot when it holds an object,
-    /// and a return stores into the returning thread's slot when that thread has rented from this
-    /// pool and the slot is empty, overflowing to the bounded shared tier otherwise — so each
-    /// thread that rents retains up to one object beyond <see cref="MaximumRetained"/> until it
-    /// rents again or <see cref="Clear"/> or <see cref="Dispose"/> runs. A thread that only
-    /// returns (a completion or IO thread receiving handed-off objects) never parks one. Same-
-    /// thread reuse costs a single atomic operation. Pass <see langword="true"/> to opt in.
-    /// </remarks>
-    public ObjectPool(TPolicy policy, int maxCapacity, bool threadLocalFastPath)
-        : this(policy, maxCapacity)
-    {
-        _threadLocalFastPath = threadLocalFastPath;
-    }
-
 #if NET10_0_OR_GREATER
     // Factory-backed pools have no reset callback. Preserve lifecycle checks while avoiding
     // the guarded reset call on every return, including returns carried by scoped leases.
-    internal ObjectPool(TPolicy policy, int maxCapacity, bool threadLocalFastPath, bool skipReset)
-        : this(policy, maxCapacity, threadLocalFastPath)
+    internal ObjectPool(TPolicy policy, int maxCapacity, bool skipReset)
+        : this(policy, maxCapacity)
     {
         _skipReset = skipReset;
     }
@@ -144,11 +116,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Rent()
     {
-        if (_threadLocalFastPath)
-        {
-            return RentScopedValue(out _);
-        }
-
         ThrowIfDisposed();
 
         T rented = RentWithoutLifecycle();
@@ -193,51 +160,21 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
                 : CreateItem());
     }
 
-    /// <summary>
-    /// Rents an object owned by a stack-only lease using a per-pool thread-local fast path.
-    /// </summary>
+    /// <summary>Rents an object owned by a stack-only lease.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public PooledLease<T, TPolicy> RentScoped()
-    {
-        T value = RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot);
-        return new PooledLease<T, TPolicy>(this, value, slot);
-    }
+        => new(this, RentScopedValue());
 
-    /// <summary>
-    /// Rents an object owned by a stack-only lease using a per-pool thread-local fast path and also
-    /// exposes the object directly.
-    /// </summary>
+    /// <summary>Rents an object owned by a stack-only lease and also exposes the object directly.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public PooledLease<T, TPolicy> RentScoped(out T value)
     {
-        value = RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot);
-        return new PooledLease<T, TPolicy>(this, value, slot);
-    }
-
-    /// <summary>
-    /// Rents a stack-only lease whose idle object returns only to the bounded shared store.
-    /// </summary>
-    /// <remarks>
-    /// This mode bypasses thread-local object retention, including when manual rentals opt into
-    /// that tier. The bound applies to idle pooled objects, not outstanding rentals or lease
-    /// ownership bookkeeping. Other rental modes can still retain thread-local objects.
-    /// </remarks>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public SharedPooledLease<T, TPolicy> RentScopedShared()
-        => new(this, RentSharedValue());
-
-    /// <summary>
-    /// Rents a shared-store scoped lease and exposes its object directly.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public SharedPooledLease<T, TPolicy> RentScopedShared(out T value)
-    {
-        value = RentSharedValue();
-        return new SharedPooledLease<T, TPolicy>(this, value);
+        value = RentScopedValue();
+        return new PooledLease<T, TPolicy>(this, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal T RentSharedValue()
+    internal T RentScopedValue()
     {
         ThrowIfDisposed();
         T value = RentWithoutLifecycle();
@@ -250,9 +187,8 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
         return ThrowDisposed();
     }
 
-    // Shared-store leases bypass the manual TLS option on both rent and return.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void ReturnSharedValue(T value)
+    internal void ReturnScoped(T value)
     {
         if (Volatile.Read(ref _isDisposed) != 0)
         {
@@ -268,89 +204,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
 
         ReturnWithoutReset(value);
         ClearIfDisposed();
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal T RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot)
-    {
-        ThrowIfDisposed();
-        T value = _scopedTier.Rent(this, out slot);
-        if (Volatile.Read(ref _isDisposed) == 0)
-        {
-            return value;
-        }
-
-        DisposeItem(value);
-        return ThrowDisposed();
-    }
-
-    // The slot rented with the value replaces the return-side thread-local lookup; a stack-only
-    // lease cannot change threads, so it is still the returning thread's own slot.
-    internal void ReturnScoped(T value, TrackedInstanceThreadLocalFrontTier<T>.Slot slot)
-    {
-        if (Volatile.Read(ref _isDisposed) != 0)
-        {
-            DisposeItem(value);
-            return;
-        }
-
-        if (!TryResetItem(value))
-        {
-            DisposeItem(value);
-            return;
-        }
-
-        if (Volatile.Read(ref _isDisposed) != 0)
-        {
-            DisposeItem(value);
-            return;
-        }
-
-        if (!TrackedInstanceThreadLocalFrontTier<T>.TryReturn(slot, value))
-        {
-            ReturnWithoutResetWithLifecycle(value);
-            return;
-        }
-
-        if (Volatile.Read(ref _isDisposed) != 0
-            && TrackedInstanceThreadLocalFrontTier<T>.TryRemove(slot, value))
-        {
-            DisposeItem(value);
-        }
-    }
-
-    // The fast-path Return has no lease to carry the slot, so this overload resolves the
-    // returning thread's slot through the tier.
-    internal void ReturnScoped(T value)
-    {
-        if (Volatile.Read(ref _isDisposed) != 0)
-        {
-            DisposeItem(value);
-            return;
-        }
-
-        if (!TryResetItem(value))
-        {
-            DisposeItem(value);
-            return;
-        }
-
-        if (Volatile.Read(ref _isDisposed) != 0)
-        {
-            DisposeItem(value);
-            return;
-        }
-
-        if (!_scopedTier.TryReturn(value))
-        {
-            ReturnWithoutResetWithLifecycle(value);
-            return;
-        }
-
-        if (Volatile.Read(ref _isDisposed) != 0 && _scopedTier.TryRemove(value))
-        {
-            DisposeItem(value);
-        }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -406,12 +259,6 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
             throw new ArgumentNullException(nameof(obj));
         }
 #endif
-
-        if (_threadLocalFastPath)
-        {
-            ReturnScoped(obj);
-            return;
-        }
 
         if (Volatile.Read(ref _isDisposed) != 0)
         {
@@ -521,21 +368,12 @@ sealed class ObjectPool<T, TPolicy> : IDisposable
     internal void Destroy(T obj) => DisposeItem(obj);
 
     /// <summary>
-    /// Removes all thread-local and shared retained objects and disposes those that implement
-    /// <see cref="IDisposable"/>. The pool remains usable.
+    /// Removes all retained objects and disposes those that implement <see cref="IDisposable"/>.
+    /// The pool remains usable.
     /// </summary>
     public void Clear()
     {
         Exception? firstException = null;
-        try
-        {
-            _scopedTier.Clear(this);
-        }
-        catch (Exception exception)
-        {
-            firstException = exception;
-        }
-
         StripedObjectStore<T>? largeStore = _largeStore;
         if (largeStore is not null)
         {

@@ -16,19 +16,12 @@ public
 sealed class QueuePool<T>
 {
     private readonly ObjectPool<Queue<T>, Policy> _pool;
-    private InstanceThreadLocalFrontTier<Queue<T>> _scopedTier;
 
     /// <summary>Gets the default largest queue capacity retained by a pool.</summary>
     public const int DefaultMaximumRetainedCapacity = 1024;
 
     /// <summary>Gets the shared pool.</summary>
     public static QueuePool<T> Shared { get; } = new();
-
-    /// <summary>
-    /// Gets an opt-in pool that retains one queue per participating thread before using
-    /// <see cref="Shared"/> as a bounded fallback.
-    /// </summary>
-    public static ThreadLocalPool ThreadLocalShared { get; } = new();
 
     /// <summary>Initializes a pool with default limits.</summary>
     public QueuePool()
@@ -69,20 +62,20 @@ sealed class QueuePool<T>
     /// <summary>Rents an empty queue.</summary>
     public Queue<T> Rent() => _pool.RentWithoutLifecycle();
 
-    /// <summary>Rents an empty queue owned by a stack-only thread-local lease.</summary>
+    /// <summary>Rents an empty queue owned by a stack-only lease.</summary>
     public Lease RentScoped()
     {
-        Queue<T> queue = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<Queue<T>>.Slot slot);
-        return new Lease(this, queue, slot);
+        Queue<T> queue = _pool.RentWithoutLifecycle();
+        return new Lease(this, queue);
     }
 
     /// <summary>
-    /// Rents an empty queue owned by a stack-only thread-local lease and exposes it directly.
+    /// Rents an empty queue owned by a stack-only lease and exposes it directly.
     /// </summary>
     public Lease RentScoped(out Queue<T> queue)
     {
-        queue = _scopedTier.Rent(_pool, out InstanceThreadLocalFrontTier<Queue<T>>.Slot slot);
-        return new Lease(this, queue, slot);
+        queue = _pool.RentWithoutLifecycle();
+        return new Lease(this, queue);
     }
 
     /// <summary>Returns a queue, clearing it when retained and discarding it when too large.</summary>
@@ -109,14 +102,9 @@ sealed class QueuePool<T>
         return false;
     }
 
-    private void ReturnScoped(Queue<T> queue, InstanceThreadLocalFrontTier<Queue<T>>.Slot slot)
+    private void ReturnScoped(Queue<T> queue)
     {
-        if (!TryReset(queue))
-        {
-            return;
-        }
-
-        if (!InstanceThreadLocalFrontTier<Queue<T>>.TryReturn(slot, queue))
+        if (TryReset(queue))
         {
             _pool.ReturnWithoutReset(queue);
         }
@@ -175,21 +163,18 @@ sealed class QueuePool<T>
         }
     }
 
-    /// <summary>Owns a thread-local queue rental and returns it when disposed.</summary>
+    /// <summary>Owns a queue rental and returns it when disposed.</summary>
     public ref struct Lease
     {
         private readonly QueuePool<T>? _pool;
-        private readonly InstanceThreadLocalFrontTier<Queue<T>>.Slot? _slot;
         private ScopedPoolLease<Queue<T>> _lease;
 
         internal Lease(
             QueuePool<T> pool,
-            Queue<T> queue,
-            InstanceThreadLocalFrontTier<Queue<T>>.Slot slot)
+            Queue<T> queue)
         {
             _pool = pool;
-            _slot = slot;
-            _lease = new ScopedPoolLease<Queue<T>>(queue, slot);
+            _lease = new ScopedPoolLease<Queue<T>>(queue);
         }
 
         /// <summary>Gets the rented queue while this lease owns it.</summary>
@@ -200,34 +185,7 @@ sealed class QueuePool<T>
         {
             if (_lease.TryRelease(out Queue<T> queue))
             {
-                _pool!.ReturnScoped(queue, _slot!);
-            }
-        }
-    }
-
-    /// <summary>Provides thread-local-first access to <see cref="Shared"/>.</summary>
-    public sealed class ThreadLocalPool
-    {
-        internal ThreadLocalPool()
-        {
-        }
-
-        /// <summary>Rents an empty queue from the current thread or shared fallback.</summary>
-        public Queue<T> Rent()
-            => ThreadLocalFrontTier<Queue<T>, Policy>.Rent(Shared._pool);
-
-        /// <summary>Returns a queue to the current thread or shared fallback.</summary>
-        public void Return(Queue<T> queue)
-        {
-            ThrowIfNull(queue);
-            if (!Shared.TryReset(queue))
-            {
-                return;
-            }
-
-            if (!ThreadLocalFrontTier<Queue<T>, Policy>.TryReturn(queue))
-            {
-                Shared._pool.ReturnWithoutReset(queue);
+                _pool!.ReturnScoped(queue);
             }
         }
     }

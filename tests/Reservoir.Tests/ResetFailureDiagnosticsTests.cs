@@ -7,8 +7,6 @@ public class ResetFailureDiagnosticsTests
     [Test]
     [Arguments("manual", false)]
     [Arguments("manual", true)]
-    [Arguments("manual-tls", false)]
-    [Arguments("manual-tls", true)]
     [Arguments("scoped", false)]
     [Arguments("scoped", true)]
     [Arguments("runtime", false)]
@@ -59,8 +57,7 @@ public class ResetFailureDiagnosticsTests
         }
         else
         {
-            using var pool = new ObjectPool<Item, ThrowingPolicy>(policy, maxCapacity: 1,
-                threadLocalFastPath: rental == "manual-tls");
+            using var pool = new ObjectPool<Item, ThrowingPolicy>(policy, maxCapacity: 1);
             if (rental == "scoped")
             {
                 var lease = pool.RentScoped();

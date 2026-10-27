@@ -196,7 +196,7 @@ public class PooledLeaseTests
     }
 
     [Test]
-    public async Task ScopedPoolsKeepThreadLocalItemsIsolated()
+    public async Task ScopedPoolsKeepRetainedItemsIsolated()
     {
         var firstPool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 1);
         var secondPool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: 1);

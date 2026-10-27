@@ -4,8 +4,6 @@ namespace Reservoir.Benchmarks;
 
 /// <summary>
 /// Measures the cross-thread handoff pattern: producer threads rent, consumer threads return.
-/// This is the adversarial workload for the thread-local fast path, whose wins come from
-/// same-thread rent/return cycles.
 /// </summary>
 [MemoryDiagnoser(displayGenColumns: false)]
 public class ObjectPoolHandoffBenchmarks
@@ -28,21 +26,13 @@ public class ObjectPoolHandoffBenchmarks
         Math.Min(4, Math.Max(1, Environment.ProcessorCount / 2)),
     }.Distinct();
 
-    // The tight capacity models a pool sized near its working set, where an object parked on a
-    // thread that never rents would starve the shared tier and force creation churn.
+    // The tight capacity models a pool sized near its working set.
     [Params(4, 32)]
     public int PoolCapacity { get; set; }
 
     [GlobalSetup(Target = nameof(Reservoir))]
     public void SetupReservoir()
         => SetupWorkers(new ObjectPool<Payload, PayloadPolicy>(maxCapacity: PoolCapacity));
-
-    [GlobalSetup(Target = nameof(ReservoirThreadLocalFastPath))]
-    public void SetupReservoirThreadLocalFastPath()
-        => SetupWorkers(new ObjectPool<Payload, PayloadPolicy>(
-            default,
-            PoolCapacity,
-            threadLocalFastPath: true));
 
     [GlobalCleanup]
     public void Cleanup()
@@ -55,13 +45,6 @@ public class ObjectPoolHandoffBenchmarks
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation, Baseline = true)]
     public void Reservoir()
-    {
-        Volatile.Write(ref _workerAllocatedBytes, 0);
-        _workers!.Run();
-    }
-
-    [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void ReservoirThreadLocalFastPath()
     {
         Volatile.Write(ref _workerAllocatedBytes, 0);
         _workers!.Run();

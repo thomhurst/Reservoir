@@ -14,12 +14,10 @@ public class ObjectPoolCapacityScalingBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        // Pin the fast path off so these benchmarks keep exercising the shared storage backends.
-        _pool = new ObjectPool<Payload, PayloadPolicy>(default, Capacity, threadLocalFastPath: false);
+        _pool = new ObjectPool<Payload, PayloadPolicy>(default, Capacity);
         _emptyPool = new ObjectPool<Payload, SingletonPolicy>(
             default,
-            Capacity,
-            threadLocalFastPath: false);
+            Capacity);
         Payload payload = _pool.Rent();
         _pool.Return(payload);
     }
@@ -66,8 +64,7 @@ public class ObjectPoolBurstBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        // Pin the fast path off so the burst keeps exercising the shared storage backends.
-        _pool = new ObjectPool<Payload, PayloadPolicy>(default, Capacity, threadLocalFastPath: false);
+        _pool = new ObjectPool<Payload, PayloadPolicy>(default, Capacity);
         _items = new Payload[Capacity];
 
         for (int i = 0; i < Capacity; i++)

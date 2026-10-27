@@ -349,7 +349,7 @@ public class CancellationTokenSourcePoolTests
     }
 
     [Test]
-    public async Task ClearDisposesScopedThreadLocalSourceAndLeavesPoolUsable()
+    public async Task ClearDisposesScopedSourceAndLeavesPoolUsable()
     {
         var pool = new CancellationTokenSourcePool(maxCapacity: 1);
         CancellationTokenSource retained;
@@ -369,7 +369,7 @@ public class CancellationTokenSourcePoolTests
     }
 
     [Test]
-    public async Task DisposeReleasesScopedThreadLocalSourceAndClosesPool()
+    public async Task DisposeReleasesScopedSourceAndClosesPool()
     {
         var pool = new CancellationTokenSourcePool(maxCapacity: 1);
         CancellationTokenSource retained;

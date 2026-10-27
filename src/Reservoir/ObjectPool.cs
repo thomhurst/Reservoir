@@ -12,7 +12,7 @@ namespace Reservoir;
 
 /// <summary>
 /// A thread-safe object pool for callers that prefer a policy instance or factory, with bounded
-/// shared retention and a per-pool thread-local tier for default scoped rentals.
+/// shared retention.
 /// </summary>
 /// <remarks>
 /// This type stores policies through <see cref="IPooledObjectPolicy{T}"/>. Passing a struct policy
@@ -73,7 +73,7 @@ sealed class ObjectPool<T> : IDisposable
 #endif
 #if NET10_0_OR_GREATER
         _pool = new ObjectPool<T, PolicyAdapter>(
-            new PolicyAdapter(factory), maxCapacity, threadLocalFastPath: false, skipReset: true);
+            new PolicyAdapter(factory), maxCapacity, skipReset: true);
 #else
         _pool = new ObjectPool<T, PolicyAdapter>(new PolicyAdapter(factory), maxCapacity);
 #endif
@@ -88,34 +88,14 @@ sealed class ObjectPool<T> : IDisposable
     /// <summary>Rents an object, creating one when no retained object is available.</summary>
     public T Rent() => _pool.Rent();
 
-    /// <summary>
-    /// Rents an object owned by a stack-only lease using a per-pool thread-local fast path.
-    /// </summary>
-    public PooledLease<T> RentScoped()
-    {
-        T value = _pool.RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot);
-        return new PooledLease<T>(_pool, value, slot);
-    }
+    /// <summary>Rents an object owned by a stack-only lease.</summary>
+    public PooledLease<T> RentScoped() => new(_pool, _pool.RentScopedValue());
 
-    /// <summary>
-    /// Rents an object owned by a stack-only lease using a per-pool thread-local fast path and also
-    /// exposes the object directly.
-    /// </summary>
+    /// <summary>Rents an object owned by a stack-only lease and also exposes the object directly.</summary>
     public PooledLease<T> RentScoped(out T value)
     {
-        value = _pool.RentScopedValue(out TrackedInstanceThreadLocalFrontTier<T>.Slot slot);
-        return new PooledLease<T>(_pool, value, slot);
-    }
-
-    /// <summary>Rents a scoped lease that retains idle objects only in the bounded shared store.</summary>
-    /// <remarks>Outstanding rentals and lease bookkeeping are outside the idle-object bound.</remarks>
-    public SharedPooledLease<T> RentScopedShared() => new(_pool, _pool.RentSharedValue());
-
-    /// <summary>Rents a shared-store scoped lease and exposes its object directly.</summary>
-    public SharedPooledLease<T> RentScopedShared(out T value)
-    {
-        value = _pool.RentSharedValue();
-        return new SharedPooledLease<T>(_pool, value);
+        value = _pool.RentScopedValue();
+        return new PooledLease<T>(_pool, value);
     }
 
     /// <summary>Resets and returns an object. Objects exceeding capacity are discarded.</summary>
@@ -125,8 +105,8 @@ sealed class ObjectPool<T> : IDisposable
     public void Return(T obj) => _pool.Return(obj);
 
     /// <summary>
-    /// Removes all thread-local and shared retained objects and disposes those that implement
-    /// <see cref="IDisposable"/>. The pool remains usable.
+    /// Removes all retained objects and disposes those that implement <see cref="IDisposable"/>.
+    /// The pool remains usable.
     /// </summary>
     public void Clear() => _pool.Clear();
 

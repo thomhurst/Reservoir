@@ -60,8 +60,7 @@ public class ObjectPoolTests
         var policy = new CountingPolicy();
         var pool = new ObjectPool<PooledItem, CountingPolicy>(
             policy,
-            capacity,
-            threadLocalFastPath: false);
+            capacity);
         var items = new PooledItem[capacity + 1];
 
         for (int i = 0; i < items.Length; i++)
@@ -288,8 +287,7 @@ public class ObjectPoolTests
         var state = new StressState();
         var pool = new ObjectPool<StressItem, StressPolicy>(
             new StressPolicy(state),
-            capacity,
-            threadLocalFastPath: false);
+            capacity);
         var initialItems = new StressItem[capacity];
 
         for (int i = 0; i < initialItems.Length; i++)
@@ -336,8 +334,7 @@ public class ObjectPoolTests
         var state = new StressState();
         var pool = new ObjectPool<StressItem, StressPolicy>(
             new StressPolicy(state),
-            capacity,
-            threadLocalFastPath: false);
+            capacity);
         var initialItems = new StressItem[capacity];
 
         for (int i = 0; i < initialItems.Length; i++)
@@ -375,8 +372,7 @@ public class ObjectPoolTests
         const int iterations = 20_000;
         var pool = new ObjectPool<PooledItem, CountingPolicy>(
             default,
-            maxCapacity: 65,
-            threadLocalFastPath: false);
+            maxCapacity: 65);
         PooledItem expected = pool.Rent();
         pool.Return(expected);
         using var rented = new SemaphoreSlim(0, 1);
@@ -427,8 +423,7 @@ public class ObjectPoolTests
         var policy = new CountingPolicy();
         var pool = new ObjectPool<PooledItem, CountingPolicy>(
             policy,
-            maxCapacity: 32,
-            threadLocalFastPath: false);
+            maxCapacity: 32);
         using var rented = new SemaphoreSlim(0, 1);
         using var returned = new SemaphoreSlim(0, 1);
         var handoff = new PooledItem[inFlight];

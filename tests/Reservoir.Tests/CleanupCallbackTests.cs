@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 
 namespace Reservoir.Tests;
 
-public class ThreadLocalCleanupCallbackTests
+public class CleanupCallbackTests
 {
     [Test]
     [Arguments(false)]
@@ -12,8 +12,8 @@ public class ThreadLocalCleanupCallbackTests
         using var callbacksEntered = new Barrier(2);
         var nestedClears = new ConcurrentBag<Task>();
         int blockedCallbacks = 0;
-        var first = new ObjectPool<Item, Policy>(default, 1, threadLocalFastPath: !scoped);
-        var second = new ObjectPool<Item, Policy>(default, 1, threadLocalFastPath: !scoped);
+        var first = new ObjectPool<Item, Policy>(default, 1);
+        var second = new ObjectPool<Item, Policy>(default, 1);
         Item firstItem = Seed(first, scoped);
         Item secondItem = Seed(second, scoped);
 
@@ -101,7 +101,7 @@ public class ThreadLocalCleanupCallbackTests
     [Arguments(true)]
     public async Task CleanupCanRentReturnAndClearSamePool(bool scoped)
     {
-        using var pool = new ObjectPool<Item, Policy>(default, 1, threadLocalFastPath: !scoped);
+        using var pool = new ObjectPool<Item, Policy>(default, 1);
         Item first = Seed(pool, scoped);
         Item? reentrant = null;
         first.OnDestroy = () =>
@@ -125,9 +125,10 @@ public class ThreadLocalCleanupCallbackTests
     [Arguments(false, true)]
     [Arguments(true, false)]
     [Arguments(true, true)]
-    public async Task CleanupFailureStillDrainsEverySlotAndSharedStorage(bool scoped, bool dispose)
+    public async Task CleanupFailureStillDrainsSharedStorage(bool scoped, bool dispose)
     {
-        var pool = new ObjectPool<Item, Policy>(default, 1, threadLocalFastPath: !scoped);
+        // Capacity covers every seeded item so none is discarded (and destroyed) on return.
+        var pool = new ObjectPool<Item, Policy>(default, 4);
         var items = new ConcurrentBag<Item>();
         var failure = new InvalidOperationException("Cleanup failed.");
         await ConcurrentTestWorkers.RunAsync(Enumerable.Range(0, 3).Select<int, Action<CancellationToken>>(_ => _ =>

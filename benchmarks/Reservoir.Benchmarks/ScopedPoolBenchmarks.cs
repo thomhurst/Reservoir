@@ -19,16 +19,12 @@ public class ScopedPoolBenchmarks<TAdapter>
     public void WarmPools()
     {
         _ = _adapter.Shared();
-        _ = _adapter.ThreadLocalShared();
         _ = _adapter.ScopedValue();
         _ = _adapter.ScopedOut();
     }
 
     [Benchmark(Baseline = true)]
     public int Shared() => _adapter.Shared();
-
-    [Benchmark]
-    public int ThreadLocalShared() => _adapter.ThreadLocalShared();
 
     [Benchmark]
     public int ScopedValue() => _adapter.ScopedValue();
@@ -40,7 +36,6 @@ public class ScopedPoolBenchmarks<TAdapter>
 public interface IScopedPoolBenchmarkAdapter
 {
     int Shared();
-    int ThreadLocalShared();
     int ScopedValue();
     int ScopedOut();
 }
@@ -52,14 +47,6 @@ public readonly struct ScopedListAdapter : IScopedPoolBenchmarkAdapter
         List<int> item = ListPool<int>.Shared.Rent();
         int result = item.Count;
         ListPool<int>.Shared.Return(item);
-        return result;
-    }
-
-    public int ThreadLocalShared()
-    {
-        List<int> item = ListPool<int>.ThreadLocalShared.Rent();
-        int result = item.Count;
-        ListPool<int>.ThreadLocalShared.Return(item);
         return result;
     }
 
@@ -86,14 +73,6 @@ public readonly struct ScopedQueueAdapter : IScopedPoolBenchmarkAdapter
         return result;
     }
 
-    public int ThreadLocalShared()
-    {
-        Queue<int> item = QueuePool<int>.ThreadLocalShared.Rent();
-        int result = item.Count;
-        QueuePool<int>.ThreadLocalShared.Return(item);
-        return result;
-    }
-
     public int ScopedValue()
     {
         using QueuePool<int>.Lease lease = QueuePool<int>.Shared.RentScoped();
@@ -117,14 +96,6 @@ public readonly struct ScopedStackAdapter : IScopedPoolBenchmarkAdapter
         return result;
     }
 
-    public int ThreadLocalShared()
-    {
-        Stack<int> item = StackPool<int>.ThreadLocalShared.Rent();
-        int result = item.Count;
-        StackPool<int>.ThreadLocalShared.Return(item);
-        return result;
-    }
-
     public int ScopedValue()
     {
         using StackPool<int>.Lease lease = StackPool<int>.Shared.RentScoped();
@@ -145,14 +116,6 @@ public readonly struct ScopedDictionaryAdapter : IScopedPoolBenchmarkAdapter
         Dictionary<int, int> item = DictionaryPool<int, int>.Shared.Rent();
         int result = item.Count;
         DictionaryPool<int, int>.Shared.Return(item);
-        return result;
-    }
-
-    public int ThreadLocalShared()
-    {
-        Dictionary<int, int> item = DictionaryPool<int, int>.ThreadLocalShared.Rent();
-        int result = item.Count;
-        DictionaryPool<int, int>.ThreadLocalShared.Return(item);
         return result;
     }
 
@@ -181,14 +144,6 @@ public readonly struct ScopedHashSetAdapter : IScopedPoolBenchmarkAdapter
         return result;
     }
 
-    public int ThreadLocalShared()
-    {
-        HashSet<int> item = HashSetPool<int>.ThreadLocalShared.Rent();
-        int result = item.Count;
-        HashSetPool<int>.ThreadLocalShared.Return(item);
-        return result;
-    }
-
     public int ScopedValue()
     {
         using HashSetPool<int>.Lease lease = HashSetPool<int>.Shared.RentScoped();
@@ -210,14 +165,6 @@ public readonly struct ScopedStringBuilderAdapter : IScopedPoolBenchmarkAdapter
         StringBuilder item = StringBuilderPool.Shared.Rent();
         int result = item.Length;
         StringBuilderPool.Shared.Return(item);
-        return result;
-    }
-
-    public int ThreadLocalShared()
-    {
-        StringBuilder item = StringBuilderPool.ThreadLocalShared.Rent();
-        int result = item.Length;
-        StringBuilderPool.ThreadLocalShared.Return(item);
         return result;
     }
 

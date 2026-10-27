@@ -31,7 +31,7 @@ Fixed storage provides the retention bound. It is not a semaphore: active rental
 | --- | --- | --- | --- |
 | Pooled value | Any reference type | Any reference type | Arrays only |
 | Distribution | Runtime assembly dependency | Runtime assembly dependency | .NET runtime |
-| Retention | Bounded shared tier; scoped TLS adds one per thread | Bounded retained object count | Implementation-managed buckets |
+| Retention | Bounded retained object count | Bounded retained object count | Implementation-managed buckets |
 | Reset policy | Struct or interface policy; may reject | Policy return decision | Caller clears optionally |
 | Scoped lease | Stack-only `PooledLease` | Not built in | Not built in |
 

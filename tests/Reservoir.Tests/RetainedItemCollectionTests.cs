@@ -2,7 +2,7 @@ using System.Runtime.CompilerServices;
 
 namespace Reservoir.Tests;
 
-public class TrackedTierCollectionTests
+public class RetainedItemCollectionTests
 {
     [Test]
     [Arguments(false, false)]
@@ -12,7 +12,7 @@ public class TrackedTierCollectionTests
     public async Task DestroyedItemsAreCollectibleWhilePoolRemainsAlive(bool scoped, bool dispose)
     {
         var state = new State();
-        var pool = new ObjectPool<Item, Policy>(new Policy(state), 1, threadLocalFastPath: !scoped);
+        var pool = new ObjectPool<Item, Policy>(new Policy(state), 1);
         WeakReference<Item> item = Seed(pool, scoped);
 
         if (dispose)
@@ -32,15 +32,17 @@ public class TrackedTierCollectionTests
 
     [Test]
     [Arguments(1)]
-    [Arguments(8)]
     [Arguments(9)]
     public async Task CapturedItemsAreCollectibleAfterCleanupThrows(int workerCount)
     {
         var state = new State { Failure = new InvalidOperationException("Cleanup failed.") };
-        using var pool = new ObjectPool<Item, Policy>(new Policy(state), 1);
+        // Capacity covers every worker so each returned item is retained until Clear.
+        using var pool = new ObjectPool<Item, Policy>(new Policy(state), workerCount);
         var items = new WeakReference<Item>[workerCount];
+        // Every worker holds its rental until all have rented, so each seeds a distinct item.
+        using var rented = new Barrier(workerCount);
         await ConcurrentTestWorkers.RunAsync(Enumerable.Range(0, workerCount)
-            .Select<int, Action<CancellationToken>>(index => _ => items[index] = Seed(pool, scoped: true)));
+            .Select<int, Action<CancellationToken>>(index => token => items[index] = SeedTogether(pool, rented, token)));
 
         await Assert.That(() => pool.Clear()).Throws<InvalidOperationException>();
 
@@ -77,7 +79,7 @@ public class TrackedTierCollectionTests
     public async Task ConcurrentRentClearDisposeAndGcPreserveOwnership(bool scoped)
     {
         var state = new RaceState();
-        using var pool = new ObjectPool<RaceItem, RacePolicy>(new RacePolicy(state), 4, threadLocalFastPath: !scoped);
+        using var pool = new ObjectPool<RaceItem, RacePolicy>(new RacePolicy(state), 4);
         using var start = new Barrier(5);
         using var returned = new ManualResetEventSlim();
         IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, 4)
@@ -244,6 +246,17 @@ public class TrackedTierCollectionTests
         Item item = pool.Rent();
         pool.Return(item);
         return new WeakReference<Item>(item);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference<Item> SeedTogether(
+        ObjectPool<Item, Policy> pool,
+        Barrier rented,
+        CancellationToken token)
+    {
+        using PooledLease<Item, Policy> lease = pool.RentScoped();
+        rented.SignalAndWait(token);
+        return new WeakReference<Item>(lease.Value);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
-using System.Runtime.ExceptionServices;
 using System.Threading;
 
 namespace Reservoir;
@@ -20,8 +19,6 @@ namespace Reservoir;
 /// <c>CancellationTokenSource.TryReset()</c> is not thread-safe with concurrent use. Linked rentals
 /// register an upstream token with a pooled source; they do not pool sources created by
 /// <see cref="CancellationTokenSource.CreateLinkedTokenSource(CancellationToken[])"/>.
-/// Scoped rentals retain one reset source per participating thread in addition to the bounded
-/// shared store. Dispose dedicated pools to release that thread-local retention.
 /// </remarks>
 [ExcludeFromCodeCoverage]
 [DebuggerNonUserCode]
@@ -29,7 +26,6 @@ public
 sealed class CancellationTokenSourcePool : IDisposable
 {
     private readonly ObjectPool<PooledCancellationTokenSource, Policy> _pool;
-    private TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource> _scopedTier;
     private int _isDisposed;
 
     /// <summary>Gets the shared pool.</summary>
@@ -44,13 +40,7 @@ sealed class CancellationTokenSourcePool : IDisposable
     /// <summary>Initializes a pool with a custom capacity.</summary>
     public CancellationTokenSourcePool(int maxCapacity)
     {
-        // This pool already retains one source per thread through its own scoped tier; the inner
-        // pool pins the thread-local fast path off so plain rentals do not park a second
-        // timer-backed source per thread.
-        _pool = new ObjectPool<PooledCancellationTokenSource, Policy>(
-            new Policy(this),
-            maxCapacity,
-            threadLocalFastPath: false);
+        _pool = new ObjectPool<PooledCancellationTokenSource, Policy>(new Policy(this), maxCapacity);
     }
 
     /// <summary>Gets the maximum number of sources retained by this pool.</summary>
@@ -80,32 +70,23 @@ sealed class CancellationTokenSourcePool : IDisposable
         return source;
     }
 
-    /// <summary>
-    /// Rents a source owned by a stack-only lease using a per-pool thread-local fast path.
-    /// </summary>
-    public Lease RentScoped()
-    {
-        PooledCancellationTokenSource source = RentScopedValue(
-            out TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot);
-        return new Lease(this, source, slot);
-    }
+    /// <summary>Rents a source owned by a stack-only lease.</summary>
+    public Lease RentScoped() => new(this, RentScopedValue());
 
     /// <summary>
     /// Rents a source owned by a stack-only lease and also exposes the source directly.
     /// </summary>
     public Lease RentScoped(out CancellationTokenSource source)
     {
-        PooledCancellationTokenSource pooledSource = RentScopedValue(
-            out TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot);
+        PooledCancellationTokenSource pooledSource = RentScopedValue();
         source = pooledSource;
-        return new Lease(this, pooledSource, slot);
+        return new Lease(this, pooledSource);
     }
 
     /// <summary>
     /// Disposes all retained sources while leaving the pool usable.
     /// </summary>
-    public void Clear()
-        => ClearRetained(disposePool: false);
+    public void Clear() => _pool.Clear();
 
     /// <summary>
     /// Disposes all retained sources and permanently closes the pool.
@@ -121,50 +102,15 @@ sealed class CancellationTokenSourcePool : IDisposable
 
         if (Interlocked.Exchange(ref _isDisposed, 1) == 0)
         {
-            ClearRetained(disposePool: true);
-        }
-    }
-
-    private void ClearRetained(bool disposePool)
-    {
-        Exception? firstException = null;
-        try
-        {
-            _scopedTier.Clear(_pool);
-        }
-        catch (Exception exception)
-        {
-            firstException = exception;
-        }
-
-        try
-        {
-            if (disposePool)
-            {
-                _pool.Dispose();
-            }
-            else
-            {
-                _pool.Clear();
-            }
-        }
-        catch (Exception exception)
-        {
-            firstException ??= exception;
-        }
-
-        if (firstException is not null)
-        {
-            ExceptionDispatchInfo.Capture(firstException).Throw();
+            _pool.Dispose();
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private PooledCancellationTokenSource RentScopedValue(
-        out TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot)
+    private PooledCancellationTokenSource RentScopedValue()
     {
         ThrowIfDisposed();
-        PooledCancellationTokenSource source = _scopedTier.Rent(_pool, out slot);
+        PooledCancellationTokenSource source = _pool.RentWithoutLifecycle();
         if (Volatile.Read(ref _isDisposed) == 0)
         {
             return source;
@@ -174,9 +120,7 @@ sealed class CancellationTokenSourcePool : IDisposable
         return ThrowDisposed();
     }
 
-    private void ReturnScoped(
-        PooledCancellationTokenSource source,
-        TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot)
+    private void ReturnScoped(PooledCancellationTokenSource source)
     {
         if (Volatile.Read(ref _isDisposed) != 0)
         {
@@ -184,27 +128,9 @@ sealed class CancellationTokenSourcePool : IDisposable
             return;
         }
 
-        if (!TryReset(source))
-        {
-            return;
-        }
-
-        if (Volatile.Read(ref _isDisposed) != 0)
-        {
-            _pool.Destroy(source);
-            return;
-        }
-
-        if (!TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.TryReturn(slot, source))
+        if (TryReset(source))
         {
             _pool.ReturnWithoutResetWithLifecycle(source);
-            return;
-        }
-
-        if (Volatile.Read(ref _isDisposed) != 0
-            && TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.TryRemove(slot, source))
-        {
-            _pool.Destroy(source);
         }
     }
 
@@ -299,17 +225,12 @@ sealed class CancellationTokenSourcePool : IDisposable
     public ref struct Lease
     {
         private readonly CancellationTokenSourcePool? _pool;
-        private readonly TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot? _slot;
         private ScopedPoolLease<PooledCancellationTokenSource> _lease;
 
-        internal Lease(
-            CancellationTokenSourcePool pool,
-            PooledCancellationTokenSource source,
-            TrackedInstanceThreadLocalFrontTier<PooledCancellationTokenSource>.Slot slot)
+        internal Lease(CancellationTokenSourcePool pool, PooledCancellationTokenSource source)
         {
             _pool = pool;
-            _slot = slot;
-            _lease = new ScopedPoolLease<PooledCancellationTokenSource>(source, slot);
+            _lease = new ScopedPoolLease<PooledCancellationTokenSource>(source);
         }
 
         /// <summary>Gets the rented source while this lease owns it.</summary>
@@ -321,7 +242,7 @@ sealed class CancellationTokenSourcePool : IDisposable
         {
             if (_lease.TryRelease(out PooledCancellationTokenSource source))
             {
-                _pool!.ReturnScoped(source, _slot!);
+                _pool!.ReturnScoped(source);
             }
         }
     }

@@ -31,8 +31,7 @@ public class ObjectPoolSparseHandoffBenchmarks
     {
         var pool = new ObjectPool<Payload, PayloadPolicy>(
             default,
-            PoolCapacity,
-            threadLocalFastPath: false);
+            PoolCapacity);
 
         var retained = new Payload[RetainedObjects];
         for (int i = 0; i < retained.Length; i++)
