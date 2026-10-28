@@ -24,6 +24,38 @@ public class SmallPoolScanTests
         await Assert.That(destroyed).IsEqualTo(capacity * (capacity + 1));
     }
 
+    [Test]
+    [Arguments(1)]
+    [Arguments(3)]
+    [Arguments(32)]
+    public async Task AnyScanCursorRetainsAndDrainsExactCapacity(int capacity)
+    {
+        // The cursor is shared by every small pool, so it can hold a slot of a larger pool,
+        // a slot of this one, or the unset value; each must still scan every retained slot.
+        int previous = SmallPoolScanCursor.Value;
+        int destroyed = 0;
+        int cursors = 0;
+        try
+        {
+            for (int value = 0; value <= 8 * (capacity + 4); value += 8)
+            {
+                for (int home = 0; home < capacity; home++)
+                {
+                    SmallPoolScanCursor.Value = value;
+                    destroyed += VerifyHomeSlot(capacity, home);
+                }
+
+                cursors++;
+            }
+        }
+        finally
+        {
+            SmallPoolScanCursor.Value = previous;
+        }
+
+        await Assert.That(destroyed).IsEqualTo(cursors * capacity * (capacity + 1));
+    }
+
     private static int VerifyHomeSlot(int capacity, int home)
     {
         using var pool = new ObjectPool<Item, Policy>(maxCapacity: capacity);
