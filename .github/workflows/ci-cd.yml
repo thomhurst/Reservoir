@@ -152,6 +152,25 @@ jobs:
             artifacts/packages/*.snupkg
           if-no-files-found: error
 
+  # The `main` ruleset's required check: one result for every PR CI job, so auto-merge waits
+  # for all of them. Every other PR job must be listed in `needs`, or its failure is invisible.
+  ci-passed:
+    # A draft run skips this job, and GitHub reports a job skipped by `if:` under its
+    # unevaluated name expression, never as `CI Passed`, so a draft run cannot satisfy the
+    # ruleset. A cancelled run skips it the same way. Failed or cancelled jobs fail it.
+    name: ${{ github.event.pull_request.draft == false && 'CI Passed' || 'CI Passed (draft)' }}
+    needs: [test, native-aot, package]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null
+
   publish:
     name: Publish
     needs: package

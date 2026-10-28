@@ -2,33 +2,41 @@
 # Fail-closed merge gate for the issue-pr-loop skill.
 #
 # Exits 0 ONLY when PR #<N> is provably safe to merge:
-#   - state OPEN
+#   - state OPEN and not a draft
 #   - mergeable == MERGEABLE
 #   - mergeStateStatus == CLEAN
 #   - every status check is terminal AND passing (CheckRun: status=COMPLETED and
 #     conclusion in SUCCESS/SKIPPED/NEUTRAL; StatusContext: state=SUCCESS)
-#   - every check in $requiredChecks has a run that succeeded (skipped is not enough)
+#   - the `CI Passed` aggregator has a run that succeeded (skipped is not enough)
 #   - no current-head top-level review has actionable finding headings
 #   - no unresolved review threads
 #
-# Any other state — pending/queued/in-progress checks, an empty rollup, a failed
-# check, an unresolved thread, or an API hiccup — exits 1 so the caller MUST NOT
-# merge. The default on uncertainty is DENY.
+# -ForAutoMerge is the gate for arming native auto-merge (Enable-AutoMerge.ps1). The
+# `main` ruleset makes GitHub wait for `CI Passed` itself, so CI may still be queued or
+# running, and mergeStateStatus is not checked, but:
+#   - the PR is open, not a draft, and MERGEABLE
+#   - no check has failed, been cancelled, or reported an unknown state
+#   - the `claude-review` check succeeded on the current head, so its findings exist
+#   - the review-body and review-thread checks below pass
+#
+# Any other state — a failed check, an empty rollup, an unresolved thread, or an API
+# hiccup — exits 1 so the caller MUST NOT merge or arm. The default on uncertainty is DENY.
 #
 # Enforce the queue's mechanical merge requirements independently of GitHub
 # branch protection. The skill also checks judgment-based review signals.
 #
-# Usage: pwsh scripts/Assert-PrGreen.ps1 -Pr 1234 [-Repo owner/name]
-# Exit:  0 = safe to merge; 1 = DO NOT MERGE (reason printed to stderr).
+# Usage: pwsh scripts/Assert-PrGreen.ps1 -Pr 1234 [-Repo owner/name] [-ForAutoMerge]
+# Exit:  0 = safe to merge (or arm); 1 = DO NOT MERGE (reason printed to stderr).
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][int]$Pr,
-    [string]$Repo
+    [string]$Repo,
+    [switch]$ForAutoMerge
 )
 
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'AssertPrGreenRequiredChecks.ps1')
+. (Join-Path $PSScriptRoot 'AssertPrGreenChecks.ps1')
 . (Join-Path $PSScriptRoot 'AssertPrGreenReviewHeuristics.ps1')
 . (Join-Path $PSScriptRoot 'AssertPrGreenReviewThreads.ps1')
 
@@ -41,7 +49,7 @@ $repoArgs = @()
 if ($Repo) { $repoArgs = @('--repo', $Repo) }
 
 # Re-fetch fresh — survey output goes stale within seconds.
-$raw = gh pr view $Pr @repoArgs --json number,state,mergeable,mergeStateStatus,statusCheckRollup,latestReviews,commits 2>$null
+$raw = gh pr view $Pr @repoArgs --json number,state,isDraft,mergeable,mergeStateStatus,statusCheckRollup,latestReviews,commits 2>$null
 if ($LASTEXITCODE -ne 0) { Deny "gh pr view failed (exit $LASTEXITCODE)" }
 try {
     $view = $raw | ConvertFrom-Json
@@ -51,47 +59,16 @@ catch {
 }
 
 if ($view.state -ne 'OPEN') { Deny "state=$($view.state) (need OPEN)" }
+if ($view.isDraft) { Deny "PR is a draft; mark it ready only after the draft review lifecycle approves its head" }
 if ($view.mergeable -ne 'MERGEABLE') { Deny "mergeable=$($view.mergeable) (need MERGEABLE)" }
-if ($view.mergeStateStatus -ne 'CLEAN') { Deny "mergeStateStatus=$($view.mergeStateStatus) (need CLEAN)" }
+if (-not $ForAutoMerge -and $view.mergeStateStatus -ne 'CLEAN') { Deny "mergeStateStatus=$($view.mergeStateStatus) (need CLEAN)" }
 
 $checks = @($view.statusCheckRollup | Where-Object { $null -ne $_ })
-if ($checks.Count -eq 0) {
-    Deny "statusCheckRollup is empty -- no checks registered yet; refusing to merge blind"
-}
-
-$allowedConclusions = @('SUCCESS', 'SKIPPED', 'NEUTRAL')
-$bad = @()
-foreach ($c in $checks) {
-    if ($null -ne $c.status) {
-        # CheckRun: must be terminal AND passing.
-        if ($c.status -ne 'COMPLETED') {
-            $bad += "$($c.name): status=$($c.status)"
-            continue
-        }
-        if ($allowedConclusions -notcontains $c.conclusion) {
-            $bad += "$($c.name): conclusion=$($c.conclusion)"
-        }
-    }
-    elseif ($null -ne $c.state) {
-        # StatusContext: state must be SUCCESS.
-        if ($c.state -ne 'SUCCESS') {
-            $bad += "$($c.context): state=$($c.state)"
-        }
-    }
-    else {
-        $bad += "unrecognized check entry: $($c | ConvertTo-Json -Compress)"
-    }
-}
-if ($bad.Count -gt 0) {
-    Deny ("checks not green: " + ($bad -join '; '))
-}
-
-# `Pack` is the final CI/CD job and needs every test leg. CI/CD runs on every PR and skips
-# its jobs on drafts, so a PR just marked ready can have only skipped CI/CD checks.
-$requiredChecks = @('Pack')
-$missingRequired = @(Get-MissingRequiredCheck -Checks $checks -Names $requiredChecks)
-if ($missingRequired.Count -gt 0) {
-    Deny ("required check(s) have not succeeded on this head: " + ($missingRequired -join ', '))
+# `CI Passed` is ci-cd.yml's aggregator, which needs every CI job and is the `main` ruleset's
+# required check. A draft run skips it under a different name, so it cannot satisfy this.
+$problems = @(Get-CheckProblem -Checks $checks -RequiredChecks @('CI Passed') -ReviewCheck 'claude-review' -ForAutoMerge:$ForAutoMerge)
+if ($problems.Count -gt 0) {
+    Deny ("checks not green: " + ($problems -join '; '))
 }
 
 $headCommit = @($view.commits | Where-Object { $null -ne $_ }) | Select-Object -Last 1
@@ -171,5 +148,10 @@ catch {
 $unresolved = @($reviewThreads | Where-Object { -not $_.isResolved }).Count
 if ($unresolved -gt 0) { Deny "$unresolved unresolved review thread(s)" }
 
-Write-Host "OK #${Pr} -- MERGEABLE, CLEAN, $($checks.Count) check(s) green, no unresolved threads. Safe to merge."
+if ($ForAutoMerge) {
+    Write-Host "OK #${Pr} -- ready, MERGEABLE, no failed checks, claude-review succeeded on this head, no unresolved threads. Safe to arm auto-merge."
+}
+else {
+    Write-Host "OK #${Pr} -- MERGEABLE, CLEAN, $($checks.Count) check(s) green, no unresolved threads. Safe to merge."
+}
 exit 0

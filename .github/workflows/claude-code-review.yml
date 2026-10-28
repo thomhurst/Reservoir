@@ -25,12 +25,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  claude-review:
+  # Auto-merge is armed for one reviewed head. A push makes an unreviewed head, so disarm it;
+  # the agent re-arms with scripts/Enable-AutoMerge.ps1 after the new head's review. This job
+  # runs no PR code.
+  disarm-auto-merge:
     if: |
-      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request_target' &&
+      github.event.action == 'synchronize' &&
+      github.event.pull_request.auto_merge != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Disarm auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr merge "$PR" --disable-auto
+          echo "::notice::Auto-merge disarmed by a push; re-arm with scripts/Enable-AutoMerge.ps1 after this head's review."
+
+  claude-review:
+    needs: disarm-auto-merge
+    # `!cancelled()` lets this run when the disarm job was skipped. A failed disarm fails this
+    # check, so the head cannot merge while auto-merge may still be armed on it.
+    if: |
+      !cancelled() &&
       (
-        github.event.pull_request.user.login != 'dependabot[bot]' &&
-        !startsWith(github.event.pull_request.head.ref, 'renovate/')
+        needs.disarm-auto-merge.result == 'failure' ||
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event.pull_request.user.login != 'dependabot[bot]' &&
+          !startsWith(github.event.pull_request.head.ref, 'renovate/')
+        )
       )
 
     runs-on: ubuntu-latest
@@ -46,6 +76,12 @@ jobs:
       CLAUDE_CODE_SCRIPT_CAPS: '{"pr-review-comment.sh":2}'
 
     steps:
+      - name: Fail when auto-merge was not disarmed
+        if: needs.disarm-auto-merge.result == 'failure'
+        run: |
+          echo "::error::The disarm-auto-merge job failed, so auto-merge may still be armed on this unreviewed head. Disarm it with 'gh pr merge <N> --disable-auto', then re-run this workflow."
+          exit 1
+
       # Trusted base ref at the workspace root - this is what Claude runs in.
       - name: Checkout base repository
         uses: actions/checkout@v7.0.1
