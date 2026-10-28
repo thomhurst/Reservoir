@@ -8,6 +8,7 @@ on:
       - '.github/workflows/docs.yml'
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'website/**'
       - '.github/workflows/docs.yml'
@@ -16,12 +17,18 @@ on:
 permissions:
   contents: read
 
+# Push and dispatch runs share `pages` and never cancel an in-progress deployment. PR runs get
+# their own group, so they cannot replace a pending deployment, and a newer event on the same
+# PR, including `converted_to_draft`, cancels its in-progress build.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('docs-pr-{0}', github.event.pull_request.number) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
+    # Draft PRs are reviewed before CI runs: skip before renting a runner. `ready_for_review`
+    # starts this job.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     defaults:
       run:

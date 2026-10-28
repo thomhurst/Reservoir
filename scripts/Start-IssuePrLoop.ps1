@@ -8,9 +8,9 @@
 #      down), it backs off without starting an agent.
 #   2. Runs the merged-worktree sweep and surveys open PRs and issues with `gh`. When
 #      the latest push CI run of any workflow on main failed, fixing main comes first.
-#   3. Skips drafts, `needs-human` and `on-hold` items, PRs whose checks are still
-#      running, and items whose GitHub state is unchanged since an agent last deferred
-#      them. Also skips issues that cannot be worked yet: issues with open native
+#   3. Includes draft PRs, which the skill reviews before marking them ready. Skips
+#      `needs-human` and `on-hold` items, PRs whose checks are still running, and items
+#      whose GitHub state is unchanged since an agent last deferred them. Also skips issues that cannot be worked yet: issues with open native
 #      sub-issues or open `blocked_by` dependencies, issues that already have an open
 #      closing PR, and bot-owned tracking issues. Stranded branches follow the same
 #      rules. Ranks local `issue-*` branches with unpublished commits and no open PR
@@ -248,7 +248,14 @@ function Get-PrFingerprint($Pr) {
     $review = @($Pr.reviews | Where-Object { $_.author.login -ne $Pr.author.login } |
         ForEach-Object { [string]$_.submittedAt } | Sort-Object) | Select-Object -Last 1
     $comment = Get-LatestOutsideComment $Pr.comments
-    Get-Hash ((@($Pr.headRefOid, $Pr.mergeable, ($labels -join ','), $review, $comment) + $checks) -join '|')
+    # A draft waits for reviewer verdicts. Codex edits its review summary in place and can
+    # approve with a reaction on the loop's request, so hash outside comment bodies and the
+    # reactions on the loop's comments; the agent verifies who reacted and the verdict.
+    $bodies = Get-Hash ((@($Pr.comments | Where-Object { $_ -and -not ([string]$_.body).Contains($loopMarker) } |
+                ForEach-Object { [string]$_.body } | Sort-Object)) -join '|')
+    $reactions = @($Pr.comments | Where-Object { $_ -and ([string]$_.body).Contains($loopMarker) } |
+        ForEach-Object { '{0}={1}' -f $_.id, (ConvertTo-Json -InputObject $_.reactionGroups -Compress -Depth 10) } | Sort-Object)
+    Get-Hash ((@($Pr.headRefOid, $Pr.isDraft, $Pr.mergeable, ($labels -join ','), $review, $comment, $bodies) + $checks + $reactions) -join '|')
 }
 
 function Get-IssueFingerprint($Issue) {
@@ -456,7 +463,7 @@ function Get-Candidates {
     if ($LASTEXITCODE -ne 0) { throw 'gh pr list failed.' }
     $surveyStats['prs'] = @($prs).Count
     $ranked = foreach ($pr in $prs) {
-        if ($pr.isDraft) { $surveyStats['pr-draft']++; continue }
+        if ($pr.isDraft) { $surveyStats['pr-draft']++ }
         if (@($pr.labels | Where-Object { $_.name -in $excludedPrLabels }).Count -gt 0) { $surveyStats['pr-excluded']++; continue }
         $checks = @($pr.statusCheckRollup)
         $pending = @($checks | Where-Object { (Get-CheckState $_) -in 'PENDING', 'EXPECTED', 'QUEUED', 'IN_PROGRESS', 'WAITING', 'REQUESTED', '' })
@@ -968,6 +975,9 @@ while (-not (Test-Path -LiteralPath $stopFile)) {
     $category = if ($result -match '^deferred\s+(#\d+|main)\s*\[([a-z-]+)\]') { $Matches[2] } else { '' }
     $uncategorized = $result -match '^deferred\b' -and $category -notin $deferCategories
     $waitRun = if ($result -match '^waiting\b' -and $result -match '\brun\s+(\d{6,})') { $Matches[1] } else { '' }
+    # `waiting #N: review`: a draft waits for a reviewer. A reply changes the fingerprint and
+    # returns it sooner; otherwise it returns within the hour to re-request a dropped review.
+    $waitReview = $result -match '^waiting\s+#\d+:\s*review\b'
 
     # Remember an unchanged blocker so later units do not re-examine it.
     if ($item.Kind -notin 'triage', 'discovery' -and (-not $result -or $result -match '^(deferred|failed|waiting)\b' -or ($item.Kind -eq 'recovery' -and $result -eq 'queue-empty'))) {
@@ -979,9 +989,10 @@ while (-not (Test-Path -LiteralPath $stopFile)) {
             $previous = try { (Get-Deferrals @($item))[$item.LockName] } catch { $null }
             $previous = if ($previous) { Split-Deferral $previous } else { $null }
             $count = if ($previous -and $previous.Fingerprint -eq $fingerprint) { $previous.Count } else { 0 }
-            if ($result -and -not $waitRun) { $count++ }
+            if ($result -and -not $waitRun -and -not $waitReview) { $count++ }
             $seconds = if (-not $result) { [Math]::Min($DeferSeconds, 3600) }
             elseif ($waitRun) { $MaxDeferSeconds }
+            elseif ($waitReview) { [Math]::Min($DeferSeconds, 3600) }
             elseif ($uncategorized) { [Math]::Min($DeferSeconds, 3600) }
             else { [Math]::Min($MaxDeferSeconds, $DeferSeconds * [Math]::Pow(2, [Math]::Min($count - 1, 20))) }
             $until = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + [long]$seconds

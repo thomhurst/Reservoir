@@ -7,6 +7,7 @@
 #   - mergeStateStatus == CLEAN
 #   - every status check is terminal AND passing (CheckRun: status=COMPLETED and
 #     conclusion in SUCCESS/SKIPPED/NEUTRAL; StatusContext: state=SUCCESS)
+#   - every check in $requiredChecks has a run that succeeded (skipped is not enough)
 #   - no current-head top-level review has actionable finding headings
 #   - no unresolved review threads
 #
@@ -27,6 +28,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'AssertPrGreenRequiredChecks.ps1')
 . (Join-Path $PSScriptRoot 'AssertPrGreenReviewHeuristics.ps1')
 . (Join-Path $PSScriptRoot 'AssertPrGreenReviewThreads.ps1')
 
@@ -82,6 +84,14 @@ foreach ($c in $checks) {
 }
 if ($bad.Count -gt 0) {
     Deny ("checks not green: " + ($bad -join '; '))
+}
+
+# `Pack` is the final CI/CD job and needs every test leg. CI/CD runs on every PR and skips
+# its jobs on drafts, so a PR just marked ready can have only skipped CI/CD checks.
+$requiredChecks = @('Pack')
+$missingRequired = @(Get-MissingRequiredCheck -Checks $checks -Names $requiredChecks)
+if ($missingRequired.Count -gt 0) {
+    Deny ("required check(s) have not succeeded on this head: " + ($missingRequired -join ', '))
 }
 
 $headCommit = @($view.commits | Where-Object { $null -ne $_ }) | Select-Object -Last 1
