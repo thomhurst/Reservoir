@@ -31,6 +31,8 @@ Use Conventional Commits. PRs must explain motivation and impact, link relevant 
 
 Open every agent-created PR as a draft (`gh pr create --draft`). Build and test CI skips drafts, so review fixes do not spend CI runs. Mark the PR ready only after every required reviewer approves its current head and every finding is dispositioned, then arm auto-merge immediately with `pwsh scripts/Enable-AutoMerge.ps1 -Pr <N>`. Never arm a draft, and never call `gh pr merge --auto` directly. The lifecycle, required reviewers, and merge commands are in [issue-pr-loop § Draft review lifecycle](.agents/skills/issue-pr-loop/SKILL.md#draft-review-lifecycle) and its [repository guidance](.agents/skills/issue-pr-loop/references/repository.md#draft-review-lifecycle); follow them without starting the queue.
 
+Every review cycle, check both review threads (`pulls/<N>/reviews`, `pulls/<N>/comments`, GraphQL `reviewThreads`) and PR conversation comments (`issues/<N>/comments`). Reviewers differ: Claude often posts its review as a conversation comment, while other agents use review threads. A finding on either surface needs a disposition before merge.
+
 Resolve each PR review thread, whether a human or a bot opened it, as soon as you have dispositioned it: the fix is pushed to the PR head and your reply names the commit, or your reply pushes back on the finding with evidence. Leave a thread open only while it has no disposition. If the reviewer replies after your disposition, unresolve the thread and handle the reply.
 
 ## Autonomous self-improvement
