@@ -1,3 +1,4 @@
+#!/usr/bin/env pwsh
 # Check classification for Assert-PrGreen.ps1. Returns one problem string per reason the
 # rollup does not allow the requested action; an empty result allows it.
 #
