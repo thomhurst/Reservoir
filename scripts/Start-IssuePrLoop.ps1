@@ -1072,7 +1072,7 @@ while (-not (Test-Path -LiteralPath $stopFile)) {
             elseif ($waitRun) { $MaxDeferSeconds }
             elseif ($waitReview) { [Math]::Min($DeferSeconds, 3600) }
             elseif ($uncategorized) { [Math]::Min($DeferSeconds, 3600) }
-            else { [Math]::Min($MaxDeferSeconds, $DeferSeconds * [Math]::Pow(2, [Math]::Min($count - 1, 20))) }
+            else { [Math]::Min([double]$MaxDeferSeconds, $DeferSeconds * [Math]::Pow(2, [Math]::Min($count - 1, 20))) }
             $until = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + [long]$seconds
             $record = '{0}|until={1}|n={2}' -f $fingerprint, $until, [Math]::Max($count, 1)
             if ($waitRun) { $record += "|run=$waitRun" }
