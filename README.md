@@ -112,14 +112,14 @@ Another thread may rent the same object immediately. Read the complete [ownershi
 ## Measured, not promised
 
 <!-- BENCHMARK_RESULTS_START -->
-BenchmarkDotNet 0.15.8 `.NET 10.0`, .NET 10.0.14, Linux Ubuntu 24.04.5 LTS, AMD EPYC 7763:
+BenchmarkDotNet 0.15.8 `.NET 10.0`, .NET 10.0.15, Linux Ubuntu 26.04.1 LTS, AMD EPYC 7763:
 
 | Method | Mean | Ratio | Allocated |
 | --- | ---: | ---: | ---: |
-| `new` | 22.25 ns | 1.00 | 304 B |
-| **Reservoir** | **13.72 ns** | **0.62** | **0 B** |
-| `Microsoft.Extensions.ObjectPool` | 13.47 ns | 0.61 | 0 B |
-| `ConcurrentBag<T>` pool | 36.58 ns | 1.64 | 0 B |
+| `new` | 22.54 ns | 1.00 | 304 B |
+| **Reservoir** | **14.93 ns** | **0.66** | **0 B** |
+| `Microsoft.Extensions.ObjectPool` | 14.91 ns | 0.66 | 0 B |
+| `ConcurrentBag<T>` pool | 35.92 ns | 1.59 | 0 B |
 <!-- BENCHMARK_RESULTS_END -->
 
 Allocation measurements apply to the published workloads and their recorded runtime and job. Timings vary by machine; compare methods within the same run.
