@@ -17,8 +17,8 @@ public class FactoryLifecycleTests
         }
         else
         {
-            var lease = pool.RentScoped(out item);
-            var copy = lease;
+            PooledLease<Item> lease = pool.RentScoped(out item);
+            PooledLease<Item> copy = lease;
             pool.Dispose();
             lease.Dispose();
             copy.Dispose();
@@ -47,6 +47,9 @@ public class FactoryLifecycleTests
     {
         internal int DestroyCount;
 
-        public void Dispose() => DestroyCount++;
+        public void Dispose()
+        {
+            DestroyCount++;
+        }
     }
 }

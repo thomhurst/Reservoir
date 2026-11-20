@@ -57,27 +57,59 @@ public class DestroyPolicyBenchmarks
     public sealed class Item : IDisposable
     {
         public int DestroyCount;
-        public void Dispose() => DestroyCount++;
+        public void Dispose()
+        {
+            DestroyCount++;
+        }
     }
 
     public readonly struct RetainPolicy : IPooledObjectDestroyPolicy<Item>
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => true;
-        public void Destroy(Item item) => item.DestroyCount++;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return true;
+        }
+
+        public void Destroy(Item item)
+        {
+            item.DestroyCount++;
+        }
     }
 
     public readonly struct RejectPolicy : IPooledObjectDestroyPolicy<Item>
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => false;
-        public void Destroy(Item item) => item.DestroyCount++;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return false;
+        }
+
+        public void Destroy(Item item)
+        {
+            item.DestroyCount++;
+        }
     }
 
     public readonly struct DefaultDestroyPolicy : IPooledObjectDestroyPolicy<Item>
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => false;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return false;
+        }
 #if RESERVOIR_NETSTANDARD
         public void Destroy(Item item) => item.Dispose();
 #endif

@@ -101,16 +101,20 @@ public class StripedObjectStoreHintTests
 
     // No awaits inside these actions: ordinal and hint state must stay on the same thread.
     private static Task<bool> OnDedicatedThread(Func<bool> action)
-        => Task.Factory.StartNew(
-            action,
-            CancellationToken.None,
-            TaskCreationOptions.LongRunning,
-            TaskScheduler.Default);
+    {
+        return Task.Factory.StartNew(
+                action,
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+    }
 
     private static void SetThreadOrdinal(int ordinal)
-        => typeof(StripedObjectStore<Item>)
-            .GetField("_threadStripe", BindingFlags.NonPublic | BindingFlags.Static)!
-            .SetValue(null, ordinal);
+    {
+        typeof(StripedObjectStore<Item>)
+                .GetField("s_threadStripe", BindingFlags.NonPublic | BindingFlags.Static)!
+                .SetValue(null, ordinal);
+    }
 
     private sealed class Item;
 }

@@ -38,9 +38,13 @@ public class BenchmarkDocsTests
         {
             for (int i = 0; i < rows.Count; i++)
             {
-                rows[i] = rows[i] with { Job = rows[i].Runtime };
+                rows[i] = rows[i] with
+                {
+                    Job = rows[i].Runtime
+                };
             }
         }
+
         fixture.Metadata = fixture.Metadata
             .Replace("ShortRun : .NET 8.0", ".NET 8.0 : .NET 8.0")
             .Replace("ShortRun : .NET 10.0", ".NET 10.0 : .NET 10.0");
@@ -56,8 +60,14 @@ public class BenchmarkDocsTests
         List<Row> rows = fixture.Reports["CorePoolComparisonBenchmarks"];
         int baseline = rows.FindIndex(row => row.Method == "New" && row.Runtime == ".NET 10.0");
         int candidate = rows.FindIndex(row => row.Method == "Reservoir" && row.Runtime == ".NET 10.0");
-        rows[baseline] = rows[baseline] with { Mean = "1 µs" };
-        rows[candidate] = rows[candidate] with { Mean = "500 ns" };
+        rows[baseline] = rows[baseline] with
+        {
+            Mean = "1 µs"
+        };
+        rows[candidate] = rows[candidate] with
+        {
+            Mean = "500 ns"
+        };
         (int exitCode, _) = await fixture.Run();
         await Assert.That(exitCode).IsEqualTo(0);
         string readme = File.ReadAllText(fixture.ReadmePath);
@@ -107,6 +117,7 @@ public class BenchmarkDocsTests
                 {
                     rows.RemoveAll(row => row.Runtime == ".NET 10.0");
                 }
+
                 expectedError = "Expected one measurement job";
                 break;
             case "missing-result":
@@ -117,7 +128,10 @@ public class BenchmarkDocsTests
             case "different-job":
                 List<Row> objectRows = fixture.Reports["ObjectPoolBenchmarks"];
                 int index = objectRows.FindIndex(row => row.Runtime == ".NET 10.0" && row.Method == "ScopedOutRentReturn");
-                objectRows[index] = objectRows[index] with { Job = "Unrelated" };
+                objectRows[index] = objectRows[index] with
+                {
+                    Job = "Unrelated"
+                };
                 expectedError = "ScopedOutRentReturn";
                 break;
             case "missing-metadata":
@@ -166,7 +180,10 @@ public class BenchmarkDocsTests
                     continue;
                 }
 
-                rows[index] = original with { Allocated = allocated };
+                rows[index] = original with
+                {
+                    Allocated = allocated
+                };
                 (int exitCode, string output) = await fixture.Run();
                 await Assert.That(exitCode).IsNotEqualTo(0);
                 await Assert.That(output).Contains(original.Method);
@@ -175,6 +192,7 @@ public class BenchmarkDocsTests
                 checkedRows++;
             }
         }
+
         await Assert.That(checkedRows).IsEqualTo(24);
     }
 
@@ -189,7 +207,10 @@ public class BenchmarkDocsTests
         using var fixture = new Fixture();
         List<Row> rows = fixture.Reports["ObjectPoolBenchmarks"];
         int index = rows.FindIndex(row => row.Runtime == ".NET 10.0" && row.Method == "ScopedOutRentReturn");
-        rows[index] = rows[index] with { Allocated = allocated };
+        rows[index] = rows[index] with
+        {
+            Allocated = allocated
+        };
         (int exitCode, _) = await fixture.Run();
         await Assert.That(exitCode).IsNotEqualTo(0);
         await fixture.AssertUnchanged();
@@ -228,9 +249,13 @@ public class BenchmarkDocsTests
                 Row row = rows[index];
                 bool outsideClaim = row.Runtime != ".NET 10.0" || row.Job != "ShortRun" ||
                     row.Method is "New" or "NewList" or "NewStringBuilder" or "MicrosoftExtensionsObjectPool" or "ConcurrentBag" or "EmptyRent";
-                rows[index] = row with { Allocated = outsideClaim ? "64 B" : "0.00 B" };
+                rows[index] = row with
+                {
+                    Allocated = outsideClaim ? "64 B" : "0.00 B"
+                };
             }
         }
+
         (int exitCode, _) = await fixture.Run(job: "ShortRun");
         await Assert.That(exitCode).IsEqualTo(0);
         string docs = File.ReadAllText(fixture.DocsPath);
@@ -250,9 +275,18 @@ public class BenchmarkDocsTests
         private readonly string _script;
         private readonly string _initialReadme;
         private readonly string _initialDocs;
-        internal Dictionary<string, List<Row>> Reports { get; } = new();
-        internal string Metadata { get; set; }
-        internal string? ReportWithoutAllocationColumn { get; set; }
+        internal Dictionary<string, List<Row>> Reports
+        {
+            get;
+        } = new();
+        internal string Metadata
+        {
+            get; set;
+        }
+        internal string? ReportWithoutAllocationColumn
+        {
+            get; set;
+        }
         internal string ReadmePath => Path.Combine(_root, "README.md");
         internal string DocsPath => Path.Combine(_root, "website", "docs", "benchmarks.md");
 
@@ -264,6 +298,7 @@ public class BenchmarkDocsTests
             {
                 repository = repository.Parent;
             }
+
             if (repository is null)
             {
                 throw new InvalidOperationException("Cannot locate the benchmark documentation updater.");
@@ -284,6 +319,7 @@ public class BenchmarkDocsTests
             {
                 Metadata += $"  ShortRun : {runtime}.{(runtime == ".NET 8.0" ? "28" : "11")}, X64 RyuJIT\n";
             }
+
             if (extraJob)
             {
                 Metadata += "  Alternative : .NET 10.0.11, X64 RyuJIT\n";
@@ -314,11 +350,13 @@ public class BenchmarkDocsTests
                                 {
                                     mean = "20 ns";
                                 }
+
                                 rows.Add(new Row(method, runtime, job, mean, parameter == "Count" ? value : "", parameter == "Capacity" ? value : ""));
                             }
                         }
                     }
                 }
+
                 Reports.Add(name, rows);
             }
         }
@@ -333,8 +371,10 @@ public class BenchmarkDocsTests
                 {
                     csv = csv.Replace(",Allocated,", ",Unavailable,");
                 }
+
                 File.WriteAllText(Path.Combine(_root, "results", $"Reservoir.Benchmarks.{name}-report.csv"), csv);
             }
+
             File.WriteAllText(Path.Combine(_root, "results", "Reservoir.Benchmarks.CorePoolComparisonBenchmarks-report-github.md"), Metadata);
             var start = new ProcessStartInfo("pwsh")
             {
@@ -349,15 +389,18 @@ public class BenchmarkDocsTests
             {
                 start.Environment["XDG_CACHE_HOME"] = Path.Combine(_root, "cache");
             }
+
             foreach (string argument in new[] { "-NoProfile", "-File", _script, "-ResultsDirectory", Path.Combine(_root, "results"), "-RepositoryRoot", _root })
             {
                 start.ArgumentList.Add(argument);
             }
+
             if (runtime is not null)
             {
                 start.ArgumentList.Add("-Runtime");
                 start.ArgumentList.Add(runtime);
             }
+
             if (job is not null)
             {
                 start.ArgumentList.Add("-Job");
@@ -379,6 +422,7 @@ public class BenchmarkDocsTests
                     await process.WaitForExitAsync();
                 }
             }
+
             return (process.ExitCode, await output + await error);
         }
 
@@ -388,6 +432,9 @@ public class BenchmarkDocsTests
             await Assert.That(File.ReadAllText(DocsPath)).IsEqualTo(_initialDocs);
         }
 
-        public void Dispose() => Directory.Delete(_root, recursive: true);
+        public void Dispose()
+        {
+            Directory.Delete(_root, recursive: true);
+        }
     }
 }

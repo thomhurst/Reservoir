@@ -221,7 +221,10 @@ public class RetainedItemCollectionTests
             return new RaceItem();
         }
 
-        public bool TryReset(RaceItem item) => true;
+        public bool TryReset(RaceItem item)
+        {
+            return true;
+        }
 
         public void Destroy(RaceItem item)
         {
@@ -288,8 +291,16 @@ public class RetainedItemCollectionTests
 
     private readonly struct Policy(State state) : IPooledObjectDestroyPolicy<Item>
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => true;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return true;
+        }
+
         public void Destroy(Item item)
         {
             Interlocked.Increment(ref state.Destroyed);

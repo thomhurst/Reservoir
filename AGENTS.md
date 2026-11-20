@@ -2,6 +2,10 @@
 
 Follow `.editorconfig` and existing code conventions. Use TUnit for regression tests; cover concurrency and ownership boundaries when affected.
 
+For C# changes, follow the [shared EditorConfig profile](https://github.com/thomhurst/editorconfig/blob/0cef31e579d76c43b19a02024e672c1d0173629c/.editorconfig) and [C# style guide](https://github.com/thomhurst/editorconfig/blob/0cef31e579d76c43b19a02024e672c1d0173629c/csharp.md). Always brace control-flow bodies and use one blank line between logical groups. Preserve supported language versions and local overrides.
+
+Install [Curb](https://github.com/nullean/curb) with `dotnet tool install --global curb-cli` when needed. Use `curb format <changed-path>` to fix formatting and `curb check <changed-path>` to verify the result. Keep Roslyn build analysis enabled for rules that require compilation. If the shared references are unavailable, report that and use the local `.editorconfig`.
+
 ## Benchmark execution and local work
 
 Run performance benchmarks on GitHub Actions `ubuntu-latest` runners to avoid local machine noise. This repository no longer requires the local Redis `performance` lock, including for local restores, builds, tests, or website builds. PR/issue ownership locks still apply.
@@ -10,7 +14,7 @@ Agent output outside a worktree (evidence, throwaway checkouts, downloaded tools
 
 ## Validation
 
-- SDK: `global.json` selects the .NET 10.0.4xx feature band, rolls forward only to the latest patch in that band, and excludes preview SDKs. CI setup reads this file directly.
+- SDK: use the version in `global.json`. It rolls forward only to the latest patch in the selected feature band and excludes preview SDKs. CI setup reads this file directly.
 - Restore/build: `dotnet restore Reservoir.slnx`, then `dotnet build Reservoir.slnx -c Release --no-restore` (warnings as errors).
 - Tests: `dotnet test tests/Reservoir.Tests/Reservoir.Tests.csproj -c Release --no-build`; also run `tests/Reservoir.NetStandard.Tests/Reservoir.NetStandard.Tests.csproj` with the same options.
 - Runtime coverage: CI runs the full suites on Linux x64/ARM64 and Windows x64, plus a bounded .NET Framework smoke on Windows. See [tests/README.md](tests/README.md) for coverage and local commands.

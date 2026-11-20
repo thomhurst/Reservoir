@@ -43,7 +43,7 @@ public class ObjectPoolTests
         pool.Return(second);
         pool.Return(excess);
 
-        var rented = new[] { pool.Rent(), pool.Rent(), pool.Rent() };
+        PooledItem[] rented = new[] { pool.Rent(), pool.Rent(), pool.Rent() };
 
         await Assert.That(rented).Contains(first);
         await Assert.That(rented).Contains(second);
@@ -144,11 +144,11 @@ public class ObjectPoolTests
     [Arguments(64)]
     public async Task AffinityIndexIsBoundedAndWellDistributed(int capacity)
     {
-        const int stripeCount = 65_536;
+        const int StripeCount = 65_536;
         var pool = new ObjectPool<PooledItem, CountingPolicy>(capacity);
-        var distribution = new int[capacity];
+        int[] distribution = new int[capacity];
 
-        for (uint stripe = 0; stripe < stripeCount; stripe++)
+        for (uint stripe = 0; stripe < StripeCount; stripe++)
         {
             int index = pool.GetAffinityIndex(stripe);
             await Assert.That(index >= 0 && index < capacity).IsTrue();
@@ -169,16 +169,16 @@ public class ObjectPoolTests
     [Test]
     public async Task ConcurrentRentAndReturnNeverHandsOutOneInstanceTwice()
     {
-        const int workerCount = 16;
-        const int iterations = 20_000;
-        var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: workerCount);
+        const int WorkerCount = 16;
+        const int Iterations = 20_000;
+        var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: WorkerCount);
         var failures = new ConcurrentQueue<string>();
         PooledItem warmItem = pool.Rent();
         pool.Return(warmItem);
 
-        await Task.WhenAll(Enumerable.Range(0, workerCount).Select(_ => Task.Run(() =>
+        await Task.WhenAll(Enumerable.Range(0, WorkerCount).Select(_ => Task.Run(() =>
         {
-            for (int iteration = 0; iteration < iterations; iteration++)
+            for (int iteration = 0; iteration < Iterations; iteration++)
             {
                 PooledItem item = pool.Rent();
                 if (Interlocked.Exchange(ref item.InUse, 1) != 0)
@@ -203,25 +203,25 @@ public class ObjectPoolTests
     [Arguments(4096)]
     public async Task RentReturnClearDisposeRacesPreserveExclusiveOwnership(int capacity)
     {
-        const int workerCount = 8;
+        const int WorkerCount = 8;
 #if NET8_0
-        const int clearCount = 500;
+        const int ClearCount = 500;
 #else
-        const int clearCount = 2_000;
+        const int ClearCount = 2_000;
 #endif
         var state = new StressState();
         var pool = new ObjectPool<StressItem, StressPolicy>(
             new StressPolicy(state),
             capacity);
-        using var start = new Barrier(workerCount + 2);
+        using var start = new Barrier(WorkerCount + 2);
 
-        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
+        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, WorkerCount)
             .Select<int, Action<CancellationToken>>(workerIndex => token =>
                 StressPoolUntilDisposed(pool, state, start, workerIndex, token));
         Action<CancellationToken> clearer = token =>
         {
             start.SignalAndWait(token);
-            for (int i = 0; i < clearCount; i++)
+            for (int i = 0; i < ClearCount; i++)
             {
                 token.ThrowIfCancellationRequested();
                 pool.Clear();
@@ -256,14 +256,14 @@ public class ObjectPoolTests
     [Arguments(4096)]
     public async Task WarmRentAndReturnAllocatesNothing(int capacity)
     {
-        const int iterations = 10_000;
+        const int Iterations = 10_000;
         var pool = new ObjectPool<PooledItem, CountingPolicy>(maxCapacity: capacity);
         PooledItem warm = pool.Rent();
         pool.Return(warm);
 
         long before = GC.GetAllocatedBytesForCurrentThread();
 
-        for (int i = 0; i < iterations; i++)
+        for (int i = 0; i < Iterations; i++)
         {
             PooledItem item = pool.Rent();
             pool.Return(item);
@@ -277,18 +277,18 @@ public class ObjectPoolTests
     [Test]
     public async Task RentReturnStressPreservesOwnershipAndStateAcrossWorkerCounts()
     {
-        const int capacity = 32;
+        const int Capacity = 32;
 #if NET8_0
-        const int iterations = 25_000;
+        const int Iterations = 25_000;
 #else
-        const int iterations = 100_000;
+        const int Iterations = 100_000;
 #endif
         int[] workerCounts = [1, 4, 8, 16, 32];
         var state = new StressState();
         var pool = new ObjectPool<StressItem, StressPolicy>(
             new StressPolicy(state),
-            capacity);
-        var initialItems = new StressItem[capacity];
+            Capacity);
+        var initialItems = new StressItem[Capacity];
 
         for (int i = 0; i < initialItems.Length; i++)
         {
@@ -305,37 +305,37 @@ public class ObjectPoolTests
             using var start = new Barrier(workerCount + 1);
             IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
                 .Select<int, Action<CancellationToken>>(workerIndex => token =>
-                    StressPool(pool, state, start, workerIndex, iterations, token));
+                    StressPool(pool, state, start, workerIndex, Iterations, token));
 
             await ConcurrentTestWorkers.RunAsync(
                 workers.Append(token => start.SignalAndWait(token)));
         }
 
         var retainedItems = new HashSet<StressItem>();
-        for (int i = 0; i < capacity; i++)
+        for (int i = 0; i < Capacity; i++)
         {
             retainedItems.Add(pool.Rent());
         }
 
-        int expectedResetCount = capacity + (workerCounts.Sum() * iterations);
+        int expectedResetCount = Capacity + (workerCounts.Sum() * Iterations);
 
         await Assert.That(state.Failures).IsEmpty();
-        await Assert.That(state.CreatedCount).IsEqualTo(capacity);
+        await Assert.That(state.CreatedCount).IsEqualTo(Capacity);
         await Assert.That(state.ResetCount).IsEqualTo(expectedResetCount);
-        await Assert.That(retainedItems.Count).IsEqualTo(capacity);
+        await Assert.That(retainedItems.Count).IsEqualTo(Capacity);
     }
 
     [Test]
     public async Task LargePoolPreservesOwnershipUnderContention()
     {
-        const int capacity = 256;
-        const int workerCount = 16;
-        const int iterations = 20_000;
+        const int Capacity = 256;
+        const int WorkerCount = 16;
+        const int Iterations = 20_000;
         var state = new StressState();
         var pool = new ObjectPool<StressItem, StressPolicy>(
             new StressPolicy(state),
-            capacity);
-        var initialItems = new StressItem[capacity];
+            Capacity);
+        var initialItems = new StressItem[Capacity];
 
         for (int i = 0; i < initialItems.Length; i++)
         {
@@ -347,29 +347,29 @@ public class ObjectPoolTests
             pool.Return(item);
         }
 
-        using var start = new Barrier(workerCount + 1);
-        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
+        using var start = new Barrier(WorkerCount + 1);
+        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, WorkerCount)
             .Select<int, Action<CancellationToken>>(workerIndex => token =>
-                StressPool(pool, state, start, workerIndex, iterations, token));
+                StressPool(pool, state, start, workerIndex, Iterations, token));
 
         await ConcurrentTestWorkers.RunAsync(
             workers.Append(token => start.SignalAndWait(token)));
 
         var retainedItems = new HashSet<StressItem>();
-        for (int i = 0; i < capacity; i++)
+        for (int i = 0; i < Capacity; i++)
         {
             retainedItems.Add(pool.Rent());
         }
 
         await Assert.That(state.Failures).IsEmpty();
-        await Assert.That(state.CreatedCount).IsEqualTo(capacity);
-        await Assert.That(retainedItems.Count).IsEqualTo(capacity);
+        await Assert.That(state.CreatedCount).IsEqualTo(Capacity);
+        await Assert.That(retainedItems.Count).IsEqualTo(Capacity);
     }
 
     [Test]
     public async Task LargePoolReusesInstanceAcrossThreadHandoffs()
     {
-        const int iterations = 20_000;
+        const int Iterations = 20_000;
         var pool = new ObjectPool<PooledItem, CountingPolicy>(
             default,
             maxCapacity: 65);
@@ -381,7 +381,7 @@ public class ObjectPoolTests
 
         Action<CancellationToken> producer = token =>
         {
-            for (int i = 0; i < iterations; i++)
+            for (int i = 0; i < Iterations; i++)
             {
                 token.ThrowIfCancellationRequested();
                 handoff = pool.Rent();
@@ -395,7 +395,7 @@ public class ObjectPoolTests
 
         Action<CancellationToken> consumer = token =>
         {
-            for (int i = 0; i < iterations; i++)
+            for (int i = 0; i < Iterations; i++)
             {
                 token.ThrowIfCancellationRequested();
                 if (!rented.Wait(TimeSpan.FromSeconds(10), token))
@@ -411,7 +411,7 @@ public class ObjectPoolTests
         await ConcurrentTestWorkers.RunAsync([producer, consumer]);
 
         await Assert.That(pool.Rent()).IsSameReferenceAs(expected);
-        await Assert.That(expected.ResetCount).IsEqualTo(iterations + 1);
+        await Assert.That(expected.ResetCount).IsEqualTo(Iterations + 1);
     }
 
     [Test]
@@ -419,7 +419,7 @@ public class ObjectPoolTests
     [Arguments(2)]
     public async Task SmallPoolReusesInstancesAcrossThreadHandoffs(int inFlight)
     {
-        const int iterations = 20_000;
+        const int Iterations = 20_000;
         var policy = new CountingPolicy();
         var pool = new ObjectPool<PooledItem, CountingPolicy>(
             policy,
@@ -434,7 +434,7 @@ public class ObjectPoolTests
         // exchange, and they must keep finding the same objects instead of creating new ones.
         Action<CancellationToken> producer = token =>
         {
-            for (int i = 0; i < iterations; i++)
+            for (int i = 0; i < Iterations; i++)
             {
                 token.ThrowIfCancellationRequested();
                 for (int j = 0; j < handoff.Length; j++)
@@ -459,7 +459,7 @@ public class ObjectPoolTests
 
         Action<CancellationToken> consumer = token =>
         {
-            for (int i = 0; i < iterations; i++)
+            for (int i = 0; i < Iterations; i++)
             {
                 token.ThrowIfCancellationRequested();
                 if (!rented.Wait(TimeSpan.FromSeconds(10), token))
@@ -553,14 +553,20 @@ public class ObjectPoolTests
 
     private sealed class PooledItem(int id)
     {
-        internal int Id { get; } = id;
+        internal int Id
+        {
+            get;
+        } = id;
         internal int InUse;
         internal int ResetCount;
     }
 
     private sealed class StressItem(int id)
     {
-        internal int Id { get; } = id;
+        internal int Id
+        {
+            get;
+        } = id;
         internal int InUse;
         internal long Value;
         internal long ValueComplement;
@@ -571,7 +577,10 @@ public class ObjectPoolTests
         private const int MaximumRecordedFailures = 100;
         private int _failureCount;
 
-        internal ConcurrentQueue<string> Failures { get; } = new();
+        internal ConcurrentQueue<string> Failures
+        {
+            get;
+        } = new();
         internal int CreatedCount;
         internal int ResetCount;
         internal int Stopping;
@@ -592,7 +601,9 @@ public class ObjectPoolTests
         }
 
         public StressItem Create()
-            => new(Interlocked.Increment(ref state.CreatedCount));
+        {
+            return new(Interlocked.Increment(ref state.CreatedCount));
+        }
 
         public bool TryReset(StressItem obj)
         {
@@ -621,7 +632,10 @@ public class ObjectPoolTests
         {
         }
 
-        internal bool DiscardReturned { get; init; }
+        internal bool DiscardReturned
+        {
+            get; init;
+        }
         internal int Created => _counter?.Value ?? 0;
 
         public PooledItem Create()
@@ -650,7 +664,10 @@ public class ObjectPoolTests
         {
         }
 
-        public PooledItem Create() => new(Interlocked.Increment(ref _created));
+        public PooledItem Create()
+        {
+            return new(Interlocked.Increment(ref _created));
+        }
 
         public bool TryReset(PooledItem obj)
         {

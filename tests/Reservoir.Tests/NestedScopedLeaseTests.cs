@@ -198,8 +198,18 @@ public class NestedScopedLeaseTests
 
     private readonly struct Policy : IPooledObjectPolicy<Marker>, INonThrowingResetPolicy
     {
-        public Marker Create() => new();
-        public bool TryReset(Marker obj) => true;
-        public void Destroy(Marker obj) { }
+        public Marker Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Marker obj)
+        {
+            return true;
+        }
+
+        public void Destroy(Marker obj)
+        {
+        }
     }
 }

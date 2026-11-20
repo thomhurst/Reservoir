@@ -212,7 +212,7 @@ public class CancellationTokenSourcePoolTests
     [Test]
     public async Task ConcurrentStressPreservesOwnershipAndFreshState()
     {
-        const int iterations = 10_000;
+        const int Iterations = 10_000;
         int[] workerCounts = [1, 4, 8, 16, 32];
         var pool = new CancellationTokenSourcePool(maxCapacity: 32);
         var state = new StressState();
@@ -222,7 +222,7 @@ public class CancellationTokenSourcePoolTests
             using var start = new Barrier(workerCount + 1);
             IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
                 .Select<int, Action<CancellationToken>>(_ => token =>
-                    StressPool(pool, state, start, iterations, token));
+                    StressPool(pool, state, start, Iterations, token));
 
             await ConcurrentTestWorkers.RunAsync(
                 workers.Append(token => start.SignalAndWait(token)));
@@ -235,14 +235,14 @@ public class CancellationTokenSourcePoolTests
     [Test]
     public async Task ConcurrentTimerDisarmStressNeverProducesCanceledRental()
     {
-        const int workerCount = 16;
-        const int iterations = 5_000;
+        const int WorkerCount = 16;
+        const int Iterations = 5_000;
         var pool = new CancellationTokenSourcePool(maxCapacity: 32);
         var state = new StressState();
-        using var start = new Barrier(workerCount + 1);
-        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
+        using var start = new Barrier(WorkerCount + 1);
+        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, WorkerCount)
             .Select<int, Action<CancellationToken>>(_ => token =>
-                StressTimerDisarm(pool, state, start, iterations, token));
+                StressTimerDisarm(pool, state, start, Iterations, token));
 
         await ConcurrentTestWorkers.RunAsync(
             workers.Append(token => start.SignalAndWait(token)));
@@ -253,14 +253,14 @@ public class CancellationTokenSourcePoolTests
     [Test]
     public async Task ConcurrentScopedStressPreservesOwnershipAndFreshState()
     {
-        const int workerCount = 8;
-        const int iterations = 5_000;
-        using var pool = new CancellationTokenSourcePool(maxCapacity: workerCount);
+        const int WorkerCount = 8;
+        const int Iterations = 5_000;
+        using var pool = new CancellationTokenSourcePool(maxCapacity: WorkerCount);
         var state = new StressState();
-        using var start = new Barrier(workerCount + 1);
-        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
+        using var start = new Barrier(WorkerCount + 1);
+        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, WorkerCount)
             .Select<int, Action<CancellationToken>>(_ => token =>
-                StressScopedPool(pool, state, start, iterations, token));
+                StressScopedPool(pool, state, start, Iterations, token));
 
         await ConcurrentTestWorkers.RunAsync(
             workers.Append(token => start.SignalAndWait(token)));
@@ -719,10 +719,15 @@ public class CancellationTokenSourcePoolTests
         private const int MaximumRecordedFailures = 100;
         private int _failureCount;
 
-        internal ConcurrentDictionary<CancellationTokenSource, byte> ActiveSources { get; }
-            = new(ReferenceEqualityComparer.Instance);
+        internal ConcurrentDictionary<CancellationTokenSource, byte> ActiveSources
+        {
+            get;
+        } = new(ReferenceEqualityComparer.Instance);
 
-        internal ConcurrentQueue<string> Failures { get; } = new();
+        internal ConcurrentQueue<string> Failures
+        {
+            get;
+        } = new();
 
         internal void TrackRental(CancellationTokenSource source)
         {

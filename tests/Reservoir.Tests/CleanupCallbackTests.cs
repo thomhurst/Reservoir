@@ -64,7 +64,7 @@ public class CleanupCallbackTests
                 for (int i = 0; i < 50_000; i++)
                 {
                     token.ThrowIfCancellationRequested();
-                    using var lease = pool.RentScoped();
+                    using PooledLease<Item, Policy> lease = pool.RentScoped();
                     Item item = lease.Value;
                     if (Volatile.Read(ref item.DestroyCount) != 0)
                     {
@@ -167,14 +167,17 @@ public class CleanupCallbackTests
         await Assert.That(items.All(item => item.DestroyCount == 1)).IsTrue();
     }
 
-    private static Task StartClear(ObjectPool<Item, Policy> pool) => Task.Factory.StartNew(
+    private static Task StartClear(ObjectPool<Item, Policy> pool)
+    {
+        return Task.Factory.StartNew(
         pool.Clear, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+    }
 
     private static Item Seed(ObjectPool<Item, Policy> pool, bool scoped)
     {
         if (scoped)
         {
-            using var lease = pool.RentScoped();
+            using PooledLease<Item, Policy> lease = pool.RentScoped();
             return lease.Value;
         }
 
@@ -191,8 +194,16 @@ public class CleanupCallbackTests
 
     public readonly struct Policy : IPooledObjectDestroyPolicy<Item>
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => true;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return true;
+        }
+
         public void Destroy(Item item)
         {
             Interlocked.Increment(ref item.DestroyCount);

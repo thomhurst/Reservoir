@@ -26,16 +26,20 @@ public class CacheLinePaddingTests
 
     [Test]
     public async Task PaddedLeaseStateOccupiesAtLeastTwoCacheLinesBeyondItsFields()
-        => await AssertPaddedAllocation(
-            typeof(PaddedScopedPoolLeaseState),
-            static () => new PaddedScopedPoolLeaseState());
+    {
+        await AssertPaddedAllocation(
+                typeof(PaddedScopedPoolLeaseState),
+                static () => new PaddedScopedPoolLeaseState());
+    }
 
     // A nested type of a constructed generic type comes back as its open definition.
     private static Type GetPaddedNestedType(Type declaringType, string nestedTypeName)
-        => declaringType
-            .GetGenericTypeDefinition()
-            .GetNestedType(nestedTypeName, BindingFlags.NonPublic)!
-            .MakeGenericType(declaringType.GetGenericArguments());
+    {
+        return declaringType
+                .GetGenericTypeDefinition()
+                .GetNestedType(nestedTypeName, BindingFlags.NonPublic)!
+                .MakeGenericType(declaringType.GetGenericArguments());
+    }
 
     private static async Task AssertPaddedAllocation(Type paddedType, Func<object> create)
     {
@@ -61,7 +65,7 @@ public class CacheLinePaddingTests
         }
 
         const int Samples = 256;
-        var keep = new object[Samples];
+        object[] keep = new object[Samples];
         _ = create();
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < Samples; i++)

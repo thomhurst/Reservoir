@@ -13,8 +13,8 @@ public class PopulatedCollectionPoolBenchmarks
     private readonly StackPool<int> _stacks = new();
     private readonly ListPool<int> _lists = new();
     private readonly StringBuilderPool _builders = new();
-    private int _value = 42;
-    private string _text = "value";
+    private readonly int _value = 42;
+    private readonly string _text = "value";
 
     [GlobalSetup]
     public void Warm()

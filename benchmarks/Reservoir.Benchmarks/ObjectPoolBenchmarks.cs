@@ -5,10 +5,8 @@ namespace Reservoir.Benchmarks;
 [MemoryDiagnoser(displayGenColumns: false)]
 public class ObjectPoolBenchmarks
 {
-    private readonly ObjectPool<Payload, PayloadPolicy> _pool
-        = new(maxCapacity: 32);
-    private readonly ObjectPool<Payload, NonThrowingPayloadPolicy> _nonThrowingPool
-        = new(maxCapacity: 32);
+    private readonly ObjectPool<Payload, PayloadPolicy> _pool = new(maxCapacity: 32);
+    private readonly ObjectPool<Payload, NonThrowingPayloadPolicy> _nonThrowingPool = new(maxCapacity: 32);
 
     [GlobalSetup]
     public void WarmPool()
@@ -55,16 +53,28 @@ public class ObjectPoolBenchmarks
 
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(Payload obj) => true;
+        public bool TryReset(Payload obj)
+        {
+            return true;
+        }
     }
 
     public readonly struct NonThrowingPayloadPolicy
         : IPooledObjectPolicy<Payload>, INonThrowingResetPolicy
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(Payload obj) => true;
+        public bool TryReset(Payload obj)
+        {
+            return true;
+        }
     }
 }

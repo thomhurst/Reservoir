@@ -62,28 +62,56 @@ public class DestroyPolicyTests
     }
 
     private static void DestroyConstrained<TPolicy>(ref TPolicy policy, Item item)
-        where TPolicy : struct, IPooledObjectDestroyPolicy<Item> => policy.Destroy(item);
+        where TPolicy : struct, IPooledObjectDestroyPolicy<Item>
+    {
+        policy.Destroy(item);
+    }
 
     private sealed class Item : IDisposable
     {
         internal int DestroyCount;
         internal int DisposeCount;
-        public void Dispose() => DisposeCount++;
+        public void Dispose()
+        {
+            DisposeCount++;
+        }
     }
 
     private struct MarkerPolicy : IPooledObjectDestroyPolicy<Item>
     {
         internal int DestroyCount;
-        public Item Create() => new();
-        public bool TryReset(Item item) => false;
-        void IPooledObjectPolicy<Item>.Destroy(Item item) => item.DestroyCount = ++DestroyCount;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return false;
+        }
+
+        void IPooledObjectPolicy<Item>.Destroy(Item item)
+        {
+            item.DestroyCount = ++DestroyCount;
+        }
     }
 
     private struct BasePolicy : IPooledObjectPolicy<Item>
     {
         internal int DestroyCount;
-        public Item Create() => new();
-        public bool TryReset(Item item) => DestroyCount > 0;
-        void IPooledObjectPolicy<Item>.Destroy(Item item) => item.DestroyCount = ++DestroyCount;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return DestroyCount > 0;
+        }
+
+        void IPooledObjectPolicy<Item>.Destroy(Item item)
+        {
+            item.DestroyCount = ++DestroyCount;
+        }
     }
 }

@@ -16,7 +16,10 @@ public class SmallPoolHeaderLineBenchmarks
     private BenchmarkWorkerGroup? _workers;
 
     [Params(2, 4)]
-    public int WorkerCount { get; set; }
+    public int WorkerCount
+    {
+        get; set;
+    }
 
     [GlobalSetup]
     public void Setup()
@@ -52,17 +55,29 @@ public class SmallPoolHeaderLineBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _workers?.Dispose();
+    public void Cleanup()
+    {
+        _workers?.Dispose();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void StrictRentReturn() => _workers!.Run();
+    public void StrictRentReturn()
+    {
+        _workers!.Run();
+    }
 
     public sealed class Payload;
 
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(Payload obj) => true;
+        public bool TryReset(Payload obj)
+        {
+            return true;
+        }
     }
 }

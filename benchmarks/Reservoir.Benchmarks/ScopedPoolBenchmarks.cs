@@ -13,7 +13,9 @@ namespace Reservoir.Benchmarks;
 public class ScopedPoolBenchmarks<TAdapter>
     where TAdapter : struct, IScopedPoolBenchmarkAdapter
 {
+#pragma warning disable IDE0044 // Preserve constrained calls on the original adapter.
     private TAdapter _adapter = default;
+#pragma warning restore IDE0044
 
     [GlobalSetup]
     public void WarmPools()
@@ -24,13 +26,22 @@ public class ScopedPoolBenchmarks<TAdapter>
     }
 
     [Benchmark(Baseline = true)]
-    public int Shared() => _adapter.Shared();
+    public int Shared()
+    {
+        return _adapter.Shared();
+    }
 
     [Benchmark]
-    public int ScopedValue() => _adapter.ScopedValue();
+    public int ScopedValue()
+    {
+        return _adapter.ScopedValue();
+    }
 
     [Benchmark]
-    public int ScopedOut() => _adapter.ScopedOut();
+    public int ScopedOut()
+    {
+        return _adapter.ScopedOut();
+    }
 }
 
 public interface IScopedPoolBenchmarkAdapter
@@ -121,15 +132,13 @@ public readonly struct ScopedDictionaryAdapter : IScopedPoolBenchmarkAdapter
 
     public int ScopedValue()
     {
-        using DictionaryPool<int, int>.Lease lease
-            = DictionaryPool<int, int>.Shared.RentScoped();
+        using DictionaryPool<int, int>.Lease lease = DictionaryPool<int, int>.Shared.RentScoped();
         return lease.Value.Count;
     }
 
     public int ScopedOut()
     {
-        using DictionaryPool<int, int>.Lease lease
-            = DictionaryPool<int, int>.Shared.RentScoped(out Dictionary<int, int> item);
+        using DictionaryPool<int, int>.Lease lease = DictionaryPool<int, int>.Shared.RentScoped(out Dictionary<int, int> item);
         return item.Count;
     }
 }
@@ -152,8 +161,7 @@ public readonly struct ScopedHashSetAdapter : IScopedPoolBenchmarkAdapter
 
     public int ScopedOut()
     {
-        using HashSetPool<int>.Lease lease
-            = HashSetPool<int>.Shared.RentScoped(out HashSet<int> item);
+        using HashSetPool<int>.Lease lease = HashSetPool<int>.Shared.RentScoped(out HashSet<int> item);
         return item.Count;
     }
 }
@@ -176,8 +184,7 @@ public readonly struct ScopedStringBuilderAdapter : IScopedPoolBenchmarkAdapter
 
     public int ScopedOut()
     {
-        using StringBuilderPool.Lease lease
-            = StringBuilderPool.Shared.RentScoped(out StringBuilder item);
+        using StringBuilderPool.Lease lease = StringBuilderPool.Shared.RentScoped(out StringBuilder item);
         return item.Length;
     }
 }

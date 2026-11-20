@@ -15,10 +15,16 @@ public class ScopedClearContentionBenchmarks
     private Barrier _start = null!;
 
     [Params(1, 4)]
-    public int WorkerCount { get; set; }
+    public int WorkerCount
+    {
+        get; set;
+    }
 
     [Params(0, 8, 64)]
-    public int ClearCount { get; set; }
+    public int ClearCount
+    {
+        get; set;
+    }
 
     [GlobalSetup]
     public void Setup()
@@ -45,7 +51,10 @@ public class ScopedClearContentionBenchmarks
     }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void ScopedRentAndClear() => _workers.Run();
+    public void ScopedRentAndClear()
+    {
+        _workers.Run();
+    }
 
     [GlobalCleanup]
     public void Cleanup()
@@ -59,7 +68,7 @@ public class ScopedClearContentionBenchmarks
     {
         for (int i = 0; i < count; i++)
         {
-            using var lease = _pool.RentScoped(out Payload item);
+            using PooledLease<Payload, Policy> lease = _pool.RentScoped(out Payload item);
             if (Volatile.Read(ref item.Destroyed) != 0)
             {
                 throw new InvalidOperationException("An active lease exposes a destroyed item.");
@@ -74,8 +83,19 @@ public class ScopedClearContentionBenchmarks
 
     public readonly struct Policy : IPooledObjectPolicy<Payload>, INonThrowingResetPolicy
     {
-        public Payload Create() => new();
-        public bool TryReset(Payload item) => true;
-        public void Destroy(Payload item) => Volatile.Write(ref item.Destroyed, 1);
+        public Payload Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Payload item)
+        {
+            return true;
+        }
+
+        public void Destroy(Payload item)
+        {
+            Volatile.Write(ref item.Destroyed, 1);
+        }
     }
 }

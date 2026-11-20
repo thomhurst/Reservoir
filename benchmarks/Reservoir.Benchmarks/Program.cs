@@ -1,6 +1,6 @@
-using BenchmarkDotNet.Running;
 using System.Reflection;
 using System.Runtime.Versioning;
+using BenchmarkDotNet.Running;
 
 BenchmarkAsset.Verify();
 

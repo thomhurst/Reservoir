@@ -19,16 +19,25 @@ public class ObjectPoolRemoteHandoffBenchmarks
     private long _maximumWorkerAllocatedBytes;
 
     [Params(65, 4096)]
-    public int Capacity { get; set; }
+    public int Capacity
+    {
+        get; set;
+    }
 
     [ParamsSource(nameof(PairCounts))]
-    public int PairCount { get; set; }
+    public int PairCount
+    {
+        get; set;
+    }
 
     public IEnumerable<int> PairCounts => new[] { 1, 4 }
         .Where(pairs => pairs <= Math.Max(1, Environment.ProcessorCount / 2));
 
     [Params(ReturnAffinity.Home, ReturnAffinity.Distant)]
-    public ReturnAffinity ReturnLocation { get; set; }
+    public ReturnAffinity ReturnLocation
+    {
+        get; set;
+    }
 
     [GlobalSetup]
     public void Setup()
@@ -61,8 +70,8 @@ public class ObjectPoolRemoteHandoffBenchmarks
         }
 
         FieldInfo ordinal = store.GetType()
-            .GetField("_threadStripe", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var initialized = new bool[PairCount * 2];
+            .GetField("s_threadStripe", BindingFlags.NonPublic | BindingFlags.Static)!;
+        bool[] initialized = new bool[PairCount * 2];
         _workers = new BenchmarkWorkerGroup(PairCount * 2, workerIndex =>
         {
             int pair = workerIndex % PairCount;
@@ -140,8 +149,15 @@ public class ObjectPoolRemoteHandoffBenchmarks
 
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
     {
-        public Payload Create() => new();
-        public bool TryReset(Payload obj) => true;
+        public Payload Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Payload obj)
+        {
+            return true;
+        }
     }
 
     [StructLayout(LayoutKind.Explicit)]

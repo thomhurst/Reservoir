@@ -15,10 +15,16 @@ public class StripedObjectStoreHandoffBenchmarks
     private BenchmarkWorkerGroup? _workers;
 
     [Params(65, 4_096, 65_536)]
-    public int Capacity { get; set; }
+    public int Capacity
+    {
+        get; set;
+    }
 
     [ParamsSource(nameof(PairCounts))]
-    public int PairCount { get; set; }
+    public int PairCount
+    {
+        get; set;
+    }
 
     // A spinning handoff needs both threads of every pair on a core, so pair counts are capped at
     // half the processors; beyond that the benchmark measures the scheduler, not the store.
@@ -65,10 +71,16 @@ public class StripedObjectStoreHandoffBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _workers?.Dispose();
+    public void Cleanup()
+    {
+        _workers?.Dispose();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void CrossThreadHandoff() => _workers!.Run();
+    public void CrossThreadHandoff()
+    {
+        _workers!.Run();
+    }
 
     private static void Rent(
         StripedObjectStore<Payload> store,

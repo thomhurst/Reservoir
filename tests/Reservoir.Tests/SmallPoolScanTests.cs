@@ -28,7 +28,7 @@ public class SmallPoolScanTests
     {
         using var pool = new ObjectPool<Item, Policy>(maxCapacity: capacity);
         FieldInfo affinity = typeof(ObjectPool<Item, Policy>)
-            .GetField("_threadStripe", BindingFlags.NonPublic | BindingFlags.Static)!;
+            .GetField("s_threadStripe", BindingFlags.NonPublic | BindingFlags.Static)!;
         object? previous = affinity.GetValue(null);
         // Ordinal zero would mix to the unassigned marker, so start at one as threads do.
         uint ordinal = 1;
@@ -101,13 +101,27 @@ public class SmallPoolScanTests
     {
         internal int DisposeCount;
 
-        public void Dispose() => DisposeCount++;
+        public void Dispose()
+        {
+            DisposeCount++;
+        }
     }
 
     private readonly struct Policy : IPooledObjectPolicy<Item>
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => true;
-        public void Destroy(Item item) => item.Dispose();
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return true;
+        }
+
+        public void Destroy(Item item)
+        {
+            item.Dispose();
+        }
     }
 }

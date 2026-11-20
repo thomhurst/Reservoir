@@ -18,7 +18,10 @@ public class CancellationTokenSourcePoolBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _pool.Dispose();
+    public void Cleanup()
+    {
+        _pool.Dispose();
+    }
 
     [Benchmark(Baseline = true)]
     public bool NewDispose()
@@ -46,8 +49,7 @@ public class CancellationTokenSourcePoolBenchmarks
     [Benchmark]
     public bool ScopedOutRentDispose()
     {
-        using CancellationTokenSourcePool.Lease lease
-            = _pool.RentScoped(out CancellationTokenSource source);
+        using CancellationTokenSourcePool.Lease lease = _pool.RentScoped(out CancellationTokenSource source);
         return source.IsCancellationRequested;
     }
 }
@@ -68,7 +70,10 @@ public class CancellationTokenSourceTimerBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _pool.Dispose();
+    public void Cleanup()
+    {
+        _pool.Dispose();
+    }
 
     [Benchmark(Baseline = true)]
     public bool NewScheduleDispose()
@@ -93,7 +98,9 @@ public class CancellationTokenSourceTimerBenchmarks
 [MemoryDiagnoser(displayGenColumns: false)]
 public class CancellationTokenSourceRegistrationBenchmarks
 {
-    private static readonly Action s_callback = static () => { };
+    private static readonly Action s_callback = static () =>
+    {
+    };
     private readonly CancellationTokenSourcePool _pool = new(maxCapacity: 1);
 
     [GlobalSetup]
@@ -105,7 +112,10 @@ public class CancellationTokenSourceRegistrationBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _pool.Dispose();
+    public void Cleanup()
+    {
+        _pool.Dispose();
+    }
 
     [Benchmark(Baseline = true)]
     public bool NewRegisterDispose()
@@ -140,7 +150,10 @@ public class CancellationTokenSourceCanceledBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _pool.Dispose();
+    public void Cleanup()
+    {
+        _pool.Dispose();
+    }
 
     [Benchmark(Baseline = true)]
     public bool NewCancelDispose()
@@ -192,7 +205,7 @@ public class CancellationTokenSourceLinkedBenchmarks
     [Benchmark]
     public bool CreateLinkedDispose()
     {
-        using CancellationTokenSource source =
+        using var source =
             CancellationTokenSource.CreateLinkedTokenSource(_upstream.Token);
         return source.IsCancellationRequested;
     }
@@ -234,13 +247,16 @@ public class CancellationTokenSourceLinkedCanceledBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _pool.Dispose();
+    public void Cleanup()
+    {
+        _pool.Dispose();
+    }
 
     [Benchmark(Baseline = true)]
     public bool CreateLinkedCancelDispose()
     {
         using var upstream = new CancellationTokenSource();
-        using CancellationTokenSource source =
+        using var source =
             CancellationTokenSource.CreateLinkedTokenSource(upstream.Token);
         upstream.Cancel();
         return source.IsCancellationRequested;
@@ -284,7 +300,10 @@ public class CancellationTokenSourcePoolContentionBenchmarks
     private CancellationTokenSourcePool? _pool;
 
     [Params(1, 4, 8, 16, 32)]
-    public int WorkerCount { get; set; }
+    public int WorkerCount
+    {
+        get; set;
+    }
 
     [GlobalSetup(Target = nameof(NewDispose))]
     public void SetupNewDispose()
@@ -298,7 +317,7 @@ public class CancellationTokenSourcePoolContentionBenchmarks
     [GlobalSetup(Target = nameof(RentDispose))]
     public void SetupPool()
     {
-        var pool = _pool = new CancellationTokenSourcePool(maxCapacity: PoolCapacity);
+        CancellationTokenSourcePool pool = _pool = new CancellationTokenSourcePool(maxCapacity: PoolCapacity);
         var sources = new CancellationTokenSource[PoolCapacity];
 
         for (int i = 0; i < sources.Length; i++)
@@ -325,10 +344,16 @@ public class CancellationTokenSourcePoolContentionBenchmarks
     }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation, Baseline = true)]
-    public void NewDispose() => _workers!.Run();
+    public void NewDispose()
+    {
+        _workers!.Run();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void RentDispose() => _workers!.Run();
+    public void RentDispose()
+    {
+        _workers!.Run();
+    }
 
     private static void RunNewDispose(int operationCount)
     {

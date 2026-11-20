@@ -23,7 +23,10 @@ public class ModernDestroyPolicyTests
     }
 
     private static void DestroyConstrained<TPolicy>(ref TPolicy policy, Item item)
-        where TPolicy : struct, IPooledObjectDestroyPolicy<Item> => policy.Destroy(item);
+        where TPolicy : struct, IPooledObjectDestroyPolicy<Item>
+    {
+        policy.Destroy(item);
+    }
 
     [Test]
     [Arguments(false)]
@@ -62,58 +65,129 @@ public class ModernDestroyPolicyTests
     {
         public int DestroyCount;
         public int DisposeCount;
-        public void Dispose() => DisposeCount++;
+        public void Dispose()
+        {
+            DisposeCount++;
+        }
     }
 
     public readonly struct BasePolicy : IPooledObjectPolicy<Item>
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => false;
-        void IPooledObjectPolicy<Item>.Destroy(Item item) => item.DestroyCount++;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return false;
+        }
+
+        void IPooledObjectPolicy<Item>.Destroy(Item item)
+        {
+            item.DestroyCount++;
+        }
     }
 
     public readonly struct ExplicitBasePolicy : IPooledObjectDestroyPolicy<Item>
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => false;
-        void IPooledObjectPolicy<Item>.Destroy(Item item) => item.DestroyCount++;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return false;
+        }
+
+        void IPooledObjectPolicy<Item>.Destroy(Item item)
+        {
+            item.DestroyCount++;
+        }
     }
 
     public struct MutableBasePolicy : IPooledObjectDestroyPolicy<Item>
     {
         public int DestroyCount;
-        public Item Create() => new();
-        public bool TryReset(Item item) => false;
-        void IPooledObjectPolicy<Item>.Destroy(Item item) => item.DestroyCount = ++DestroyCount;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return false;
+        }
+
+        void IPooledObjectPolicy<Item>.Destroy(Item item)
+        {
+            item.DestroyCount = ++DestroyCount;
+        }
     }
 
     public interface IInheritedPolicy : IPooledObjectDestroyPolicy<Item>
     {
-        void IPooledObjectPolicy<Item>.Destroy(Item item) => item.DestroyCount++;
+        void IPooledObjectPolicy<Item>.Destroy(Item item)
+        {
+            item.DestroyCount++;
+        }
     }
 
     public readonly struct InheritedPolicy : IInheritedPolicy
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => false;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return false;
+        }
     }
 
     public readonly struct ImplicitPolicy : IPooledObjectDestroyPolicy<Item>
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => false;
-        public void Destroy(Item item) => item.DestroyCount++;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return false;
+        }
+
+        public void Destroy(Item item)
+        {
+            item.DestroyCount++;
+        }
     }
 
     public readonly struct DefaultBasePolicy : IPooledObjectPolicy<Item>
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => false;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return false;
+        }
     }
 
     public readonly struct DefaultDerivedPolicy : IPooledObjectDestroyPolicy<Item>
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => false;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return false;
+        }
     }
 }

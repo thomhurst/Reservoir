@@ -27,8 +27,8 @@ public class ResetFailureDiagnosticsTests
             using var pool = new ObjectPool<Item>(policy, maxCapacity: 1);
             if (rental == "runtime-scoped")
             {
-                var lease = pool.RentScoped();
-                var copy = lease;
+                PooledLease<Item> lease = pool.RentScoped();
+                PooledLease<Item> copy = lease;
                 failed = lease.Value;
                 try
                 {
@@ -38,6 +38,7 @@ public class ResetFailureDiagnosticsTests
                 {
                     caught = exception;
                 }
+
                 copy.Dispose();
             }
             else
@@ -52,6 +53,7 @@ public class ResetFailureDiagnosticsTests
                     caught = exception;
                 }
             }
+
             replacement = pool.Rent();
             pool.Clear();
         }
@@ -60,8 +62,8 @@ public class ResetFailureDiagnosticsTests
             using var pool = new ObjectPool<Item, ThrowingPolicy>(policy, maxCapacity: 1);
             if (rental == "scoped")
             {
-                var lease = pool.RentScoped();
-                var copy = lease;
+                PooledLease<Item, ThrowingPolicy> lease = pool.RentScoped();
+                PooledLease<Item, ThrowingPolicy> copy = lease;
                 failed = lease.Value;
                 try
                 {
@@ -71,6 +73,7 @@ public class ResetFailureDiagnosticsTests
                 {
                     caught = exception;
                 }
+
                 copy.Dispose();
             }
             else
@@ -85,6 +88,7 @@ public class ResetFailureDiagnosticsTests
                     caught = exception;
                 }
             }
+
             replacement = pool.Rent();
             pool.Clear();
         }
@@ -105,6 +109,7 @@ public class ResetFailureDiagnosticsTests
         {
             await Assert.That(caught).IsSameReferenceAs(resetFailure);
         }
+
         await Assert.That(resetFailure.StackTrace!).Contains(nameof(ThrowingPolicy.TryReset));
     }
 
@@ -117,7 +122,10 @@ public class ResetFailureDiagnosticsTests
     private readonly struct ThrowingPolicy(Exception resetFailure, Exception? destroyFailure)
         : IPooledObjectDestroyPolicy<Item>
     {
-        public Item Create() => new();
+        public Item Create()
+        {
+            return new();
+        }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         public bool TryReset(Item item)

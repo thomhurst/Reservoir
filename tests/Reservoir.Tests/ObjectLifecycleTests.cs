@@ -2,7 +2,7 @@ namespace Reservoir.Tests;
 
 public class ObjectLifecycleTests
 {
-    private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan s_testTimeout = TimeSpan.FromSeconds(10);
 
     [Test]
     public async Task ResettablePolicyCallsTryResetOnReturn()
@@ -139,11 +139,11 @@ public class ObjectLifecycleTests
     [Test]
     public async Task LargeFullPoolDisposesReturnedExcessItem()
     {
-        const int capacity = 65;
+        const int Capacity = 65;
         var pool = new ObjectPool<DisposableItem, DisposablePolicy>(
             default,
-            capacity);
-        var retained = new DisposableItem[capacity];
+            Capacity);
+        var retained = new DisposableItem[Capacity];
 
         for (int i = 0; i < retained.Length; i++)
         {
@@ -331,8 +331,8 @@ public class ObjectLifecycleTests
             new BlockingPolicy(state),
             maxCapacity: 1);
         DisposableItem item = pool.Rent();
-        Task returnTask = Task.Run(() => pool.Return(item));
-        bool resetObserved = state.ResetStarted.Wait(TestTimeout);
+        var returnTask = Task.Run(() => pool.Return(item));
+        bool resetObserved = state.ResetStarted.Wait(s_testTimeout);
 
         if (resetObserved)
         {
@@ -340,7 +340,7 @@ public class ObjectLifecycleTests
         }
 
         state.ContinueReset.Set();
-        await returnTask.WaitAsync(TestTimeout);
+        await returnTask.WaitAsync(s_testTimeout);
 
         await Assert.That(resetObserved).IsTrue();
         await Assert.That(state.ContinueResetObserved).IsTrue();
@@ -355,7 +355,7 @@ public class ObjectLifecycleTests
             new BlockingPolicy(state),
             maxCapacity: 1);
         Task<DisposableItem> returnTask = Task.Run(() => RentScopedAndDispose(pool));
-        bool resetObserved = state.ResetStarted.Wait(TestTimeout);
+        bool resetObserved = state.ResetStarted.Wait(s_testTimeout);
 
         if (resetObserved)
         {
@@ -363,7 +363,7 @@ public class ObjectLifecycleTests
         }
 
         state.ContinueReset.Set();
-        DisposableItem item = await returnTask.WaitAsync(TestTimeout);
+        DisposableItem item = await returnTask.WaitAsync(s_testTimeout);
 
         await Assert.That(resetObserved).IsTrue();
         await Assert.That(state.ContinueResetObserved).IsTrue();
@@ -383,9 +383,18 @@ public class ObjectLifecycleTests
         {
         }
 
-        internal bool CanReset { get; set; } = true;
-        internal int DisposeCount { get; private set; }
-        internal int ResetCount { get; private set; }
+        internal bool CanReset
+        {
+            get; set;
+        } = true;
+        internal int DisposeCount
+        {
+            get; private set;
+        }
+        internal int ResetCount
+        {
+            get; private set;
+        }
 
         public bool TryReset()
         {
@@ -393,96 +402,180 @@ public class ObjectLifecycleTests
             return CanReset;
         }
 
-        public void Dispose() => DisposeCount++;
+        public void Dispose()
+        {
+            DisposeCount++;
+        }
     }
 
     private sealed class DisposableItem : IDisposable
     {
-        internal int DisposeCount { get; private set; }
-        internal int DestroyCount { get; private set; }
+        internal int DisposeCount
+        {
+            get; private set;
+        }
+        internal int DestroyCount
+        {
+            get; private set;
+        }
 
-        public void Dispose() => DisposeCount++;
+        public void Dispose()
+        {
+            DisposeCount++;
+        }
 
-        internal void Destroy() => DestroyCount++;
+        internal void Destroy()
+        {
+            DestroyCount++;
+        }
     }
 
     private readonly struct DisposablePolicy : IPooledObjectPolicy<DisposableItem>
     {
-        public DisposableItem Create() => new();
+        public DisposableItem Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(DisposableItem obj) => true;
+        public bool TryReset(DisposableItem obj)
+        {
+            return true;
+        }
 
-        public void Destroy(DisposableItem obj) => obj.Dispose();
+        public void Destroy(DisposableItem obj)
+        {
+            obj.Dispose();
+        }
     }
 
     private readonly struct ThrowingPolicy(Exception exception)
         : IPooledObjectPolicy<DisposableItem>
     {
-        public DisposableItem Create() => new();
+        public DisposableItem Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(DisposableItem obj) => throw exception;
+        public bool TryReset(DisposableItem obj)
+        {
+            throw exception;
+        }
 
-        public void Destroy(DisposableItem obj) => obj.Dispose();
+        public void Destroy(DisposableItem obj)
+        {
+            obj.Dispose();
+        }
     }
 
     private readonly struct CustomDestructionPolicy
         : IPooledObjectDestroyPolicy<DisposableItem>
     {
-        public DisposableItem Create() => new();
+        public DisposableItem Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(DisposableItem obj) => false;
+        public bool TryReset(DisposableItem obj)
+        {
+            return false;
+        }
 
-        public void Destroy(DisposableItem obj) => obj.Destroy();
+        public void Destroy(DisposableItem obj)
+        {
+            obj.Destroy();
+        }
     }
 
     private struct StatefulDestructionPolicy : IPooledObjectDestroyPolicy<DisposableItem>
     {
         private int _destroyCount;
 
-        public DisposableItem Create() => new();
+        public DisposableItem Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(DisposableItem obj) => _destroyCount > 0;
+        public bool TryReset(DisposableItem obj)
+        {
+            return _destroyCount > 0;
+        }
 
-        public void Destroy(DisposableItem obj) => _destroyCount++;
+        public void Destroy(DisposableItem obj)
+        {
+            _destroyCount++;
+        }
     }
 
     private readonly struct ObjectPolicy : IPooledObjectPolicy<object>
     {
-        public object Create() => new DisposableItem();
+        public object Create()
+        {
+            return new DisposableItem();
+        }
 
-        public bool TryReset(object obj) => true;
+        public bool TryReset(object obj)
+        {
+            return true;
+        }
 
-        public void Destroy(object obj) => (obj as IDisposable)?.Dispose();
+        public void Destroy(object obj)
+        {
+            (obj as IDisposable)?.Dispose();
+        }
     }
 
     private readonly struct RejectingObjectPolicy : IPooledObjectPolicy<object>
     {
-        public object Create() => new DisposableItem();
+        public object Create()
+        {
+            return new DisposableItem();
+        }
 
-        public bool TryReset(object obj) => false;
+        public bool TryReset(object obj)
+        {
+            return false;
+        }
 
-        public void Destroy(object obj) => (obj as IDisposable)?.Dispose();
+        public void Destroy(object obj)
+        {
+            (obj as IDisposable)?.Dispose();
+        }
     }
 
     private readonly struct BlockingPolicy(BlockingPolicyState state)
         : IPooledObjectPolicy<DisposableItem>
     {
-        public DisposableItem Create() => new();
+        public DisposableItem Create()
+        {
+            return new();
+        }
 
-        public void Destroy(DisposableItem obj) => obj.Dispose();
+        public void Destroy(DisposableItem obj)
+        {
+            obj.Dispose();
+        }
 
         public bool TryReset(DisposableItem obj)
         {
             state.ResetStarted.Set();
-            state.ContinueResetObserved = state.ContinueReset.Wait(TestTimeout);
+            state.ContinueResetObserved = state.ContinueReset.Wait(s_testTimeout);
             return state.ContinueResetObserved;
         }
     }
 
     private sealed class BlockingPolicyState
     {
-        internal ManualResetEventSlim ResetStarted { get; } = new();
-        internal ManualResetEventSlim ContinueReset { get; } = new();
-        internal bool ContinueResetObserved { get; set; }
+        internal ManualResetEventSlim ResetStarted
+        {
+            get;
+        } = new();
+        internal ManualResetEventSlim ContinueReset
+        {
+            get;
+        } = new();
+        internal bool ContinueResetObserved
+        {
+            get; set;
+        }
     }
 }

@@ -21,8 +21,7 @@ internal static class PackageConsumer
 
     internal static CancellationToken ScopedCancellationTokenSource()
     {
-        using CancellationTokenSourcePool.Lease lease
-            = CancellationTokenSourcePool.Shared.RentScoped(out CancellationTokenSource source);
+        using CancellationTokenSourcePool.Lease lease = CancellationTokenSourcePool.Shared.RentScoped(out CancellationTokenSource source);
         return source.Token;
     }
 
@@ -32,9 +31,15 @@ internal static class PackageConsumer
 
     private readonly struct Policy : IPooledObjectDestroyPolicy<PooledItem>
     {
-        public PooledItem Create() => new();
+        public PooledItem Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(PooledItem obj) => true;
+        public bool TryReset(PooledItem obj)
+        {
+            return true;
+        }
 
         public void Destroy(PooledItem obj)
         {

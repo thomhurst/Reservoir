@@ -22,7 +22,7 @@ internal static class DocumentationSamples
     internal static void ScopedLease(ReadOnlySpan<byte> payload)
     {
         var pool = new ObjectPool<Buffer, QuickStartBufferPolicy>(maxCapacity: 64);
-        using var lease = pool.RentScoped(out Buffer buffer);
+        using PooledLease<Buffer, QuickStartBufferPolicy> lease = pool.RentScoped(out Buffer buffer);
         buffer.Write(payload);
     }
 
@@ -37,7 +37,7 @@ internal static class DocumentationSamples
     internal static void Resettable()
     {
         var pool = new ObjectPool<ResettableBuffer, ResettablePooledObjectPolicy<ResettableBuffer>>();
-        using var lease = pool.RentScoped();
+        using PooledLease<ResettableBuffer, ResettablePooledObjectPolicy<ResettableBuffer>> lease = pool.RentScoped();
         lease.Value.Write([1, 2, 3]);
     }
 
@@ -125,7 +125,7 @@ internal static class DocumentationSamples
 
     internal static void ScopedCancellationTokenSource(Action<CancellationToken> operation)
     {
-        using var lease = CancellationTokenSourcePool.Shared.RentScoped(
+        using CancellationTokenSourcePool.Lease lease = CancellationTokenSourcePool.Shared.RentScoped(
             out CancellationTokenSource source);
         source.CancelAfter(TimeSpan.FromSeconds(5));
         operation(source.Token);
@@ -139,13 +139,25 @@ internal class Buffer
         Capacity = initialCapacity;
     }
 
-    internal int Capacity { get; }
+    internal int Capacity
+    {
+        get;
+    }
 
-    internal int Length { get; set; }
+    internal int Length
+    {
+        get; set;
+    }
 
-    internal void Write(ReadOnlySpan<byte> value) => Length += value.Length;
+    internal void Write(ReadOnlySpan<byte> value)
+    {
+        Length += value.Length;
+    }
 
-    internal void Clear() => Length = 0;
+    internal void Clear()
+    {
+        Length = 0;
+    }
 
     internal void ReleaseNativeMemory()
     {
@@ -163,7 +175,10 @@ internal sealed class ResettableBuffer : Buffer, IResettable
 
 internal readonly struct QuickStartBufferPolicy : IPooledObjectPolicy<Buffer>
 {
-    public Buffer Create() => new();
+    public Buffer Create()
+    {
+        return new();
+    }
 
     public void Destroy(Buffer buffer)
     {
@@ -179,7 +194,10 @@ internal readonly struct QuickStartBufferPolicy : IPooledObjectPolicy<Buffer>
 internal readonly struct BufferPolicy(int maxRetainedBytes)
     : IPooledObjectDestroyPolicy<Buffer>
 {
-    public Buffer Create() => new(initialCapacity: 4096);
+    public Buffer Create()
+    {
+        return new(initialCapacity: 4096);
+    }
 
     public bool TryReset(Buffer buffer)
     {
@@ -187,12 +205,18 @@ internal readonly struct BufferPolicy(int maxRetainedBytes)
         return buffer.Capacity <= maxRetainedBytes;
     }
 
-    public void Destroy(Buffer buffer) => buffer.ReleaseNativeMemory();
+    public void Destroy(Buffer buffer)
+    {
+        buffer.ReleaseNativeMemory();
+    }
 }
 
 internal sealed class RuntimeBufferPolicy : IPooledObjectPolicy<Buffer>
 {
-    public Buffer Create() => new();
+    public Buffer Create()
+    {
+        return new();
+    }
 
     public void Destroy(Buffer buffer)
     {

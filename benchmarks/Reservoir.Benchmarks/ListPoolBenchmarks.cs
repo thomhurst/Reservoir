@@ -8,7 +8,10 @@ public class ListPoolBenchmarks
     private readonly ListPool<int> _pool = new(maxRetainedCapacity: 4096);
 
     [Params(8, 128, 2048)]
-    public int Count { get; set; }
+    public int Count
+    {
+        get; set;
+    }
 
     [GlobalSetup]
     public void WarmPool()

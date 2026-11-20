@@ -12,28 +12,52 @@ public class SmallPoolTakeBenchmarks
     private BenchmarkWorkerGroup? _workers;
 
     [Params(1, 8, 31, 32, 40, 63, 64)]
-    public int Capacity { get; set; }
+    public int Capacity
+    {
+        get; set;
+    }
 
     [Params(Population.Empty, Population.OneItem, Population.HalfFull)]
-    public Population InitialPopulation { get; set; }
+    public Population InitialPopulation
+    {
+        get; set;
+    }
 
     [Params(1, 8)]
-    public int WorkerCount { get; set; }
+    public int WorkerCount
+    {
+        get; set;
+    }
 
     [GlobalSetup(Target = nameof(Exchange))]
-    public void SetupExchange() => Setup(RunExchange);
+    public void SetupExchange()
+    {
+        Setup(RunExchange);
+    }
 
     [GlobalSetup(Target = nameof(ReadBeforeCas))]
-    public void SetupReadBeforeCas() => Setup(RunReadBeforeCas);
+    public void SetupReadBeforeCas()
+    {
+        Setup(RunReadBeforeCas);
+    }
 
     [GlobalCleanup]
-    public void Cleanup() => _workers?.Dispose();
+    public void Cleanup()
+    {
+        _workers?.Dispose();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation, Baseline = true)]
-    public void Exchange() => _workers!.Run();
+    public void Exchange()
+    {
+        _workers!.Run();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void ReadBeforeCas() => _workers!.Run();
+    public void ReadBeforeCas()
+    {
+        _workers!.Run();
+    }
 
     private void Setup(Action<SmallStore, int, int> run)
     {
@@ -87,7 +111,10 @@ public class SmallPoolTakeBenchmarks
             _items = new Payload[capacity * CacheLineSlotStride];
         }
 
-        private int Capacity { get; }
+        private int Capacity
+        {
+            get;
+        }
 
         internal void Populate(Population population)
         {
@@ -106,7 +133,9 @@ public class SmallPoolTakeBenchmarks
         }
 
         internal int GetStartIndex(int workerIndex)
-            => (int)(unchecked((uint)workerIndex) * StripeHashMultiplier % (uint)Capacity);
+        {
+            return (int)(unchecked((uint)workerIndex) * StripeHashMultiplier % (uint)Capacity);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Payload? TakeExchangeAndRestore(int startIndex)
@@ -182,7 +211,9 @@ public class SmallPoolTakeBenchmarks
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private ref Payload? GetSlot(int index)
-            => ref _items[index * CacheLineSlotStride];
+        {
+            return ref _items[index * CacheLineSlotStride];
+        }
     }
 
     private sealed class Payload;
