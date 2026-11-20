@@ -4,8 +4,7 @@ Follow `.editorconfig` and existing code conventions. Use TUnit for regression t
 
 For C# changes, follow the [shared EditorConfig profile](https://github.com/thomhurst/editorconfig/blob/0cef31e579d76c43b19a02024e672c1d0173629c/.editorconfig) and [C# style guide](https://github.com/thomhurst/editorconfig/blob/0cef31e579d76c43b19a02024e672c1d0173629c/csharp.md). Always brace control-flow bodies and use one blank line between logical groups. Preserve supported language versions and local overrides.
 
-Run [Curb](https://github.com/nullean/curb) with `curb format <changed-path>` and `curb check <changed-path>` on changed C# files. Keep Roslyn build analysis enabled for rules that require compilation.
-
+Install [Curb](https://github.com/nullean/curb) with `dotnet tool install --global curb-cli` when needed. Use `curb format <changed-path>` to fix formatting and `curb check <changed-path>` to verify the result. Keep Roslyn build analysis enabled for rules that require compilation. If the shared references are unavailable, report that and use the local `.editorconfig`.
 
 ## Benchmark execution and local work
 
