@@ -47,7 +47,10 @@ public class PolicyResetStateTests
         private int _resets;
         private int _destructions;
 
-        public Item Create() => new(_resets, _destructions);
+        public Item Create()
+        {
+            return new(_resets, _destructions);
+        }
 
         public bool TryReset(Item item)
         {
@@ -60,6 +63,9 @@ public class PolicyResetStateTests
             return true;
         }
 
-        public void Destroy(Item item) => _destructions++;
+        public void Destroy(Item item)
+        {
+            _destructions++;
+        }
     }
 }

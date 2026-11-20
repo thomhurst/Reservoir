@@ -20,11 +20,17 @@ public class ObjectPoolSparseHandoffBenchmarks
 
     // 32 uses the cache-line slot array; 4096 uses the striped store.
     [Params(32, 4096)]
-    public int PoolCapacity { get; set; }
+    public int PoolCapacity
+    {
+        get; set;
+    }
 
     // Objects in flight are bounded by the channel depth plus one being returned.
     [Params(1, 4)]
-    public int ChannelDepth { get; set; }
+    public int ChannelDepth
+    {
+        get; set;
+    }
 
     [GlobalSetup]
     public void Setup()
@@ -133,8 +139,14 @@ public class ObjectPoolSparseHandoffBenchmarks
 
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(Payload obj) => true;
+        public bool TryReset(Payload obj)
+        {
+            return true;
+        }
     }
 }

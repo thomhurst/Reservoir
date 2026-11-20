@@ -43,9 +43,15 @@ public class RuntimePolicyObjectPoolBenchmarks
 
     private sealed class PayloadPolicy : IPooledObjectPolicy<Payload>
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(Payload obj) => true;
+        public bool TryReset(Payload obj)
+        {
+            return true;
+        }
 #if RESERVOIR_NETSTANDARD
         public void Destroy(Payload obj)
         {

@@ -16,7 +16,10 @@ public class ObjectPoolHandoffBenchmarks
     private long _workerAllocatedBytes;
 
     [ParamsSource(nameof(PairCounts))]
-    public int PairCount { get; set; }
+    public int PairCount
+    {
+        get; set;
+    }
 
     // A spinning handoff needs both threads of every pair on a core, so pair counts are capped at
     // half the processors; beyond that the benchmark measures the scheduler, not the pool.
@@ -28,11 +31,16 @@ public class ObjectPoolHandoffBenchmarks
 
     // The tight capacity models a pool sized near its working set.
     [Params(4, 32)]
-    public int PoolCapacity { get; set; }
+    public int PoolCapacity
+    {
+        get; set;
+    }
 
     [GlobalSetup(Target = nameof(Reservoir))]
     public void SetupReservoir()
-        => SetupWorkers(new ObjectPool<Payload, PayloadPolicy>(maxCapacity: PoolCapacity));
+    {
+        SetupWorkers(new ObjectPool<Payload, PayloadPolicy>(maxCapacity: PoolCapacity));
+    }
 
     [GlobalCleanup]
     public void Cleanup()
@@ -147,13 +155,22 @@ public class ObjectPoolHandoffBenchmarks
 
     public sealed class Payload
     {
-        public byte[] Buffer { get; } = GC.AllocateUninitializedArray<byte>(256);
+        public byte[] Buffer
+        {
+            get;
+        } = GC.AllocateUninitializedArray<byte>(256);
     }
 
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(Payload obj) => true;
+        public bool TryReset(Payload obj)
+        {
+            return true;
+        }
     }
 }

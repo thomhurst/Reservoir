@@ -9,7 +9,10 @@ public class ObjectPoolCapacityScalingBenchmarks
     private ObjectPool<Payload, SingletonPolicy>? _emptyPool;
 
     [Params(32, 64, 65, 256, 4096, 65536)]
-    public int Capacity { get; set; }
+    public int Capacity
+    {
+        get; set;
+    }
 
     [GlobalSetup]
     public void Setup()
@@ -31,24 +34,39 @@ public class ObjectPoolCapacityScalingBenchmarks
     }
 
     [Benchmark]
-    public Payload EmptyRent() => _emptyPool!.Rent();
+    public Payload EmptyRent()
+    {
+        return _emptyPool!.Rent();
+    }
 
     public sealed class Payload;
 
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(Payload obj) => true;
+        public bool TryReset(Payload obj)
+        {
+            return true;
+        }
     }
 
     public readonly struct SingletonPolicy : IPooledObjectPolicy<Payload>
     {
-        private static readonly Payload Singleton = new();
+        private static readonly Payload s_singleton = new();
 
-        public Payload Create() => Singleton;
+        public Payload Create()
+        {
+            return s_singleton;
+        }
 
-        public bool TryReset(Payload obj) => true;
+        public bool TryReset(Payload obj)
+        {
+            return true;
+        }
     }
 }
 
@@ -59,7 +77,10 @@ public class ObjectPoolBurstBenchmarks
     private Payload[]? _items;
 
     [Params(32, 64, 65, 256, 4096, 65536)]
-    public int Capacity { get; set; }
+    public int Capacity
+    {
+        get; set;
+    }
 
     [GlobalSetup]
     public void Setup()
@@ -97,9 +118,15 @@ public class ObjectPoolBurstBenchmarks
 
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(Payload obj) => true;
+        public bool TryReset(Payload obj)
+        {
+            return true;
+        }
     }
 }
 
@@ -115,13 +142,22 @@ public class StripedObjectStoreContentionBenchmarks
     private BenchmarkWorkerGroup? _workers;
 
     [Params(65, 4_096, 65_536)]
-    public int Capacity { get; set; }
+    public int Capacity
+    {
+        get; set;
+    }
 
     [ParamsSource(nameof(WorkerCounts))]
-    public int WorkerCount { get; set; }
+    public int WorkerCount
+    {
+        get; set;
+    }
 
     [ParamsAllValues]
-    public LargeStorePopulation Population { get; set; }
+    public LargeStorePopulation Population
+    {
+        get; set;
+    }
 
     public IEnumerable<int> WorkerCounts => new[]
     {
@@ -160,10 +196,16 @@ public class StripedObjectStoreContentionBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _workers?.Dispose();
+    public void Cleanup()
+    {
+        _workers?.Dispose();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void RentReturn() => _workers!.Run();
+    public void RentReturn()
+    {
+        _workers!.Run();
+    }
 
     private static void Run(
         StripedObjectStore<Payload> store,

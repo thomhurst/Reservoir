@@ -48,7 +48,7 @@ internal static class Program
     private static void ScopedDestructionSupportsNativeAot()
     {
         using var generic = new ObjectPool<PooledItem, CustomDestructionPolicy>(maxCapacity: 1);
-        var lease = generic.RentScoped(out PooledItem item);
+        PooledLease<PooledItem, CustomDestructionPolicy> lease = generic.RentScoped(out PooledItem item);
         lease.Dispose();
         if (!item.IsDestroyed)
         {
@@ -56,7 +56,7 @@ internal static class Program
         }
 
         using var runtime = new ObjectPool<PooledItem>(new CustomDestructionPolicy(), maxCapacity: 1);
-        var runtimeLease = runtime.RentScoped(out PooledItem runtimeItem);
+        PooledLease<PooledItem> runtimeLease = runtime.RentScoped(out PooledItem runtimeItem);
         runtimeLease.Dispose();
         if (!runtimeItem.IsDestroyed)
         {
@@ -66,10 +66,19 @@ internal static class Program
 
     private sealed class PooledItem : IDisposable
     {
-        internal bool IsDestroyed { get; set; }
-        internal bool IsCustomDestroyed { get; set; }
+        internal bool IsDestroyed
+        {
+            get; set;
+        }
+        internal bool IsCustomDestroyed
+        {
+            get; set;
+        }
 
-        public void Dispose() => IsDestroyed = true;
+        public void Dispose()
+        {
+            IsDestroyed = true;
+        }
     }
 
     private static void DefaultPortableDestructionSupportsNativeAot()
@@ -85,8 +94,15 @@ internal static class Program
 
     private readonly struct DefaultPortablePolicy : IPooledObjectDestroyPolicy<PooledItem>
     {
-        public PooledItem Create() => new();
-        public bool TryReset(PooledItem item) => false;
+        public PooledItem Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(PooledItem item)
+        {
+            return false;
+        }
     }
 
     private static void RuntimeDestructionPreservesPolicyState()
@@ -118,8 +134,16 @@ internal static class Program
     private struct ExplicitDestructionPolicy : IPooledObjectDestroyPolicy<PooledItem>
     {
         internal int DestroyCount;
-        public PooledItem Create() => new();
-        public bool TryReset(PooledItem obj) => DestroyCount != 0;
+        public PooledItem Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(PooledItem obj)
+        {
+            return DestroyCount != 0;
+        }
+
         void IPooledObjectPolicy<PooledItem>.Destroy(PooledItem obj)
         {
             DestroyCount++;
@@ -139,7 +163,10 @@ internal static class Program
     }
 
     private static void DestroyConstrained<TPolicy>(ref TPolicy policy, PooledItem item)
-        where TPolicy : struct, IPooledObjectDestroyPolicy<PooledItem> => policy.Destroy(item);
+        where TPolicy : struct, IPooledObjectDestroyPolicy<PooledItem>
+    {
+        policy.Destroy(item);
+    }
 
     private static void InheritedDestructionSupportsNativeAot()
     {
@@ -157,21 +184,40 @@ internal static class Program
 
     private interface IInheritedPolicy : IPooledObjectDestroyPolicy<PooledItem>
     {
-        void IPooledObjectPolicy<PooledItem>.Destroy(PooledItem obj) => obj.IsCustomDestroyed = true;
+        void IPooledObjectPolicy<PooledItem>.Destroy(PooledItem obj)
+        {
+            obj.IsCustomDestroyed = true;
+        }
     }
 
     private readonly struct InheritedPolicy : IInheritedPolicy
     {
-        public PooledItem Create() => new();
-        public bool TryReset(PooledItem obj) => false;
+        public PooledItem Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(PooledItem obj)
+        {
+            return false;
+        }
     }
 
     private readonly struct CustomDestructionPolicy : IPooledObjectPolicy<PooledItem>
     {
-        public PooledItem Create() => new();
+        public PooledItem Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(PooledItem obj) => false;
+        public bool TryReset(PooledItem obj)
+        {
+            return false;
+        }
 
-        public void Destroy(PooledItem obj) => obj.IsDestroyed = true;
+        public void Destroy(PooledItem obj)
+        {
+            obj.IsDestroyed = true;
+        }
     }
 }

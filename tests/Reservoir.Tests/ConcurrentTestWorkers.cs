@@ -17,8 +17,10 @@ internal static class ConcurrentTestWorkers
         Exception? cleanupFailure = null;
         var tasks = new List<Task>();
 
-        void RecordFailure(Exception exception) =>
+        void RecordFailure(Exception exception)
+        {
             Interlocked.CompareExchange(ref failure, ExceptionDispatchInfo.Capture(exception), null);
+        }
 
         Task Start(Action<CancellationToken> worker)
         {

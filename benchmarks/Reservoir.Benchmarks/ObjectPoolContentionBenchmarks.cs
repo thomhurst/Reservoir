@@ -13,7 +13,10 @@ public class ObjectPoolContentionBenchmarks
     private BenchmarkWorkerGroup? _workers;
 
     [Params(1, 4, 8, 16, 32)]
-    public int WorkerCount { get; set; }
+    public int WorkerCount
+    {
+        get; set;
+    }
 
     [GlobalSetup(Target = nameof(Reservoir))]
     public void SetupReservoir()
@@ -55,16 +58,28 @@ public class ObjectPoolContentionBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _workers?.Dispose();
+    public void Cleanup()
+    {
+        _workers?.Dispose();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation, Baseline = true)]
-    public void Reservoir() => _workers!.Run();
+    public void Reservoir()
+    {
+        _workers!.Run();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void MicrosoftExtensionsObjectPool() => _workers!.Run();
+    public void MicrosoftExtensionsObjectPool()
+    {
+        _workers!.Run();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void ConcurrentBag() => _workers!.Run();
+    public void ConcurrentBag()
+    {
+        _workers!.Run();
+    }
 
     private static void WarmReservoirPool(ObjectPool<Payload, PayloadPolicy> pool)
     {
@@ -135,15 +150,24 @@ public class ObjectPoolContentionBenchmarks
 
     public sealed class Payload
     {
-        public byte[] Buffer { get; } = GC.AllocateUninitializedArray<byte>(256);
+        public byte[] Buffer
+        {
+            get;
+        } = GC.AllocateUninitializedArray<byte>(256);
     }
 
     // Microsoft's default policy lets a reset exception propagate without destroying the
     // object; the marker gives Reservoir the same contract so both pools do equal work.
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>, INonThrowingResetPolicy
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(Payload obj) => true;
+        public bool TryReset(Payload obj)
+        {
+            return true;
+        }
     }
 }

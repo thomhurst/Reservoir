@@ -11,42 +11,75 @@ public class SmallPoolAffinityBenchmarks
     private const uint StripeHashMultiplier = 2_654_435_769u;
 
     [ThreadStatic]
-    private static uint _threadOrdinal;
+    private static uint s_threadOrdinal;
 
     private BenchmarkWorkerGroup? _workers;
 
     [Params(1, 8, 31, 32, 40, 63, 64)]
-    public int Capacity { get; set; }
+    public int Capacity
+    {
+        get; set;
+    }
 
     [Params(Workload.SameThread, Workload.CrossThreadHandoff)]
-    public Workload Scenario { get; set; }
+    public Workload Scenario
+    {
+        get; set;
+    }
 
     [GlobalSetup(Target = nameof(ModuloThreadOrdinal))]
-    public void SetupModuloThreadOrdinal() => Setup(RunModuloThreadOrdinal);
+    public void SetupModuloThreadOrdinal()
+    {
+        Setup(RunModuloThreadOrdinal);
+    }
 
     [GlobalSetup(Target = nameof(MultiplyHighThreadOrdinal))]
-    public void SetupMultiplyHighThreadOrdinal() => Setup(RunMultiplyHighThreadOrdinal);
+    public void SetupMultiplyHighThreadOrdinal()
+    {
+        Setup(RunMultiplyHighThreadOrdinal);
+    }
 
     [GlobalSetup(Target = nameof(ModuloProcessorAffinity))]
-    public void SetupModuloProcessorAffinity() => Setup(RunModuloProcessorAffinity);
+    public void SetupModuloProcessorAffinity()
+    {
+        Setup(RunModuloProcessorAffinity);
+    }
 
     [GlobalSetup(Target = nameof(MultiplyHighProcessorAffinity))]
-    public void SetupMultiplyHighProcessorAffinity() => Setup(RunMultiplyHighProcessorAffinity);
+    public void SetupMultiplyHighProcessorAffinity()
+    {
+        Setup(RunMultiplyHighProcessorAffinity);
+    }
 
     [GlobalCleanup]
-    public void Cleanup() => _workers?.Dispose();
+    public void Cleanup()
+    {
+        _workers?.Dispose();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation, Baseline = true)]
-    public void ModuloThreadOrdinal() => _workers!.Run();
+    public void ModuloThreadOrdinal()
+    {
+        _workers!.Run();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void MultiplyHighThreadOrdinal() => _workers!.Run();
+    public void MultiplyHighThreadOrdinal()
+    {
+        _workers!.Run();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void ModuloProcessorAffinity() => _workers!.Run();
+    public void ModuloProcessorAffinity()
+    {
+        _workers!.Run();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void MultiplyHighProcessorAffinity() => _workers!.Run();
+    public void MultiplyHighProcessorAffinity()
+    {
+        _workers!.Run();
+    }
 
     private void Setup(Action<SmallStore, int> run)
     {
@@ -57,7 +90,7 @@ public class SmallPoolAffinityBenchmarks
             workerCount,
             workerIndex =>
             {
-                _threadOrdinal = (uint)workerIndex;
+                s_threadOrdinal = (uint)workerIndex;
                 run(store, operationsPerWorker);
             });
     }
@@ -66,8 +99,8 @@ public class SmallPoolAffinityBenchmarks
     {
         for (int i = 0; i < operationCount; i++)
         {
-            int item = store.Rent(MapModulo(_threadOrdinal, store.Capacity, store.Mask));
-            store.Return(item, MapModulo(_threadOrdinal, store.Capacity, store.Mask));
+            int item = store.Rent(MapModulo(s_threadOrdinal, store.Capacity, store.Mask));
+            store.Return(item, MapModulo(s_threadOrdinal, store.Capacity, store.Mask));
         }
     }
 
@@ -75,8 +108,8 @@ public class SmallPoolAffinityBenchmarks
     {
         for (int i = 0; i < operationCount; i++)
         {
-            int item = store.Rent(MapMultiplyHigh(_threadOrdinal, store.Capacity, store.Mask));
-            store.Return(item, MapMultiplyHigh(_threadOrdinal, store.Capacity, store.Mask));
+            int item = store.Rent(MapMultiplyHigh(s_threadOrdinal, store.Capacity, store.Mask));
+            store.Return(item, MapMultiplyHigh(s_threadOrdinal, store.Capacity, store.Mask));
         }
     }
 
@@ -149,9 +182,15 @@ public class SmallPoolAffinityBenchmarks
             }
         }
 
-        internal int Capacity { get; }
+        internal int Capacity
+        {
+            get;
+        }
 
-        internal int Mask { get; }
+        internal int Mask
+        {
+            get;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal int Rent(int startIndex)
@@ -204,6 +243,9 @@ public class SmallPoolAffinityBenchmarks
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private ref int GetSlot(int index) => ref _items[index * CacheLineSlotStride];
+        private ref int GetSlot(int index)
+        {
+            return ref _items[index * CacheLineSlotStride];
+        }
     }
 }

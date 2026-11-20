@@ -11,7 +11,10 @@ public class ScopedRentalBenchmarks
     private ObjectPool<Payload> _runtimeScoped = null!;
 
     [Params(1, 32, 256)]
-    public int Capacity { get; set; }
+    public int Capacity
+    {
+        get; set;
+    }
 
     [GlobalSetup]
     public void Setup()
@@ -47,7 +50,7 @@ public class ScopedRentalBenchmarks
     [Benchmark]
     public Payload Scoped()
     {
-        using var lease = _scoped.RentScoped(out Payload item);
+        using PooledLease<Payload, Policy> lease = _scoped.RentScoped(out Payload item);
         item.Length = 1;
         return item;
     }
@@ -55,7 +58,7 @@ public class ScopedRentalBenchmarks
     [Benchmark]
     public Payload ScopedValue()
     {
-        using var lease = _scoped.RentScoped();
+        using PooledLease<Payload, Policy> lease = _scoped.RentScoped();
         Payload item = lease.Value;
         item.Length = 1;
         return item;
@@ -73,7 +76,7 @@ public class ScopedRentalBenchmarks
     [Benchmark]
     public Payload RuntimeScoped()
     {
-        using var lease = _runtimeScoped.RentScoped(out Payload item);
+        using PooledLease<Payload> lease = _runtimeScoped.RentScoped(out Payload item);
         item.Length = 1;
         return item;
     }
@@ -85,7 +88,11 @@ public class ScopedRentalBenchmarks
 
     public readonly struct Policy : IPooledObjectPolicy<Payload>, INonThrowingResetPolicy
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
+
         public bool TryReset(Payload item)
         {
             item.Length = 0;

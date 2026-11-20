@@ -12,13 +12,22 @@ public class ObjectPoolCollisionBenchmarks
     private ObjectPool<Payload, Policy>? _pool;
 
     [Params(8, 32)]
-    public int Capacity { get; set; }
+    public int Capacity
+    {
+        get; set;
+    }
 
     [Params(4, 8)]
-    public int WorkerCount { get; set; }
+    public int WorkerCount
+    {
+        get; set;
+    }
 
     [Params(false, true)]
-    public bool CollidingAffinity { get; set; }
+    public bool CollidingAffinity
+    {
+        get; set;
+    }
 
     [GlobalSetup]
     public void Setup()
@@ -37,8 +46,8 @@ public class ObjectPoolCollisionBenchmarks
         }
 
         FieldInfo affinity = typeof(ObjectPool<Payload, Policy>)
-            .GetField("_threadStripe", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var initialized = new bool[WorkerCount];
+            .GetField("s_threadStripe", BindingFlags.NonPublic | BindingFlags.Static)!;
+        bool[] initialized = new bool[WorkerCount];
         int operationsPerWorker = OperationsPerInvocation / WorkerCount;
         _workers = new BenchmarkWorkerGroup(WorkerCount, worker =>
         {
@@ -59,7 +68,10 @@ public class ObjectPoolCollisionBenchmarks
     }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void RentReturn() => _workers!.Run();
+    public void RentReturn()
+    {
+        _workers!.Run();
+    }
 
     [GlobalCleanup]
     public void Cleanup()
@@ -72,8 +84,16 @@ public class ObjectPoolCollisionBenchmarks
 
     public readonly struct Policy : IPooledObjectPolicy<Payload>, INonThrowingResetPolicy
     {
-        public Payload Create() => new();
-        public bool TryReset(Payload item) => true;
+        public Payload Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Payload item)
+        {
+            return true;
+        }
+
         public void Destroy(Payload item)
         {
         }

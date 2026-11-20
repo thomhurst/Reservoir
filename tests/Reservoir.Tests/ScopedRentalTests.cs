@@ -8,11 +8,11 @@ public class ScopedRentalTests
     public async Task ClearPreservesIndependentLeaseOwners()
     {
         using var pool = new ObjectPool<Item, Policy>(maxCapacity: 2);
-        var first = pool.RentScoped(out Item firstItem);
-        var second = pool.RentScoped(out Item secondItem);
-        var staleFirst = first;
-        var staleSecond = second;
-        var nested = pool.RentScoped(out Item idleItem);
+        PooledLease<Item, Policy> first = pool.RentScoped(out Item firstItem);
+        PooledLease<Item, Policy> second = pool.RentScoped(out Item secondItem);
+        PooledLease<Item, Policy> staleFirst = first;
+        PooledLease<Item, Policy> staleSecond = second;
+        PooledLease<Item, Policy> nested = pool.RentScoped(out Item idleItem);
         nested.Dispose();
 
         pool.Clear();
@@ -22,8 +22,8 @@ public class ScopedRentalTests
         first.Dispose();
         second.Dispose();
 
-        var replacementFirst = pool.RentScoped();
-        var replacementSecond = pool.RentScoped();
+        PooledLease<Item, Policy> replacementFirst = pool.RentScoped();
+        PooledLease<Item, Policy> replacementSecond = pool.RentScoped();
         staleFirst.Dispose();
         staleSecond.Dispose();
         Item replacementFirstValue = replacementFirst.Value;
@@ -46,10 +46,10 @@ public class ScopedRentalTests
     public async Task StaleCopiesCannotReturnLaterRentals()
     {
         using var pool = new ObjectPool<Item, Policy>(new Policy(), maxCapacity: 1);
-        var first = pool.RentScoped(out Item item);
-        var stale = first;
+        PooledLease<Item, Policy> first = pool.RentScoped(out Item item);
+        PooledLease<Item, Policy> stale = first;
         first.Dispose();
-        var second = pool.RentScoped();
+        PooledLease<Item, Policy> second = pool.RentScoped();
         stale.Dispose();
         Item secondValue = second.Value;
         int resetBeforeSecondReturn = item.ResetCount;
@@ -62,6 +62,7 @@ public class ScopedRentalTests
         {
             staleValueThrows = true;
         }
+
         second.Dispose();
         PooledLease<Item, Policy> empty = default;
         empty.Dispose();
@@ -75,10 +76,10 @@ public class ScopedRentalTests
     public async Task RuntimePolicyLeasesPreserveOwnershipAndSharedReuse()
     {
         using var pool = new ObjectPool<Item>(new Policy(), maxCapacity: 1);
-        var first = pool.RentScoped(out Item item);
-        var stale = first;
+        PooledLease<Item> first = pool.RentScoped(out Item item);
+        PooledLease<Item> stale = first;
         first.Dispose();
-        var second = pool.RentScoped();
+        PooledLease<Item> second = pool.RentScoped();
         stale.Dispose();
         Item secondValue = second.Value;
         int resetBeforeSecondReturn = item.ResetCount;
@@ -98,14 +99,14 @@ public class ScopedRentalTests
     [Arguments(256)]
     public async Task NestedRentalsAcrossThreadsKeepIdleRetentionBounded(int capacity)
     {
-        const int workers = 8;
-        const int depth = 40;
+        const int Workers = 8;
+        const int Depth = 40;
         var created = new ConcurrentBag<Item>();
         using var pool = new ObjectPool<Item, Policy>(new Policy(created), capacity);
-        using var barrier = new Barrier(workers);
-        await ConcurrentTestWorkers.RunAsync(Enumerable.Range(0, workers).Select(_ =>
-            (Action<CancellationToken>)(token => RentNested(pool, depth, barrier, token))));
-        await Assert.That(created.Count).IsEqualTo(workers * depth);
+        using var barrier = new Barrier(Workers);
+        await ConcurrentTestWorkers.RunAsync(Enumerable.Range(0, Workers).Select(_ =>
+            (Action<CancellationToken>)(token => RentNested(pool, Depth, barrier, token))));
+        await Assert.That(created.Count).IsEqualTo(Workers * Depth);
         int retained = created.Count(item => item.DestroyCount == 0);
         await Assert.That(retained <= capacity).IsTrue();
         await Assert.That(retained > 0).IsTrue();
@@ -116,7 +117,7 @@ public class ScopedRentalTests
 
     private static void RentNested(ObjectPool<Item, Policy> pool, int depth, Barrier barrier, CancellationToken token)
     {
-        using var lease = pool.RentScoped();
+        using PooledLease<Item, Policy> lease = pool.RentScoped();
         if (depth == 1)
         {
             barrier.SignalAndWait(token);
@@ -134,8 +135,8 @@ public class ScopedRentalTests
     public async Task ResetFailuresDestroyOnceAndNeverRetain(string failure)
     {
         using var pool = new ObjectPool<Item, Policy>(maxCapacity: 1);
-        var lease = pool.RentScoped(out Item item);
-        var copy = lease;
+        PooledLease<Item, Policy> lease = pool.RentScoped(out Item item);
+        PooledLease<Item, Policy> copy = lease;
         item.Failure = failure;
         Exception? caught = null;
         try
@@ -146,10 +147,11 @@ public class ScopedRentalTests
         {
             caught = exception;
         }
+
         copy.Dispose();
         await Assert.That(item.ResetCount).IsEqualTo(1);
         await Assert.That(item.DestroyCount).IsEqualTo(1);
-        var next = pool.RentScoped();
+        PooledLease<Item, Policy> next = pool.RentScoped();
         Item nextValue = next.Value;
         next.Dispose();
         await Assert.That(nextValue).IsNotSameReferenceAs(item);
@@ -171,7 +173,7 @@ public class ScopedRentalTests
     public async Task ClearPreservesOutstandingOwnershipAndDisposeDestroysLateReturn()
     {
         var pool = new ObjectPool<Item, Policy>(maxCapacity: 1);
-        var lease = pool.RentScoped(out Item item);
+        PooledLease<Item, Policy> lease = pool.RentScoped(out Item item);
         pool.Clear();
         int destroyedAfterClear = item.DestroyCount;
         pool.Dispose();
@@ -181,7 +183,7 @@ public class ScopedRentalTests
         await Assert.That(destroyedAfterDispose).IsEqualTo(0);
         await Assert.That(item.DestroyCount).IsEqualTo(1);
         await Assert.That(item.ResetCount).IsEqualTo(0);
-        await Assert.That(() => { pool.RentScoped(); }).Throws<ObjectDisposedException>();
+        await Assert.That(() => pool.RentScoped()).Throws<ObjectDisposedException>();
     }
 
     [Test]
@@ -200,20 +202,23 @@ public class ScopedRentalTests
                     token.ThrowIfCancellationRequested();
                     try
                     {
-                        using var lease = pool.RentScoped(out Item item);
+                        using PooledLease<Item, Policy> lease = pool.RentScoped(out Item item);
                         if (Volatile.Read(ref item.DestroyCount) != 0 || Interlocked.Exchange(ref item.Owner, 1) != 0)
                         {
                             throw new InvalidOperationException("A destroyed or concurrently owned item was rented.");
                         }
+
                         if (i == 0)
                         {
                             start.SignalAndWait(token);
                         }
+
                         Thread.SpinWait(10);
                         if (Volatile.Read(ref item.DestroyCount) != 0)
                         {
                             throw new InvalidOperationException("An outstanding item was destroyed.");
                         }
+
                         Volatile.Write(ref item.Owner, 0);
                     }
                     catch (ObjectDisposedException)
@@ -229,6 +234,7 @@ public class ScopedRentalTests
                     pool.Clear();
                     Thread.Yield();
                 }
+
                 pool.Dispose();
             });
         pool.Dispose();
@@ -259,6 +265,7 @@ public class ScopedRentalTests
             {
                 throw new InvalidOperationException("reset");
             }
+
             return item.Failure != "reject";
         }
         public void Destroy(Item item)

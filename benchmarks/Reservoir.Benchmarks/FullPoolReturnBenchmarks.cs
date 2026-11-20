@@ -16,10 +16,16 @@ public class FullPoolReturnBenchmarks
     private BenchmarkWorkerGroup? _workers;
 
     [Params(32, 4096)]
-    public int Capacity { get; set; }
+    public int Capacity
+    {
+        get; set;
+    }
 
     [Params(1, 4)]
-    public int WorkerCount { get; set; }
+    public int WorkerCount
+    {
+        get; set;
+    }
 
     [GlobalSetup]
     public void Setup()
@@ -49,18 +55,30 @@ public class FullPoolReturnBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _workers?.Dispose();
+    public void Cleanup()
+    {
+        _workers?.Dispose();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation)]
-    public void ReturnForeignIntoFullPool() => _workers!.Run();
+    public void ReturnForeignIntoFullPool()
+    {
+        _workers!.Run();
+    }
 
     public sealed class Payload;
 
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(Payload obj) => true;
+        public bool TryReset(Payload obj)
+        {
+            return true;
+        }
 
         // Every operation discards one object, so the explicit no-op keeps the constrained call
         // devirtualized instead of boxing the policy.

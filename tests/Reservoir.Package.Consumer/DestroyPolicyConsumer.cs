@@ -8,7 +8,9 @@ namespace ReservoirPackageConsumer;
 public static class DestroyPolicyConsumer
 {
     public static Type DestroyDeclaringInterface()
-        => typeof(IPooledObjectPolicy<Item>);
+    {
+        return typeof(IPooledObjectPolicy<Item>);
+    }
 
     public static int ExplicitConstrained()
     {
@@ -20,7 +22,10 @@ public static class DestroyPolicyConsumer
     }
 
     private static void DestroyConstrained<TPolicy>(ref TPolicy policy, Item item)
-        where TPolicy : struct, IPooledObjectDestroyPolicy<Item> => policy.Destroy(item);
+        where TPolicy : struct, IPooledObjectDestroyPolicy<Item>
+    {
+        policy.Destroy(item);
+    }
 
     public static int ExplicitGeneric()
     {
@@ -79,23 +84,53 @@ public static class DestroyPolicyConsumer
 
     private readonly struct ExplicitPolicy : IPooledObjectDestroyPolicy<Item>
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => false;
-        void IPooledObjectPolicy<Item>.Destroy(Item item) => item.DestroyCount++;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return false;
+        }
+
+        void IPooledObjectPolicy<Item>.Destroy(Item item)
+        {
+            item.DestroyCount++;
+        }
     }
 
     private readonly struct ImplicitPolicy : IPooledObjectDestroyPolicy<Item>
     {
-        public Item Create() => new();
-        public bool TryReset(Item item) => false;
-        public void Destroy(Item item) => item.DestroyCount++;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return false;
+        }
+
+        public void Destroy(Item item)
+        {
+            item.DestroyCount++;
+        }
     }
 
     private struct StatefulExplicitPolicy : IPooledObjectDestroyPolicy<Item>
     {
         internal int DestroyCount;
-        public Item Create() => new();
-        public bool TryReset(Item item) => DestroyCount != 0;
+        public Item Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Item item)
+        {
+            return DestroyCount != 0;
+        }
+
         void IPooledObjectPolicy<Item>.Destroy(Item item)
         {
             DestroyCount++;

@@ -11,7 +11,10 @@ public class NestedScopedPoolBenchmarks
     private readonly ListPool<int> _lists = new(maxRetainedCapacity: 16, maxCapacity: 64);
 
     [Params(1, 2, 8, 32, 64)]
-    public int Depth { get; set; }
+    public int Depth
+    {
+        get; set;
+    }
 
     [GlobalSetup]
     public void Warm()
@@ -21,10 +24,16 @@ public class NestedScopedPoolBenchmarks
     }
 
     [Benchmark]
-    public int ObjectScopes() => RentObjects(Depth);
+    public int ObjectScopes()
+    {
+        return RentObjects(Depth);
+    }
 
     [Benchmark]
-    public int ListScopes() => RentLists(Depth);
+    public int ListScopes()
+    {
+        return RentLists(Depth);
+    }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private int RentObjects(int depth)
@@ -43,7 +52,10 @@ public class NestedScopedPoolBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _pool.Dispose();
+    public void Cleanup()
+    {
+        _pool.Dispose();
+    }
 
     public sealed class Payload
     {
@@ -52,7 +64,11 @@ public class NestedScopedPoolBenchmarks
 
     public readonly struct Policy : IPooledObjectPolicy<Payload>, INonThrowingResetPolicy
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
+
         public bool TryReset(Payload obj)
         {
             obj.Value = 0;

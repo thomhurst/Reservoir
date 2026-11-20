@@ -153,14 +153,14 @@ public class CollectionPoolTests
     [Arguments("string-builder")]
     public async Task InstancesWithinCapacityLimitAreRetained(string poolType)
     {
-        const int maximumRetainedCapacity = 16;
+        const int MaximumRetainedCapacity = 16;
         object returned;
         object rented;
 
         switch (poolType)
         {
             case "list":
-                var listPool = new ListPool<int>(maximumRetainedCapacity, 1);
+                var listPool = new ListPool<int>(MaximumRetainedCapacity, 1);
                 List<int> list = listPool.Rent();
                 list.EnsureCapacity(8);
                 listPool.Return(list);
@@ -168,7 +168,7 @@ public class CollectionPoolTests
                 rented = listPool.Rent();
                 break;
             case "dictionary":
-                var dictionaryPool = new DictionaryPool<int, int>(maximumRetainedCapacity, 1);
+                var dictionaryPool = new DictionaryPool<int, int>(MaximumRetainedCapacity, 1);
                 Dictionary<int, int> dictionary = dictionaryPool.Rent();
                 dictionary.EnsureCapacity(8);
                 dictionaryPool.Return(dictionary);
@@ -176,7 +176,7 @@ public class CollectionPoolTests
                 rented = dictionaryPool.Rent();
                 break;
             case "hash-set":
-                var setPool = new HashSetPool<int>(maximumRetainedCapacity, 1);
+                var setPool = new HashSetPool<int>(MaximumRetainedCapacity, 1);
                 HashSet<int> set = setPool.Rent();
                 set.EnsureCapacity(8);
                 setPool.Return(set);
@@ -184,7 +184,7 @@ public class CollectionPoolTests
                 rented = setPool.Rent();
                 break;
             case "stack":
-                var stackPool = new StackPool<int>(maximumRetainedCapacity, 1);
+                var stackPool = new StackPool<int>(MaximumRetainedCapacity, 1);
                 Stack<int> stack = stackPool.Rent();
                 stack.EnsureCapacity(8);
                 stackPool.Return(stack);
@@ -192,7 +192,7 @@ public class CollectionPoolTests
                 rented = stackPool.Rent();
                 break;
             case "queue":
-                var queuePool = new QueuePool<int>(maximumRetainedCapacity, 1);
+                var queuePool = new QueuePool<int>(MaximumRetainedCapacity, 1);
                 Queue<int> queue = queuePool.Rent();
                 queue.EnsureCapacity(8);
                 queuePool.Return(queue);
@@ -292,50 +292,50 @@ public class CollectionPoolTests
     [Arguments("string-builder")]
     public async Task RejectedOversizedInstancesAreNotCleared(string poolType)
     {
-        const int maximumRetainedCapacity = 4;
-        const int elementCount = 8;
+        const int MaximumRetainedCapacity = 4;
+        const int ElementCount = 8;
         int count;
 
         switch (poolType)
         {
             case "list":
-                var listPool = new ListPool<object>(maximumRetainedCapacity, 1);
-                var list = new List<object>(elementCount);
-                list.AddRange(Enumerable.Repeat(new object(), elementCount));
+                var listPool = new ListPool<object>(MaximumRetainedCapacity, 1);
+                var list = new List<object>(ElementCount);
+                list.AddRange(Enumerable.Repeat(new object(), ElementCount));
                 listPool.Return(list);
                 count = list.Count;
                 break;
             case "dictionary":
-                var dictionaryPool = new DictionaryPool<int, object>(maximumRetainedCapacity, 1);
-                var dictionary = Enumerable.Range(0, elementCount)
+                var dictionaryPool = new DictionaryPool<int, object>(MaximumRetainedCapacity, 1);
+                var dictionary = Enumerable.Range(0, ElementCount)
                     .ToDictionary(static value => value, static _ => new object());
                 dictionaryPool.Return(dictionary);
                 count = dictionary.Count;
                 break;
             case "hash-set":
-                var setPool = new HashSetPool<object>(maximumRetainedCapacity, 1);
-                var set = Enumerable.Range(0, elementCount)
+                var setPool = new HashSetPool<object>(MaximumRetainedCapacity, 1);
+                var set = Enumerable.Range(0, ElementCount)
                     .Select(static _ => new object())
                     .ToHashSet();
                 setPool.Return(set);
                 count = set.Count;
                 break;
             case "stack":
-                var stackPool = new StackPool<object>(maximumRetainedCapacity, 1);
-                var stack = new Stack<object>(Enumerable.Repeat(new object(), elementCount));
+                var stackPool = new StackPool<object>(MaximumRetainedCapacity, 1);
+                var stack = new Stack<object>(Enumerable.Repeat(new object(), ElementCount));
                 stackPool.Return(stack);
                 count = stack.Count;
                 break;
             case "queue":
-                var queuePool = new QueuePool<object>(maximumRetainedCapacity, 1);
-                var queue = new Queue<object>(Enumerable.Repeat(new object(), elementCount));
+                var queuePool = new QueuePool<object>(MaximumRetainedCapacity, 1);
+                var queue = new Queue<object>(Enumerable.Repeat(new object(), ElementCount));
                 queuePool.Return(queue);
                 count = queue.Count;
                 break;
             case "string-builder":
-                var builderPool = new StringBuilderPool(maximumRetainedCapacity, 1);
-                var builder = new StringBuilder(capacity: elementCount);
-                builder.Append('x', elementCount);
+                var builderPool = new StringBuilderPool(MaximumRetainedCapacity, 1);
+                var builder = new StringBuilder(capacity: ElementCount);
+                builder.Append('x', ElementCount);
                 builderPool.Return(builder);
                 count = builder.Length;
                 break;
@@ -343,7 +343,7 @@ public class CollectionPoolTests
                 throw new ArgumentOutOfRangeException(nameof(poolType));
         }
 
-        await Assert.That(count).IsEqualTo(elementCount);
+        await Assert.That(count).IsEqualTo(ElementCount);
     }
 
     [Test]

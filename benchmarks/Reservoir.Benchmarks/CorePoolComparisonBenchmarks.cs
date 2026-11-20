@@ -31,7 +31,9 @@ public class CorePoolComparisonBenchmarks
 
     [Benchmark(Baseline = true)]
     public void New()
-        => _consumer.Consume(new Payload());
+    {
+        _consumer.Consume(new Payload());
+    }
 
     [Benchmark]
     public void Reservoir()
@@ -63,15 +65,24 @@ public class CorePoolComparisonBenchmarks
 
     public sealed class Payload
     {
-        public byte[] Buffer { get; } = GC.AllocateUninitializedArray<byte>(256);
+        public byte[] Buffer
+        {
+            get;
+        } = GC.AllocateUninitializedArray<byte>(256);
     }
 
     // Microsoft's default policy lets a reset exception propagate without destroying the
     // object; the marker gives Reservoir the same contract so both pools do equal work.
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>, INonThrowingResetPolicy
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
 
-        public bool TryReset(Payload obj) => true;
+        public bool TryReset(Payload obj)
+        {
+            return true;
+        }
     }
 }

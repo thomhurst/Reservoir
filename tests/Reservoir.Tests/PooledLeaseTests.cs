@@ -272,7 +272,10 @@ public class PooledLeaseTests
 
     private readonly struct CountingPolicy : IPooledObjectPolicy<PooledItem>
     {
-        public PooledItem Create() => new();
+        public PooledItem Create()
+        {
+            return new();
+        }
 
         public void Destroy(PooledItem obj)
         {

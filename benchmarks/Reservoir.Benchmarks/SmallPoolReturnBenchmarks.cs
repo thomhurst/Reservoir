@@ -15,19 +15,34 @@ public class SmallPoolReturnBenchmarks
     private int _checksum;
 
     [Params(SmallPoolPopulation.Empty, SmallPoolPopulation.HalfFull, SmallPoolPopulation.Full)]
-    public SmallPoolPopulation InitialPopulation { get; set; }
+    public SmallPoolPopulation InitialPopulation
+    {
+        get; set;
+    }
 
     [Params(Workload.SameThreadReuse, Workload.CrossThreadHandoff)]
-    public Workload Scenario { get; set; }
+    public Workload Scenario
+    {
+        get; set;
+    }
 
     [GlobalSetup(Target = nameof(Displacing))]
-    public void SetupDisplacing() => Setup(ReturnStrategy.Displacing);
+    public void SetupDisplacing()
+    {
+        Setup(ReturnStrategy.Displacing);
+    }
 
     [GlobalSetup(Target = nameof(NonDisplacing))]
-    public void SetupNonDisplacing() => Setup(ReturnStrategy.NonDisplacing);
+    public void SetupNonDisplacing()
+    {
+        Setup(ReturnStrategy.NonDisplacing);
+    }
 
     [GlobalCleanup]
-    public void Cleanup() => _workers?.Dispose();
+    public void Cleanup()
+    {
+        _workers?.Dispose();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation, Baseline = true)]
     public int Displacing()
@@ -89,19 +104,34 @@ public class SmallPoolReturnContentionBenchmarks
     private int _checksum;
 
     [Params(SmallPoolPopulation.Empty, SmallPoolPopulation.HalfFull, SmallPoolPopulation.Full)]
-    public SmallPoolPopulation InitialPopulation { get; set; }
+    public SmallPoolPopulation InitialPopulation
+    {
+        get; set;
+    }
 
     [Params(1, 4, 8, 16, 32)]
-    public int WorkerCount { get; set; }
+    public int WorkerCount
+    {
+        get; set;
+    }
 
     [GlobalSetup(Target = nameof(Displacing))]
-    public void SetupDisplacing() => Setup(ReturnStrategy.Displacing);
+    public void SetupDisplacing()
+    {
+        Setup(ReturnStrategy.Displacing);
+    }
 
     [GlobalSetup(Target = nameof(NonDisplacing))]
-    public void SetupNonDisplacing() => Setup(ReturnStrategy.NonDisplacing);
+    public void SetupNonDisplacing()
+    {
+        Setup(ReturnStrategy.NonDisplacing);
+    }
 
     [GlobalCleanup]
-    public void Cleanup() => _workers?.Dispose();
+    public void Cleanup()
+    {
+        _workers?.Dispose();
+    }
 
     [Benchmark(OperationsPerInvoke = OperationsPerInvocation, Baseline = true)]
     public int Displacing()
@@ -356,5 +386,7 @@ internal sealed class SmallReturnStore
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ref ReturnPayload? GetSlot(int index)
-        => ref _items[index * CacheLineSlotStride];
+    {
+        return ref _items[index * CacheLineSlotStride];
+    }
 }

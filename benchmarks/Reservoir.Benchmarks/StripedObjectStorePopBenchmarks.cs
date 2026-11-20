@@ -151,12 +151,19 @@ public class StripedObjectStorePopBenchmarks
         }
 
         private static long PackHead(int version, int index)
-            => ((long)version << 32) | (uint)index;
+        {
+            return ((long)version << 32) | (uint)index;
+        }
 
         private static long NextHead(long observedHead, int index)
-            => PackHead(unchecked((int)(observedHead >> 32) + 1), index);
+        {
+            return PackHead(unchecked((int)(observedHead >> 32) + 1), index);
+        }
 
-        private static int GetIndex(long head) => (int)head;
+        private static int GetIndex(long head)
+        {
+            return (int)head;
+        }
 
         private struct Node
         {

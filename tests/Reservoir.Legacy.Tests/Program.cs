@@ -50,6 +50,7 @@ internal static class Program
         {
             add(small, i);
         }
+
         int capacity = field is null ? 0 : ((Array)field.GetValue(small)!).Length;
         giveBack(small);
         T reused = rent();
@@ -65,6 +66,7 @@ internal static class Program
         {
             add(reused, i);
         }
+
         clear(reused); // Empty Count must not hide an oversized backing array.
         giveBack(reused);
         T replacement = rent();
@@ -82,7 +84,7 @@ internal static class Program
         generic.Return(rejected);
         Require(rejected.DestroyCount == 1, "Generic explicit destruction was not called once.");
 
-        var lease = generic.RentScoped();
+        PooledLease<Item, Policy> lease = generic.RentScoped();
         Item retained = lease.Value;
         lease.Dispose();
         generic.Clear();
@@ -111,7 +113,7 @@ internal static class Program
         next.Dispose();
         RequireDisposed(next);
 
-        var lease = pool.RentScoped(out CancellationTokenSource scoped);
+        CancellationTokenSourcePool.Lease lease = pool.RentScoped(out CancellationTokenSource scoped);
         lease.Dispose();
         RequireDisposed(scoped);
 
@@ -140,6 +142,7 @@ internal static class Program
         {
             return;
         }
+
         throw new InvalidOperationException("The source was not permanently disposed.");
     }
 
@@ -160,12 +163,19 @@ internal static class Program
 
     private readonly struct Policy : IPooledObjectDestroyPolicy<Item>
     {
-        public Item Create() => new();
+        public Item Create()
+        {
+            return new();
+        }
+
         public bool TryReset(Item item)
         {
             item.ResetCount++;
             return !item.Reject;
         }
-        void IPooledObjectPolicy<Item>.Destroy(Item item) => item.DestroyCount++;
+        void IPooledObjectPolicy<Item>.Destroy(Item item)
+        {
+            item.DestroyCount++;
+        }
     }
 }

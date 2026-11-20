@@ -14,10 +14,10 @@ public class LargePoolLifecycleTests
     {
         var state = new AuditState();
         using var pool = new ObjectPool<Item, Policy>(new Policy(state), capacity);
-        const int workerCount = 4;
-        using var start = new Barrier(workerCount + 1);
+        const int WorkerCount = 4;
+        using var start = new Barrier(WorkerCount + 1);
 
-        Action<CancellationToken>[] workers = Enumerable.Range(0, workerCount)
+        Action<CancellationToken>[] workers = Enumerable.Range(0, WorkerCount)
             .Select<int, Action<CancellationToken>>(_ => token =>
             {
                 start.SignalAndWait(token);
@@ -99,7 +99,10 @@ public class LargePoolLifecycleTests
             return new Item();
         }
 
-        public bool TryReset(Item obj) => true;
+        public bool TryReset(Item obj)
+        {
+            return true;
+        }
 
         public void Destroy(Item obj)
         {

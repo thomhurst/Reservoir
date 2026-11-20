@@ -190,8 +190,7 @@ public class ScopedCollectionPoolTests
         }
 
         {
-            using DictionaryPool<string, int>.Lease lease
-                = dictionaryPool.RentScoped(out dictionary);
+            using DictionaryPool<string, int>.Lease lease = dictionaryPool.RentScoped(out dictionary);
             dictionary["key"] = 1;
         }
 
@@ -398,14 +397,14 @@ public class ScopedCollectionPoolTests
     [Test]
     public async Task ConcurrentFirstScopedRentKeepsOwnershipExclusive()
     {
-        const int threadCount = 8;
+        const int ThreadCount = 8;
         var pool = new ListPool<ConcurrentMarker>();
         var start = new ManualResetEventSlim();
-        var allRented = new CountdownEvent(threadCount);
+        var allRented = new CountdownEvent(ThreadCount);
         var release = new ManualResetEventSlim();
         var active = new ConcurrentDictionary<List<ConcurrentMarker>, byte>();
         var failures = new ConcurrentQueue<Exception>();
-        var threads = new Thread[threadCount];
+        var threads = new Thread[ThreadCount];
 
         for (int i = 0; i < threads.Length; i++)
         {
@@ -458,9 +457,14 @@ public class ScopedCollectionPoolTests
     }
 
     private sealed class IsolationMarker;
+
     private sealed class NestedMarker;
+
     private sealed class CopyMarker;
+
     private sealed class ValueMarker;
+
     private sealed class AllocationMarker;
+
     private sealed class ConcurrentMarker;
 }

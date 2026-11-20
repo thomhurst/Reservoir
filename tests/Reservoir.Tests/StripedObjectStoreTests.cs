@@ -32,7 +32,7 @@ public class StripedObjectStoreTests
     public async Task InitialThreadOrdinalsUseEveryStripeBeforeRepeating(int stripeCount)
     {
         var store = new StripedObjectStore<StoreItem>(stripeCount * 16, stripeCount);
-        var distribution = new int[stripeCount];
+        int[] distribution = new int[stripeCount];
         bool matchesModulo = true;
 
         for (uint threadOrdinal = 0; threadOrdinal < 65_536; threadOrdinal++)
@@ -144,24 +144,24 @@ public class StripedObjectStoreTests
     [Test]
     public async Task ConcurrentPushPopStressPreservesOwnershipAcrossFullAndEmptyTransitions()
     {
-        const int workerCount = 8;
-        const int itemsPerWorker = 8;
-        const int capacity = workerCount * itemsPerWorker;
+        const int WorkerCount = 8;
+        const int ItemsPerWorker = 8;
+        const int Capacity = WorkerCount * ItemsPerWorker;
 #if NET8_0
-        const int iterations = 250;
+        const int Iterations = 250;
 #else
-        const int iterations = 1_000;
+        const int Iterations = 1_000;
 #endif
-        var store = new StripedObjectStore<StoreItem>(capacity);
+        var store = new StripedObjectStore<StoreItem>(Capacity);
         var failures = new ConcurrentQueue<string>();
-        using var start = new Barrier(workerCount + 1);
-        using var phase = new Barrier(workerCount + 1);
-        var finalItems = new StoreItem[capacity];
-        StoreItem[] initialItems = Enumerable.Range(0, capacity)
+        using var start = new Barrier(WorkerCount + 1);
+        using var phase = new Barrier(WorkerCount + 1);
+        var finalItems = new StoreItem[Capacity];
+        StoreItem[] initialItems = Enumerable.Range(0, Capacity)
             .Select(static id => new StoreItem(id))
             .ToArray();
 
-        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, workerCount)
+        IEnumerable<Action<CancellationToken>> workers = Enumerable.Range(0, WorkerCount)
             .Select<int, Action<CancellationToken>>(workerIndex => token => RunTransitionStress(
                 store,
                 initialItems,
@@ -170,8 +170,8 @@ public class StripedObjectStoreTests
                 start,
                 phase,
                 workerIndex,
-                itemsPerWorker,
-                iterations,
+                ItemsPerWorker,
+                Iterations,
                 token));
 
         await ConcurrentTestWorkers.RunAsync(workers.Append(token =>
@@ -179,12 +179,12 @@ public class StripedObjectStoreTests
             start.SignalAndWait(token);
             var overflow = new StoreItem(-1);
 
-            for (int iteration = 0; iteration < iterations; iteration++)
+            for (int iteration = 0; iteration < Iterations; iteration++)
             {
                 phase.SignalAndWait(token);
                 if (store.TryPush(overflow))
                 {
-                    failures.Enqueue($"Store accepted an item past capacity in iteration {iteration}.");
+                    failures.Enqueue($"Store accepted an item past Capacity in iteration {iteration}.");
                     if (store.TryPop(out StoreItem? recovered))
                     {
                         overflow = recovered!;
@@ -204,7 +204,7 @@ public class StripedObjectStoreTests
         }));
 
         await Assert.That(failures).IsEmpty();
-        await Assert.That(finalItems.ToHashSet().Count).IsEqualTo(capacity);
+        await Assert.That(finalItems.ToHashSet().Count).IsEqualTo(Capacity);
         await Assert.That(finalItems).IsEquivalentTo(initialItems);
     }
 
@@ -279,7 +279,10 @@ public class StripedObjectStoreTests
 
     private sealed class StoreItem(int id)
     {
-        internal int Id { get; } = id;
+        internal int Id
+        {
+            get;
+        } = id;
         internal int InStore;
     }
 }

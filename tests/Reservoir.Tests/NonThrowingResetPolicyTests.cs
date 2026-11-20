@@ -53,19 +53,34 @@ public class NonThrowingResetPolicyTests
 
     public sealed class Item
     {
-        public int ResetCount { get; set; }
+        public int ResetCount
+        {
+            get; set;
+        }
 
-        public bool RejectReset { get; set; }
+        public bool RejectReset
+        {
+            get; set;
+        }
 
-        public bool ThrowOnReset { get; set; }
+        public bool ThrowOnReset
+        {
+            get; set;
+        }
 
-        public bool Destroyed { get; set; }
+        public bool Destroyed
+        {
+            get; set;
+        }
     }
 
     public readonly struct MarkedPolicy
         : IPooledObjectDestroyPolicy<Item>, INonThrowingResetPolicy
     {
-        public Item Create() => new();
+        public Item Create()
+        {
+            return new();
+        }
 
         public bool TryReset(Item obj)
         {
@@ -78,12 +93,18 @@ public class NonThrowingResetPolicyTests
             return !obj.RejectReset;
         }
 
-        public void Destroy(Item obj) => obj.Destroyed = true;
+        public void Destroy(Item obj)
+        {
+            obj.Destroyed = true;
+        }
     }
 
     public readonly struct UnmarkedPolicy : IPooledObjectDestroyPolicy<Item>
     {
-        public Item Create() => new();
+        public Item Create()
+        {
+            return new();
+        }
 
         public bool TryReset(Item obj)
         {
@@ -96,6 +117,9 @@ public class NonThrowingResetPolicyTests
             return true;
         }
 
-        public void Destroy(Item obj) => obj.Destroyed = true;
+        public void Destroy(Item obj)
+        {
+            obj.Destroyed = true;
+        }
     }
 }

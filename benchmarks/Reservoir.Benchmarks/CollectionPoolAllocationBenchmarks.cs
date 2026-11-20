@@ -104,12 +104,18 @@ public class CollectionPoolAllocationBenchmarks
 
     public sealed class Payload
     {
-        public int Value { get; set; }
+        public int Value
+        {
+            get; set;
+        }
     }
 
     public readonly struct PayloadPolicy : IPooledObjectPolicy<Payload>
     {
-        public Payload Create() => new();
+        public Payload Create()
+        {
+            return new();
+        }
 
         public bool TryReset(Payload obj)
         {

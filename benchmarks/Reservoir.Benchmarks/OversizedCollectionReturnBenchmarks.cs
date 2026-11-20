@@ -23,7 +23,10 @@ public class OversizedCollectionReturnBenchmarks
     private StringBuilder[] _stringBuilders = null!;
 
     [Params(1_024, 65_536)]
-    public int ElementCount { get; set; }
+    public int ElementCount
+    {
+        get; set;
+    }
 
     // Preparing a fresh batch for each iteration keeps setup outside the measurement and makes
     // BenchmarkDotNet run the stateful benchmark once per iteration with an unroll factor of one.

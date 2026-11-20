@@ -9,7 +9,10 @@ public class SharedClearBenchmarks
     private Payload[] _items = null!;
 
     [Params(1, 8, 64, 65)]
-    public int Capacity { get; set; }
+    public int Capacity
+    {
+        get; set;
+    }
 
     [GlobalSetup]
     public void Setup()
@@ -26,10 +29,16 @@ public class SharedClearBenchmarks
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _pool.Dispose();
+    public void Cleanup()
+    {
+        _pool.Dispose();
+    }
 
     [Benchmark]
-    public void ClearEmpty() => _pool.Clear();
+    public void ClearEmpty()
+    {
+        _pool.Clear();
+    }
 
     [Benchmark]
     public void ReturnOneAndClear()
@@ -65,8 +74,18 @@ public class SharedClearBenchmarks
 
     public readonly struct Policy : IPooledObjectDestroyPolicy<Payload>, INonThrowingResetPolicy
     {
-        public Payload Create() => new();
-        public bool TryReset(Payload item) => true;
-        public void Destroy(Payload item) { }
+        public Payload Create()
+        {
+            return new();
+        }
+
+        public bool TryReset(Payload item)
+        {
+            return true;
+        }
+
+        public void Destroy(Payload item)
+        {
+        }
     }
 }
