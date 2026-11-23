@@ -119,6 +119,7 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
+          shopt -s inherit_errexit
           pwsh -NoProfile -File ./build/Test-PackageVersion.ps1
           # The script holds the one version grammar and rejects a tag that is not a version.
           if [ "$GITHUB_EVENT_NAME" = "release" ]; then
@@ -255,6 +256,7 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
+          shopt -s inherit_errexit
           version="${RELEASE_TAG#v}"
           prerelease=false
           if [[ "$version" == *-* ]]; then

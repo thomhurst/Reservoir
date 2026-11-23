@@ -20,6 +20,8 @@ name: Release Draft
 # The draft this workflow owns carries DRAFT_MARKER, a hidden comment at the end of its notes.
 # Keep it when editing the notes: without it the next push creates a second draft. Other drafts
 # are left alone.
+#
+# Only a run for the current tip of main writes: re-running an older run leaves the draft alone.
 
 on:
   push:
@@ -67,6 +69,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
+          shopt -s inherit_errexit
           repo="repos/$GITHUB_REPOSITORY"
           tag="v$VERSION"
           err=$(mktemp)
@@ -84,6 +87,21 @@ jobs:
             echo "::error::GET $1 failed."
             exit 1
           }
+
+          # A re-run of an older push keeps that push's GITHUB_SHA and would move the draft back to
+          # an old commit. Only a run for the current tip of main may write. A failed lookup fails.
+          ensure_main_tip() {
+            local tip
+            tip=$(git ls-remote --exit-code origin refs/heads/main | cut -f1) || {
+              echo "::error::Could not read the tip of main."
+              exit 1
+            }
+            if [ "$tip" != "$GITHUB_SHA" ]; then
+              echo "$GITHUB_SHA is no longer the tip of main ($tip); leaving the draft alone." | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          }
+          ensure_main_tip
 
           # True when a tag or release already exists for a version, in either tag form the release
           # tag grammar accepts (v1.2.3 or 1.2.3).
@@ -139,6 +157,7 @@ jobs:
           notes=$(gh api -X POST "$repo/releases/generate-notes" "${generate_args[@]}" --jq .body)
           body="$notes"$'\n\n'"$DRAFT_MARKER"
 
+          ensure_main_tip
           if [ -n "$draft_id" ]; then
             # Re-read the draft right before updating it: if it was published meanwhile, an update
             # would rewrite a published release. A publish in the sub-second gap between this read
