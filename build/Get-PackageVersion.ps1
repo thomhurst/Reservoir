@@ -32,16 +32,17 @@ function ConvertTo-SemanticVersion {
         return $null
     }
 
-    $match = [regex]::Match($Value, '^[vV]?(?<major>\d+)\.(?<minor>\d+)(?:\.(?<patch>\d+))?')
+    $match = [regex]::Match($Value, '^[vV]?(?<major>\d+)\.(?<minor>\d+)(?:\.(?<patch>\d+))?(?<prerelease>-[0-9A-Za-z.-]+)?')
     if (-not $match.Success) {
         return $null
     }
 
-    return @(
-        [int] $match.Groups['major'].Value
-        [int] $match.Groups['minor'].Value
-        $(if ($match.Groups['patch'].Success) { [int] $match.Groups['patch'].Value } else { 0 })
-    )
+    return [pscustomobject] @{
+        Major = [int] $match.Groups['major'].Value
+        Minor = [int] $match.Groups['minor'].Value
+        Patch = $(if ($match.Groups['patch'].Success) { [int] $match.Groups['patch'].Value } else { 0 })
+        IsPrerelease = $match.Groups['prerelease'].Success
+    }
 }
 
 function Get-BranchName {
@@ -72,57 +73,27 @@ try {
         'describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*', '--match', '[0-9]*'
     ) -AllowFailure
 
-    $version = ConvertTo-SemanticVersion $(if ($latestVersionTag) { $latestVersionTag } else { $BaseVersion })
-    if ($null -eq $version) {
+    $baseSemanticVersion = ConvertTo-SemanticVersion $BaseVersion
+    if ($null -eq $baseSemanticVersion) {
         throw "Base version '$BaseVersion' is not a semantic version."
     }
 
     $commitRange = if ($latestVersionTag) { "$latestVersionTag..HEAD" } else { 'HEAD' }
     $commitHeight = [int] (Invoke-Git -GitArguments @('rev-list', '--count', $commitRange))
-    $commitMessages = Invoke-Git -GitArguments @('log', '--reverse', '--format=%B%x1e', $commitRange)
-    $commits = @($commitMessages -split [char] 0x1e | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 
-    $selectedIncrement = $null
-    $selectedCommitIndex = -1
-    $incrementRanks = @{ none = 0; patch = 1; minor = 2; major = 3 }
-
-    for ($commitIndex = 0; $commitIndex -lt $commits.Count; $commitIndex++) {
-        $markers = [regex]::Matches(
-            $commits[$commitIndex],
-            '\+semver:\s*(?<increment>major|breaking|minor|feature|patch|fix|none|skip)',
-            [Text.RegularExpressions.RegexOptions]::IgnoreCase)
-
-        foreach ($marker in $markers) {
-            $candidate = switch ($marker.Groups['increment'].Value.ToLowerInvariant()) {
-                { $_ -in @('major', 'breaking') } { 'major'; break }
-                { $_ -in @('minor', 'feature') } { 'minor'; break }
-                { $_ -in @('none', 'skip') } { 'none'; break }
-                default { 'patch' }
-            }
-
-            if ($null -eq $selectedIncrement -or $incrementRanks[$candidate] -ge $incrementRanks[$selectedIncrement]) {
-                $selectedIncrement = $candidate
-                $selectedCommitIndex = $commitIndex
-            }
-        }
+    # The suggested version is the next patch after the latest release tag, however many commits
+    # follow it; commit messages do not choose it. A minor or major release is chosen by editing
+    # the tag of the draft release before publishing it (see .github/workflows/release-draft.yml).
+    # A prerelease tag such as v2.0.0-beta.1 suggests the release it previews, 2.0.0.
+    $latestVersion = ConvertTo-SemanticVersion $latestVersionTag
+    if ($null -eq $latestVersion) {
+        $major, $minor, $patch = $baseSemanticVersion.Major, $baseSemanticVersion.Minor, $baseSemanticVersion.Patch
     }
-
-    if ($null -eq $selectedIncrement) {
-        $selectedIncrement = 'patch'
+    elseif ($latestVersion.IsPrerelease) {
+        $major, $minor, $patch = $latestVersion.Major, $latestVersion.Minor, $latestVersion.Patch
     }
-
-    $major, $minor, $patch = $version
-    switch ($selectedIncrement) {
-        'major' {
-            $major++
-            $minor = 0
-            $patch = [Math]::Max($commits.Count - $selectedCommitIndex - 1, 0)
-        }
-        'minor' {
-            $minor++
-            $patch = [Math]::Max($commits.Count - $selectedCommitIndex - 1, 0)
-        }
-        'patch' { $patch += $commitHeight }
+    else {
+        $major, $minor, $patch = $latestVersion.Major, $latestVersion.Minor, ($latestVersion.Patch + 1)
     }
 
     $packageVersion = "$major.$minor.$patch"

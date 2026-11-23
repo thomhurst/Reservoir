@@ -6,16 +6,14 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+  # Publishing the draft release that release-draft.yml keeps for main runs every gate below on
+  # the release's tag and pushes the package to NuGet.org, stamped with the tag's version.
+  release:
+    types: [published]
   workflow_dispatch:
-    inputs:
-      publish-packages:
-        description: Publish package to NuGet.org and create GitHub release?
-        type: boolean
-        required: true
-        default: false
 
 # A newer event on the same PR, including `converted_to_draft`, cancels the PR's in-progress
-# run. Push and dispatch runs get unique groups, so they never cancel each other.
+# run. Push, release and dispatch runs get unique groups, so they never cancel each other.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -111,37 +109,70 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Generate package version
+      # A published release takes its version from the release's tag, so editing the tag of the
+      # draft release is how a version is chosen. Every other run uses the next patch after the
+      # latest release tag (a CI prerelease off main).
+      - name: Resolve package version
         id: version
-        shell: pwsh
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          $version = ./build/Get-PackageVersion.ps1
-          "version=$version" >> $env:GITHUB_OUTPUT
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            if [[ ! "$RELEASE_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::Release tag '$RELEASE_TAG' is not a version. Use a tag such as v1.2.3 or v1.2.3-beta.1."
+              exit 1
+            fi
+            version="${RELEASE_TAG#v}"
+          else
+            version=$(pwsh -NoProfile -File ./build/Get-PackageVersion.ps1)
+            if [ -z "$version" ]; then
+              echo "::error::Get-PackageVersion.ps1 produced no version."
+              exit 1
+            fi
+          fi
+          echo "Version: $version"
+          echo "PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      # A release can only ship what main has: the tag must point at a commit on main.
+      - name: Verify release commit is on main
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Release $RELEASE_TAG points at $GITHUB_SHA, which is not on main."
+            exit 1
+          fi
+
+      # The version comes from the environment the step above exported, not from interpolated
+      # step outputs, so release-tag text never runs as shell.
       - name: Pack
         run: >-
           dotnet pack src/Reservoir/Reservoir.csproj
           --configuration Release
           --output artifacts/packages
-          -p:Version=${{ steps.version.outputs.version }}
-          -p:PackageVersion=${{ steps.version.outputs.version }}
+          "-p:Version=$PACKAGE_VERSION"
+          "-p:PackageVersion=$PACKAGE_VERSION"
           -p:ContinuousIntegrationBuild=true
 
       - name: Test package consumers
         run: >-
           dotnet build tests/Reservoir.Package.Consumer/Reservoir.Package.Consumer.csproj
           --configuration Release
-          -p:ReservoirPackageVersion=${{ steps.version.outputs.version }}
-          -p:RestoreAdditionalProjectSources=${{ github.workspace }}/artifacts/packages
+          "-p:ReservoirPackageVersion=$PACKAGE_VERSION"
+          "-p:RestoreAdditionalProjectSources=$GITHUB_WORKSPACE/artifacts/packages"
 
       - name: Test package contents and runtime compatibility
-        env:
-          RESERVOIR_PACKAGE_PATH: ${{ github.workspace }}/artifacts/packages/Reservoir.${{ steps.version.outputs.version }}.nupkg
         run: >-
+          RESERVOIR_PACKAGE_PATH="$GITHUB_WORKSPACE/artifacts/packages/Reservoir.$PACKAGE_VERSION.nupkg"
           dotnet test tests/Reservoir.Package.Tests/Reservoir.Package.Tests.csproj
           --configuration Release
-          -p:ReservoirPackageVersion=${{ steps.version.outputs.version }}
-          -p:RestoreAdditionalProjectSources=${{ github.workspace }}/artifacts/packages
+          "-p:ReservoirPackageVersion=$PACKAGE_VERSION"
+          "-p:RestoreAdditionalProjectSources=$GITHUB_WORKSPACE/artifacts/packages"
 
       - name: Upload package
         uses: actions/upload-artifact@v7
@@ -174,10 +205,10 @@ jobs:
   publish:
     name: Publish
     needs: package
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/main' &&
-      inputs.publish-packages
+    # Only a published GitHub release publishes. GitHub has already created the tag and the
+    # release; this job pushes the package and attaches it to that release. Trusted publishing
+    # (NuGet/login) is tied to this workflow file and the Production environment, so both stay.
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     environment: Production
     permissions:
@@ -211,17 +242,24 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
-      - name: Create GitHub release
-        shell: pwsh
+      - name: Attach package to the release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          $package = Get-ChildItem artifacts/packages/Reservoir.*.nupkg | Select-Object -First 1
-          $version = $package.BaseName.Substring('Reservoir.'.Length)
-          $tag = "v$version"
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" artifacts/packages/*.nupkg --repo "$GITHUB_REPOSITORY" --clobber
 
-          gh release create $tag $package.FullName `
-            --repo $env:GITHUB_REPOSITORY `
-            --target $env:GITHUB_SHA `
-            --title $version `
-            --generate-notes
+      # The draft was named, and its compare link written, for the suggested version. Follow the
+      # tag if it was edited before publishing. Cosmetic, so it never blocks a release.
+      - name: Name release after its tag
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          body=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.body // ""')
+          body=$(printf '%s' "$body" | sed -E "s#(/compare/[^ )]+)\.\.\.[^ )]+#\1...$RELEASE_TAG#")
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -f name="${RELEASE_TAG#v}" -f body="$body" > /dev/null

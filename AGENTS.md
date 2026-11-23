@@ -23,6 +23,10 @@ Agent output outside a worktree (evidence, throwaway checkouts, downloaded tools
 
 For a bounded benchmark setup check and short measurement, run `gh workflow run benchmarks.yml --ref main -f 'filter=*.ObjectPoolBenchmarks.RentReturn' -f job=short`. The workflow validates both runtimes with `--job Dry` before measuring with `--job Short`; Dry output cannot establish performance or allocation guarantees. For the full suite, use `-f 'filter=*' -f job=short`. Never add `--apples` to these commands: BenchmarkDotNet 0.15.8 interacts with `OperationsPerInvoke` such that batched contention cases become effectively unbounded. See [reproduction details](website/docs/benchmarks.md#reproduce).
 
+## Releasing
+
+[Release Draft](.github/workflows/release-draft.yml) keeps one draft GitHub release for `main`, rewritten on every push. Its tag is the next patch after the latest release tag, whatever the commit count; commit messages do not choose the version, so `+semver:` has no effect. The owner picks a minor or major version by editing the draft's tag, then publishes it; that runs [CI/CD](.github/workflows/ci-cd.yml) on the tag and pushes the package to NuGet.org. Agents never publish, edit, or delete releases.
+
 ## Performance Engineering
 
 Throughput, latency, and zero allocation are primary goals; measured micro-optimizations are welcome. Warm `Rent`/`Return` and established hot paths must remain 0 B allocated with no Gen0 collections.
