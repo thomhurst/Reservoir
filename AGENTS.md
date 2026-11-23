@@ -23,6 +23,12 @@ Agent output outside a worktree (evidence, throwaway checkouts, downloaded tools
 
 For a bounded benchmark setup check and short measurement, run `gh workflow run benchmarks.yml --ref main -f 'filter=*.ObjectPoolBenchmarks.RentReturn' -f job=short`. The workflow validates both runtimes with `--job Dry` before measuring with `--job Short`; Dry output cannot establish performance or allocation guarantees. For the full suite, use `-f 'filter=*' -f job=short`. Never add `--apples` to these commands: BenchmarkDotNet 0.15.8 interacts with `OperationsPerInvoke` such that batched contention cases become effectively unbounded. See [reproduction details](website/docs/benchmarks.md#reproduce).
 
+## Releasing
+
+[Release Draft](.github/workflows/release-draft.yml) keeps one draft GitHub release for `main`, retargeted and its notes regenerated on every push. Its tag defaults to the next patch after the latest release tag, whatever the commit count; commit messages do not choose the version, so `+semver:` has no effect. Change the draft's tag to override the version; later pushes keep a higher version you set. Set it back to the suggestion (or lower) to return to the default. Publishing the draft runs [CI/CD](.github/workflows/ci-cd.yml) on the tag and pushes the package to NuGet.org; a prerelease tag such as `v2.0.0-beta.1` is marked as a GitHub prerelease. The package is attached to the release after publishing, so GitHub's immutable releases setting must stay off. The draft's notes end with a hidden `<!-- release-draft -->` marker that must stay; without it the next push creates a second draft. Agents never publish, edit, or delete releases.
+
+Notes are generated from [.github/release.yml](.github/release.yml): label a PR `breaking` for Breaking Changes or `ignore-for-release` to leave it out; dependency PRs are grouped under Dependencies automatically.
+
 ## Performance Engineering
 
 Throughput, latency, and zero allocation are primary goals; measured micro-optimizations are welcome. Warm `Rent`/`Return` and established hot paths must remain 0 B allocated with no Gen0 collections.
