@@ -135,7 +135,9 @@ jobs:
           echo "PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      # A release can only ship what main has: the tag must point at a commit on main.
+      # A release can only ship what main has: the tag must point at a commit on main. Any commit
+      # in main's history passes on purpose: the draft always targets the tip when it is written,
+      # and the owner may deliberately publish a draft whose commit main has since moved past.
       - name: Verify release commit is on main
         if: github.event_name == 'release'
         shell: bash
@@ -166,8 +168,9 @@ jobs:
           "-p:RestoreAdditionalProjectSources=$GITHUB_WORKSPACE/artifacts/packages"
 
       - name: Test package contents and runtime compatibility
+        env:
+          RESERVOIR_PACKAGE_PATH: ${{ github.workspace }}/artifacts/packages/Reservoir.${{ env.PACKAGE_VERSION }}.nupkg
         run: >-
-          RESERVOIR_PACKAGE_PATH="$GITHUB_WORKSPACE/artifacts/packages/Reservoir.$PACKAGE_VERSION.nupkg"
           dotnet test tests/Reservoir.Package.Tests/Reservoir.Package.Tests.csproj
           --configuration Release
           "-p:ReservoirPackageVersion=$PACKAGE_VERSION"
@@ -263,7 +266,8 @@ jobs:
             prerelease=true
           fi
           body=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.body // ""')
-          # Only the generated "**Full Changelog**: .../compare/A...B" line; other links stay.
+          # Only the generated "**Full Changelog**: .../compare/A...B" line; other links stay. If
+          # GitHub changes that line's format, this silently leaves the body unchanged.
           body=$(printf '%s' "$body" | sed -E "/^\*\*Full Changelog\*\*: /s#(/compare/[^ )]+)\.\.\.[^ )]+#\1...$RELEASE_TAG#")
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
             -f name="$version" -f body="$body" -F prerelease="$prerelease" > /dev/null
