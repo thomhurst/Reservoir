@@ -25,7 +25,9 @@ For a bounded benchmark setup check and short measurement, run `gh workflow run 
 
 ## Releasing
 
-[Release Draft](.github/workflows/release-draft.yml) keeps one draft GitHub release for `main`, rewritten on every push. Its tag is the next patch after the latest release tag, whatever the commit count; commit messages do not choose the version, so `+semver:` has no effect. The owner picks a minor or major version by editing the draft's tag, then publishes it; that runs [CI/CD](.github/workflows/ci-cd.yml) on the tag and pushes the package to NuGet.org. The draft's notes end with a hidden `<!-- release-draft -->` marker that must stay; without it the next push creates a second draft. A prerelease tag such as `v2.0.0-beta.1` is marked as a GitHub prerelease after publishing. Agents never publish, edit, or delete releases.
+[Release Draft](.github/workflows/release-draft.yml) keeps one draft GitHub release for `main`, retargeted and its notes regenerated on every push. Its tag defaults to the next patch after the latest release tag, whatever the commit count; commit messages do not choose the version, so `+semver:` has no effect. Change the draft's tag to override the version; later pushes keep a higher version you set. Set it back to the suggestion (or lower) to return to the default. Publishing the draft runs [CI/CD](.github/workflows/ci-cd.yml) on the tag and pushes the package to NuGet.org; a prerelease tag such as `v2.0.0-beta.1` is marked as a GitHub prerelease. The draft's notes end with a hidden `<!-- release-draft -->` marker that must stay; without it the next push creates a second draft. Agents never publish, edit, or delete releases.
+
+Notes are generated from [.github/release.yml](.github/release.yml): label a PR `breaking` for Breaking Changes or `ignore-for-release` to leave it out; dependency PRs are grouped under Dependencies automatically.
 
 ## Performance Engineering
 
