@@ -25,7 +25,7 @@ For a bounded benchmark setup check and short measurement, run `gh workflow run 
 
 ## Releasing
 
-[Release Draft](.github/workflows/release-draft.yml) keeps one draft GitHub release for `main`, rewritten on every push. Its tag is the next patch after the latest release tag, whatever the commit count; commit messages do not choose the version, so `+semver:` has no effect. The owner picks a minor or major version by editing the draft's tag, then publishes it; that runs [CI/CD](.github/workflows/ci-cd.yml) on the tag and pushes the package to NuGet.org. Agents never publish, edit, or delete releases.
+[Release Draft](.github/workflows/release-draft.yml) keeps one draft GitHub release for `main`, rewritten on every push. Its tag is the next patch after the latest release tag, whatever the commit count; commit messages do not choose the version, so `+semver:` has no effect. The owner picks a minor or major version by editing the draft's tag, then publishes it; that runs [CI/CD](.github/workflows/ci-cd.yml) on the tag and pushes the package to NuGet.org. The draft's notes end with a hidden `<!-- release-draft -->` marker that must stay; without it the next push creates a second draft. A prerelease tag such as `v2.0.0-beta.1` is marked as a GitHub prerelease after publishing. Agents never publish, edit, or delete releases.
 
 ## Performance Engineering
 

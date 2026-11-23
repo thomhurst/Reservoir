@@ -119,18 +119,16 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
+          pwsh -NoProfile -File ./build/Test-PackageVersion.ps1
+          # The script holds the one version grammar and rejects a tag that is not a version.
           if [ "$GITHUB_EVENT_NAME" = "release" ]; then
-            if [[ ! "$RELEASE_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-              echo "::error::Release tag '$RELEASE_TAG' is not a version. Use a tag such as v1.2.3 or v1.2.3-beta.1."
-              exit 1
-            fi
-            version="${RELEASE_TAG#v}"
+            version=$(pwsh -NoProfile -File ./build/Get-PackageVersion.ps1 -ReleaseTag "$RELEASE_TAG")
           else
             version=$(pwsh -NoProfile -File ./build/Get-PackageVersion.ps1)
-            if [ -z "$version" ]; then
-              echo "::error::Get-PackageVersion.ps1 produced no version."
-              exit 1
-            fi
+          fi
+          if [ -z "$version" ]; then
+            echo "::error::Get-PackageVersion.ps1 produced no version."
+            exit 1
           fi
           echo "Version: $version"
           echo "PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
@@ -230,6 +228,7 @@ jobs:
           user: ${{ secrets.NUGET_USER }}
 
       - name: Publish to NuGet.org
+        id: push
         shell: pwsh
         env:
           NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
@@ -242,16 +241,12 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
-      - name: Attach package to the release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" artifacts/packages/*.nupkg --repo "$GITHUB_REPOSITORY" --clobber
-
-      # The draft was named, and its compare link written, for the suggested version. Follow the
-      # tag if it was edited before publishing. Cosmetic, so it never blocks a release.
+      # The draft was named, and its compare link written, for the suggested version: follow the
+      # tag if it was edited before publishing, and mark a prerelease tag (v2.0.0-beta.1) as a
+      # GitHub prerelease. Runs once the package is on NuGet.org even if the asset upload failed,
+      # and is cosmetic, so it never fails the release.
       - name: Name release after its tag
+        if: ${{ !cancelled() && steps.push.outcome == 'success' }}
         continue-on-error: true
         shell: bash
         env:
@@ -260,6 +255,20 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          prerelease=false
+          if [[ "$version" == *-* ]]; then
+            prerelease=true
+          fi
           body=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.body // ""')
-          body=$(printf '%s' "$body" | sed -E "s#(/compare/[^ )]+)\.\.\.[^ )]+#\1...$RELEASE_TAG#")
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -f name="${RELEASE_TAG#v}" -f body="$body" > /dev/null
+          # Only the generated "**Full Changelog**: .../compare/A...B" line; other links stay.
+          body=$(printf '%s' "$body" | sed -E "/^\*\*Full Changelog\*\*: /s#(/compare/[^ )]+)\.\.\.[^ )]+#\1...$RELEASE_TAG#")
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            -f name="$version" -f body="$body" -F prerelease="$prerelease" > /dev/null
+
+      - name: Attach package to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" artifacts/packages/*.nupkg --repo "$GITHUB_REPOSITORY" --clobber
