@@ -7,7 +7,10 @@ param(
     [string] $ReleaseTag,
     # With -ReleaseTag: print the tag's version only when it is valid and SemVer-greater than
     # this version, and print nothing otherwise (the release draft keeps such an override).
-    [string] $HigherThan
+    [string] $HigherThan,
+    # Print the latest stable (non-prerelease) version tag reachable from HEAD, the release the
+    # suggestion counts from, or nothing when there is none. The release draft starts its notes there.
+    [switch] $LatestStableTag
 )
 
 $ErrorActionPreference = "Stop"
@@ -84,6 +87,23 @@ try {
     $latestVersionTag = Invoke-Git -GitArguments @(
         'describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*', '--match', '[0-9]*'
     ) -AllowFailure
+
+    if ($LatestStableTag) {
+        # After a prerelease such as v2.0.0-beta.1 the suggestion is 2.0.0, so its notes cover
+        # everything since the last stable release, prerelease changes included.
+        $stableTag = Invoke-Git -GitArguments @(
+            'describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*', '--match', '[0-9]*', '--exclude', '*-*'
+        ) -AllowFailure
+        if ($stableTag) {
+            if ($null -eq (ConvertTo-SemanticVersion $stableTag)) {
+                throw "Latest stable release tag '$stableTag' is not a version."
+            }
+
+            Write-Output $stableTag
+        }
+
+        return
+    }
 
     $baseSemanticVersion = ConvertTo-SemanticVersion $BaseVersion
     if ($null -eq $baseSemanticVersion) {

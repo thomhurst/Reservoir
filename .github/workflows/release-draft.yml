@@ -2,7 +2,7 @@ name: Release Draft
 
 # Keeps one draft release up to date with main: its tag defaults to the next patch after the latest
 # release tag (build/Get-PackageVersion.ps1), its target is the newest commit, and its notes list
-# the changes since the latest published release.
+# the changes since the latest stable release tag.
 #
 # To release, edit the draft on GitHub and publish it. Change the draft's tag to override the
 # version (for example v1.11.0 for a minor or v2.0.0 for a major release); later pushes keep a
@@ -16,6 +16,9 @@ name: Release Draft
 # .github/release.yml, so edits to the notes are lost if main moves before it is published. Label a
 # PR `breaking` to list it under Breaking Changes, or `ignore-for-release` to leave it out;
 # dependency PRs are grouped under Dependencies automatically.
+#
+# The package is attached to the release after it is published, so GitHub's immutable releases
+# setting must stay off.
 #
 # The draft this workflow owns carries DRAFT_MARKER, a hidden comment at the end of its notes.
 # Keep it when editing the notes: without it the next push creates a second draft. Other drafts
@@ -121,9 +124,15 @@ jobs:
             exit 0
           fi
 
-          draft_ids=$(gh api --paginate "$repo/releases?per_page=100" \
-            --jq '.[] | select(.draft and ((.body // "") | contains(env.DRAFT_MARKER))) | .id')
-          draft_id=${draft_ids%%$'\n'*}
+          # Owned drafts, newest first. --slurp joins the pages so they sort as one list.
+          releases=$(gh api --paginate --slurp "$repo/releases?per_page=100")
+          owned=$(jq -c '[.[][] | select(.draft and ((.body // "") | contains(env.DRAFT_MARKER)))]
+            | sort_by(.created_at) | reverse' <<<"$releases")
+          draft_id=$(jq -r '.[0].id // ""' <<<"$owned")
+          if [ "$(jq length <<<"$owned")" -gt 1 ]; then
+            list=$(jq -r 'map("\(.id) (\(.tag_name), created \(.created_at))") | join(", ")' <<<"$owned")
+            echo "::warning::Several drafts carry $DRAFT_MARKER: $list. Updating the newest, $draft_id; delete the others."
+          fi
 
           # The owner overrides the version by editing the draft's tag. Keep that tag while it is a
           # valid version higher than the suggestion and not yet taken; an equal, lower, invalid or
@@ -147,11 +156,14 @@ jobs:
           fi
 
           generate_args=(-f tag_name="$tag" -f target_commitish="$GITHUB_SHA")
-          if get_or_404 "$repo/releases/latest"; then
-            previous=$(jq -r .tag_name <<<"$found")
+          # The notes start at the release tag the suggestion counts from, so their range always
+          # matches the version: the latest stable version tag on main. After a prerelease such as
+          # v2.0.0-beta.1 they still cover everything since the last stable release.
+          previous=$(pwsh -NoProfile -File ./build/Get-PackageVersion.ps1 -LatestStableTag)
+          if [ -n "$previous" ]; then
             generate_args+=(-f previous_tag_name="$previous")
           else
-            # No published release yet: GitHub picks the starting point itself.
+            # No release tag yet: GitHub picks the starting point itself.
             previous='(none)'
           fi
           notes=$(gh api -X POST "$repo/releases/generate-notes" "${generate_args[@]}" --jq .body)
